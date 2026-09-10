@@ -1,0 +1,98 @@
+# IM-MASTER-APPS — Memory
+
+**Purpose of this file:** a running checkpoint log. At every meaningful
+checkpoint — a decision made, a component finished, a direction changed — a new
+entry gets appended at the top of §3. Reading §2 + the top two entries of §3
+should be enough to pick the work back up cold, without re-reading the other
+docs.
+
+Newest entry first. Keep entries short. Link out to the other docs instead of
+repeating their content here.
+
+---
+
+## 1. One-line summary
+
+Rebuilding IM Master — knitwear style master data for PT In Fashion, today an
+Excel workbook — as a Postgres + FastAPI + React application on the same stack
+the other VM applications run, starting from an empty database.
+
+---
+
+## 2. Stable facts (rarely change)
+
+| Thing | Value |
+|---|---|
+| Domain | Sweater/knitwear style master data — styles, colorways, yarn BOM, prices, measurements |
+| Replaces | `S27_IM_MASTER.xlsx` and one workbook per season before it |
+| Stack | Postgres 16 + FastAPI + React/Vite + nginx, one `docker-compose.yml` |
+| Layout | `backend/` · `frontend/` · `docs/` at the repo root |
+| Data at start | **Empty.** No migration, no Excel reseed — decided 2026-09-10 |
+| Repo | **TBD** — not decided (`github_SOP.md` §2) |
+| Push policy | **Commit only, do not push**, until the remote is agreed |
+| Owner | Denandro (AI Automation Engineer). Data entry: PT In Fashion office staff |
+
+**Sibling projects worth copying patterns from:**
+`ymal-project` (this doc set, compose shape, FastAPI + Postgres + nginx layout),
+`wholesale-order-entry` (the same stack already running on the VM),
+`../im-master` (the previous Node/SQLite version — **read for the domain model,
+do not inherit the schema**).
+
+**Standing constraints:**
+
+- Office staff must not need a terminal. If it is slower than Excel it will not
+  be used, and correctness will not compensate.
+- Concurrent editing is normal, not exceptional — it is a main reason for the
+  rebuild.
+- Files sit on a Google Drive shared drive. Develop from a **local clone**; named
+  Docker volumes, never bind mounts (`caveats.md` §7).
+- Excel stays authoritative until Phase 4 passes. There is always a fallback.
+
+---
+
+## 3. Checkpoint log
+
+### 2026-09-10 — Checkpoint 1: doc set written, project scoped
+
+Nine documents written into `docs/`, following the convention established in
+`ymal-project`. The folder previously held only `memory.md` with its header and
+no content; `backend/` and `frontend/` are still empty.
+
+**Three decisions taken, all of them shaping everything downstream:**
+
+| Decision | Choice | Why |
+|---|---|---|
+| **Stack** | Postgres + FastAPI + React/Vite + Docker | Matches `wholesale-order-entry` and `ymal-project` already on the VM. Same compose shape, same backup tooling, same operational knowledge. The old app's single SQLite file was one writer on one machine, and the file was also the backup plan. |
+| **Data** | **Start empty** | No migration from the old SQLite, no re-extraction from the S27 Excel. Clean schema, no inherited spreadsheet columns. |
+| **Repo** | **Undecided** | `github_SOP.md` written with the branch model and secret rules; remote left TBD. Committing locally only. |
+
+**What starting empty costs, and the mitigation.** With no data, nothing pushes
+back on a wrong schema — the field that cannot hold a real value fails months
+later instead of immediately, and the awkward styles that break schemas never
+arrive on their own. So `strategy.md` Phase 2 requires **10–15 real styles
+entered through the API, chosen from the S27 Excel because they are awkward**,
+and Phase 0 requires walking three real styles field-by-field on paper. Read the
+Excel for the hard cases even though we are not importing it. Full argument in
+`caveats.md` §1.
+
+**The schema rules are currently guesses.** `logic.md` carries **eleven
+UNCONFIRMED rules** derived from the old app's schema and the Excel layout, not
+from anyone who makes sweaters — BOM tolerance, name uniqueness, price currency,
+whether SKUs are composed by a rule. They are collected as the Phase 0 checklist
+in `logic.md` §6. **None should be implemented until confirmed:** a guessed rule
+that is enforced blocks a legitimate style at 4pm, someone fudges a percentage to
+get past it, and the constraint ends up guaranteeing wrong data.
+
+**Two items put on a parallel track** because they have external clocks
+(`strategy.md` §2):
+
+- **Measure the Excel baseline** — time to enter a style, error rate. Only
+  capturable while Excel is still how the work is done. Once people use the app
+  it is gone permanently and no improvement can ever be shown.
+- **Name a data owner and a cutover date.** Without a date this becomes a
+  permanent half-migration with two sources of truth diverging weekly
+  (`caveats.md` §2).
+
+**Next step:** Phase 0 — agree the record. `config-contract.md` §3–§5 is the
+proposal; the ❓ marks are what needs answering. It is the one phase engineering
+cannot complete alone, and it has no owner yet.

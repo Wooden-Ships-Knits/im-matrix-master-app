@@ -1,0 +1,28 @@
+# Secrets — see docs/github_SOP.md §8
+.env
+.env.*
+!.env.example
+credentials/
+
+# Data — regenerable, and dumps ARE the data
+backend/data/
+*.sql
+*.dump
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Notebooks — team convention
+*.ipynb
+
+# macOS / Google Drive
+.DS_Store
