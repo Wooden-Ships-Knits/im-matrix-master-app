@@ -8,8 +8,8 @@
 
 **Scope of this round:** the backend — Postgres table, FastAPI write/read path.
 The UI is acknowledged as the hard part and is explicitly **not** in this round
-(§8). `docs/flow.drawio` exists but is currently **0 bytes**, so it did not feed
-into this plan; if it is meant to, it needs to be saved/synced first.
+(§8). `docs/flow.drawio` holds the flow as a diagram — two pages, *Flow* and
+*What one save writes* — and matches this plan.
 
 ---
 
@@ -394,8 +394,6 @@ percentage convention, 5.6 → sizes, and 5.5 touches pricing).
 
 ## 9. Open
 
-- `docs/flow.drawio` is **0 bytes**. If it holds the intended flow, save/sync it
-  and I will fold it in.
 - Is `F26 IM MASTER.xlsx` the newer file? It has more rows (8438) and the Canada
   pricing track, which suggests the schema is still growing. If Canada is the
   direction of travel, those columns are not optional extras.

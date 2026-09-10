@@ -1,0 +1,137 @@
+<mxfile host="app.diagrams.net" agent="Claude Code" version="24.7.17" type="device">
+  <diagram id="im-master-flow" name="Flow">
+    <mxGraphModel dx="1100" dy="760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="IM Master — the flow" style="text;html=1;fontSize=22;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1F2933;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="420" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="A user enters the details of a sweater. It is stored in the database." style="text;html=1;fontSize=13;align=left;verticalAlign=middle;fontColor=#616E7C;" vertex="1" parent="1">
+          <mxGeometry x="40" y="58" width="620" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="actor" value="Office&#10;staff" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fontSize=12;fontColor=#1F2933;strokeColor=#3D5A80;strokeWidth=2;" vertex="1" parent="1">
+          <mxGeometry x="60" y="160" width="34" height="64" as="geometry" />
+        </mxCell>
+
+        <mxCell id="editor" value="&lt;b&gt;Style editor&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;one screen, one Save&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F1F8;strokeColor=#3D5A80;fontSize=13;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="150" y="150" width="170" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="api" value="&lt;b&gt;FastAPI&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;POST / PUT&lt;br&gt;/api/styles&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F1F8;strokeColor=#3D5A80;fontSize=13;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="380" y="150" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="valid" value="&lt;b&gt;Valid?&lt;/b&gt;" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFF4E0;strokeColor=#C48A1B;fontSize=13;" vertex="1" parent="1">
+          <mxGeometry x="600" y="150" width="120" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="txn" value="&lt;b&gt;One transaction&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;all of it, or none&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F1F8;strokeColor=#3D5A80;fontSize=13;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="780" y="150" width="160" height="80" as="geometry" />
+        </mxCell>
+
+        <mxCell id="db" value="&lt;b&gt;Postgres&lt;/b&gt;" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=12;whiteSpace=wrap;html=1;fillColor=#E6F4EA;strokeColor=#2E7D46;fontSize=14;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="800" y="330" width="140" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="tables" value="&lt;b&gt;styles&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;the wide table — one row per style&lt;/font&gt;&lt;br&gt;&#8195;&#8627; style_sizes&lt;br&gt;&#8195;&#8627; style_colorways&lt;br&gt;&#8195;&#8195;&#8627; colorway_yarns" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5FAF6;strokeColor=#2E7D46;dashed=1;fontSize=12;align=left;verticalAlign=middle;spacingLeft=10;arcSize=10;" vertex="1" parent="1">
+          <mxGeometry x="560" y="340" width="215" height="90" as="geometry" />
+        </mxCell>
+
+        <mxCell id="errors" value="&lt;b&gt;Errors go back to the field&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;nothing is saved&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDECEC;strokeColor=#B3261E;fontSize=12;verticalAlign=middle;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="380" y="330" width="160" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3D5A80;strokeWidth=2;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="actor" target="editor">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="the whole style" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3D5A80;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;fontColor=#616E7C;verticalAlign=bottom;" edge="1" parent="1" source="editor" target="api">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3D5A80;strokeWidth=2;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="api" target="valid">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="yes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2E7D46;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;fontColor=#2E7D46;verticalAlign=bottom;" edge="1" parent="1" source="valid" target="txn">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="write" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2E7D46;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;fontColor=#2E7D46;" edge="1" parent="1" source="txn" target="db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="no" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#B3261E;strokeWidth=2;endArrow=blockThin;endFill=1;fontSize=11;fontColor=#B3261E;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" edge="1" parent="1" source="valid" target="errors">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#B3261E;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="errors" target="editor">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="235" y="360" /></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#2E7D46;strokeWidth=1;dashed=1;endArrow=none;" edge="1" parent="1" source="db" target="tables">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="saved style comes back — the screen shows the confirmed state, not an optimistic one" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#8895A4;strokeWidth=2;endArrow=blockThin;endFill=1;dashed=1;fontSize=11;fontColor=#616E7C;verticalAlign=top;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="db" target="editor">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="235" y="500" /><mxPoint x="800" y="500" /></Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="note" value="&lt;b&gt;The one rule&lt;/b&gt;&#8195;Every check runs on the server, whether or not the form checked it first.&lt;br&gt;The browser re-checks only to give fast feedback — it is never what makes the data correct." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F7F8F9;strokeColor=#CBD2D9;fontSize=12;align=left;verticalAlign=middle;spacingLeft=12;arcSize=8;fontColor=#3E4C59;" vertex="1" parent="1">
+          <mxGeometry x="60" y="560" width="880" height="60" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+
+  <diagram id="im-master-write" name="What one save writes">
+    <mxGraphModel dx="1100" dy="760" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="850" math="0" shadow="0">
+      <root>
+        <mxCell id="w0" />
+        <mxCell id="w1" parent="w0" />
+
+        <mxCell id="wtitle" value="What one save writes" style="text;html=1;fontSize=22;fontStyle=1;align=left;verticalAlign=middle;fontColor=#1F2933;" vertex="1" parent="w1">
+          <mxGeometry x="40" y="30" width="500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="wsub" value="One style — 4 sizes, 3 colorways — as the user sees it, and as it lands." style="text;html=1;fontSize=13;align=left;verticalAlign=middle;fontColor=#616E7C;" vertex="1" parent="w1">
+          <mxGeometry x="40" y="58" width="640" height="24" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wform" value="&lt;b&gt;One form&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;ALEX STRIPED CREW COTTON&lt;br&gt;X/S · S/M · M/L · X/L&lt;br&gt;2 colorways&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F1F8;strokeColor=#3D5A80;fontSize=13;verticalAlign=middle;arcSize=12;" vertex="1" parent="w1">
+          <mxGeometry x="60" y="200" width="200" height="110" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wstyles" value="&lt;b&gt;styles&lt;/b&gt;&#8195;&lt;font color=&quot;#2E7D46&quot;&gt;1 row&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;the wide one — identity, construction,&lt;br&gt;packaging, duty, freight, costing, pricing&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E6F4EA;strokeColor=#2E7D46;fontSize=13;align=left;verticalAlign=middle;spacingLeft=12;arcSize=10;" vertex="1" parent="w1">
+          <mxGeometry x="400" y="140" width="330" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="wsizes" value="&lt;b&gt;style_sizes&lt;/b&gt;&#8195;&lt;font color=&quot;#2E7D46&quot;&gt;4 rows&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;a weight per size&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5FAF6;strokeColor=#2E7D46;fontSize=13;align=left;verticalAlign=middle;spacingLeft=12;arcSize=10;" vertex="1" parent="w1">
+          <mxGeometry x="400" y="235" width="330" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="wcw" value="&lt;b&gt;style_colorways&lt;/b&gt;&#8195;&lt;font color=&quot;#2E7D46&quot;&gt;2 rows&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;BREAKER WHITE/MYKONOS · KHAKI/BREAKER WHITE&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5FAF6;strokeColor=#2E7D46;fontSize=13;align=left;verticalAlign=middle;spacingLeft=12;arcSize=10;" vertex="1" parent="w1">
+          <mxGeometry x="400" y="320" width="330" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="wyarn" value="&lt;b&gt;colorway_yarns&lt;/b&gt;&#8195;&lt;font color=&quot;#2E7D46&quot;&gt;4 rows&lt;/font&gt;&lt;br&gt;&lt;font color=&quot;#616E7C&quot;&gt;the yarn lines — up to 21 per colorway&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5FAF6;strokeColor=#2E7D46;fontSize=13;align=left;verticalAlign=middle;spacingLeft=12;arcSize=10;" vertex="1" parent="w1">
+          <mxGeometry x="400" y="405" width="330" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wbrace" value="" style="shape=curlyBracket;whiteSpace=wrap;html=1;rounded=1;direction=north;flipH=1;strokeColor=#8895A4;" vertex="1" parent="w1">
+          <mxGeometry x="345" y="140" width="30" height="325" as="geometry" />
+        </mxCell>
+        <mxCell id="wone" value="one transaction" style="text;html=1;fontSize=11;align=center;fontColor=#616E7C;rotation=-90;" vertex="1" parent="w1">
+          <mxGeometry x="270" y="285" width="110" height="20" as="geometry" />
+        </mxCell>
+
+        <mxCell id="we1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#3D5A80;strokeWidth=2;endArrow=blockThin;endFill=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;" edge="1" parent="w1" source="wform">
+          <mxGeometry relative="1" as="geometry"><mxPoint x="345" y="255" as="target" /></mxGeometry>
+        </mxCell>
+
+        <mxCell id="wcompare" value="&lt;b&gt;Why not one table for all of it&lt;/b&gt;&lt;br&gt;&lt;br&gt;The spreadsheet stores this same style as &lt;b&gt;8 rows&lt;/b&gt; — one per size × colorway — repeating&lt;br&gt;construction, packaging, duty, freight and every price on all 8. A style with 4 sizes and&lt;br&gt;5 colorways is &lt;b&gt;20 rows&lt;/b&gt; of near-identical data.&lt;br&gt;&lt;br&gt;Then changing one price is 20 updates, and missing one leaves the style disagreeing with itself&#8195;—&lt;br&gt;which is the problem we are moving off the spreadsheet to fix." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF4E0;strokeColor=#C48A1B;fontSize=12;align=left;verticalAlign=middle;spacingLeft=14;arcSize=8;fontColor=#3E4C59;" vertex="1" parent="w1">
+          <mxGeometry x="60" y="520" width="670" height="150" as="geometry" />
+        </mxCell>
+
+        <mxCell id="wpending" value="Pending confirmation&#10;— plan.md §5.1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FDECEC;strokeColor=#B3261E;fontSize=11;verticalAlign=middle;arcSize=12;fontColor=#B3261E;" vertex="1" parent="w1">
+          <mxGeometry x="770" y="270" width="130" height="50" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
