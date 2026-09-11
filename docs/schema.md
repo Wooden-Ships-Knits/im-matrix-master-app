@@ -4,7 +4,7 @@
 placement tables in `columns.md` §4–§6 (which stay for the evidence and the
 fill-rate analysis).
 
-**167 columns across 5 tables.** Every placement below was decided by measuring
+**176 columns across 6 tables.** Every placement below was decided by measuring
 whether the value changes between rows of the same style number in S27 —
 not by judgement.
 
@@ -14,7 +14,7 @@ Legend: **ƒ** = formula result in the spreadsheet (see `columns.md` §8.1) ·
 
 ---
 
-## 1. `styles` — 100 columns, one row per style per season
+## 1. `styles` — 104 columns, one row per style per season
 
 ### 1.1 Keys and identity (4)
 
@@ -173,13 +173,25 @@ styles). The *margins* are size-level and live in `style_sizes` §2.7.
 | 96 | `similar_repeat_price_note` | text | IB | HL |
 | 97 | `price_final_from_pb` | text | IC | · |
 
-### 1.11 Audit (3)
+### 1.11 Merchandising and app fields (4) — **not from the workbooks**
+
+Neither IM MASTER file contains any of these. They are the app's own fields,
+typed by staff from day one. See §7.
+
+| # | Column | Type | Source |
+|---|---|---|---|
+| 98 | `collection` | text | **new** — self-teaching reference list |
+| 99 | `sub_group` | text | **new** — self-teaching reference list |
+| 100 | `status` | text NOT NULL DEFAULT 'draft' | **new** — `draft` / `active` |
+| 101 | `photo_url` | text | **new** — server-generated path |
+
+### 1.12 Audit (3)
 
 | # | Column | Type |
 |---|---|---|
-| 98 | `created_at` | timestamptz NOT NULL DEFAULT now() |
-| 99 | `updated_at` | timestamptz NOT NULL DEFAULT now() |
-| 100 | `version` | integer NOT NULL DEFAULT 1 |
+| 102 | `created_at` | timestamptz NOT NULL DEFAULT now() |
+| 103 | `updated_at` | timestamptz NOT NULL DEFAULT now() |
+| 104 | `version` | integer NOT NULL DEFAULT 1 |
 
 `UNIQUE (season, style_name)` — or `(season, style_number)`, §7.2.
 
@@ -281,7 +293,7 @@ genuinely price by size. Strike it if you would rather force one price per style
 
 ---
 
-## 3. `style_colorways` — 5 columns, 1–11 rows per style
+## 3. `style_colorways` — 6 columns, 1–11 rows per style
 
 | # | Column | Type | S27 | F26 | Note |
 |---|---|---|---|---|---|
@@ -290,6 +302,7 @@ genuinely price by size. Strike it if you would rather force one price per style
 | 3 | `ws_tag_color` | text NOT NULL | CL | CB | The colorway name |
 | 4 | `whs_channel` | text | CM | CC | `000`/`SY`/`BOTH`; F26 adds `SO`,`CO`,`CN`. Measured colorway-level (varies 27%) |
 | 5 | `reps_color` | text | CN | CD | |
+| 6 | `sku` | text | · | · | **new** — not in either workbook. §7.3 if it varies by size |
 
 `UNIQUE (style_id, ws_tag_color)`
 
@@ -331,7 +344,24 @@ The market set differs completely between seasons, so markets are rows.
 
 ---
 
-## 6. What changed from `columns.md`
+## 6. `style_measurements` — 4 columns, point × size — **not from the workbooks**
+
+`prd.md` §7 lists point-of-measure values per size as a v1 must-have. No such
+column exists in either IM MASTER file — measurements live in the spec/tech pack,
+not here. Modelled as a tall table so the grid is sparse by nature.
+
+| # | Column | Type | Note |
+|---|---|---|---|
+| 1 | `style_id` | bigint REFERENCES styles(id) ON DELETE CASCADE | |
+| 2 | `size` | text NOT NULL | Must exist in `style_sizes` |
+| 3 | `point` | text NOT NULL | `CHEST`, `BODY LENGTH`, `SLEEVE` … |
+| 4 | `value_cm` | numeric(6,2) | |
+
+`PRIMARY KEY (style_id, size, point)`
+
+---
+
+## 7. What changed from `columns.md`
 
 Four placements moved once every column was variance-tested rather than reasoned
 about. All four moved **to the more granular table**, which is the safe direction
@@ -349,9 +379,39 @@ style-level, margins are size-level.** The price is one number for the style;
 the margin depends on which size's landed cost you measure it against. That is
 why §1.10 and §2.7 are separate blocks.
 
+### 7.1 The workbooks do not hold everything the app needs
+
+Building the list from the two files made it faithful to the source — and
+therefore silent about everything the source never had. Searching all 288
+headers found **no** column for any of these:
+
+| Missing | Now | Evidence |
+|---|---|---|
+| Collection | `styles.collection` | No `COLLECT`/`GROUP`/`FAMILY`/`DIVISION` header in either file |
+| Sub group | `styles.sub_group` | as above |
+| Status (draft/active) | `styles.status` | No `STATUS`/`ACTIVE`/`DRAFT` header |
+| Style photo | `styles.photo_url` | No `PHOTO`/`IMAGE`/`SKETCH` header |
+| SKU | `style_colorways.sku` | No `SKU`/`BARCODE`/`UPC` header |
+| Point-of-measure | `style_measurements` | No `CHEST`/`SLEEVE`/`LENGTH`/`POM` header |
+
+All six are in `prd.md` §7 as v1 requirements, and all six were in the previous
+app's schema — where they were also empty, because its Excel extractor had
+nothing to fill them from either.
+
+**Do not try to derive collection from the style name.** The names do carry a
+theme — `KEY WEST` leads 26 names, `BEACH` 46 — but the pattern is
+`<theme> <silhouette> <yarn>` with no delimiter and a varying word count
+(`ALEX STRIPED | CREW | COTTON`, `AIX FAIR ISLE | BUTTON CARDI | COTTON`). That
+is the same unreliable-parsing trap as the size suffix (`columns.md` §2.1).
+
+⚠️ **Related correction.** §1.1 says `style_name` is `DESCRIPTION` with the size
+suffix stripped. That is not enough — the suffix chain runs up to three
+segments: `AIX FAIR ISLE CREW COTTON - M/L - 000 ONLY - FAH`. It only matters if
+we ever import, but the note was wrong as written.
+
 ---
 
-## 7. Still open — these block the migration
+## 8. Still open — these block the migration
 
 | § | Question | Recommendation |
 |---|---|---|
@@ -362,22 +422,31 @@ why §1.10 and §2.7 are separate blocks.
 | 7.5 | Sizes: fixed list or free text? | Fixed — `X/S · S/M · M/L · X/L` are the only real ones in either file |
 | 7.6 | Yarn percent: fraction (`0.8677`) or percent (`86.77`)? | Percent — it is what a person types |
 | 7.7 | `style_prices` as rows, or flat columns? | Rows |
+| 7.8 | Is `sku` per colorway, or per colorway **and size**? | Per colorway. If it is per size it needs a `colorway_sizes` table — ask before building one |
+| 7.9 | Are `collection` / `sub_group` the right two levels? | They match the previous app. Confirm the names mean what staff expect |
 
 **None of these are hard to change later except 7.1 and 7.4**, which decide
 whether data gets *captured* at all. The rest are renames and conversions.
 
 ---
 
-## 8. Totals
+## 9. Totals
 
-| Table | Columns | Rows per style |
-|---|---|---|
-| `styles` | 100 | 1 |
-| `style_sizes` | 48 | ~4 |
-| `style_colorways` | 5 | 1–11 |
-| `colorway_yarns` | 5 | 1–21 per colorway |
-| `style_prices` | 9 | 2–3 |
-| **Total** | **167** | |
+| Table | Columns | Rows per style | New fields |
+|---|---|---|---|
+| `styles` | 104 | 1 | 4 |
+| `style_sizes` | 48 | ~4 | — |
+| `style_colorways` | 6 | 1–11 | 1 |
+| `colorway_yarns` | 5 | 1–21 per colorway | — |
+| `style_prices` | 9 | 2–3 | — |
+| `style_measurements` | 4 | point × size | 4 |
+| **Total** | **176** | | **9** |
 
-From 288 columns in the union of the two workbooks: **167 kept**, 121 dropped as
-labels, worker names, stale notes and duplicates (`columns.md` §7).
+Two different sources:
+
+- **167 columns come from the workbooks** — kept out of 288 in the union, with
+  121 dropped as labels, worker names, stale notes and duplicates
+  (`columns.md` §7).
+- **9 columns have no source in either file** — `collection`, `sub_group`,
+  `status`, `photo_url`, `sku`, and the whole `style_measurements` table. They
+  are requirements from `prd.md` §7 that IM MASTER never recorded (§7).
