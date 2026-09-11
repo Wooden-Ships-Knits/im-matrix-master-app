@@ -328,10 +328,10 @@ it harder than it looks.
 
 Each step ends somewhere checkable.
 
-**6.1 — Column list.** Extract all 255 S27 + 235 F26 headers, map by name, merge
-into one list, mark each: keep / drop / derived. Produce a table of
-`column_name · type · source · required`. Reviewed **before** any SQL.
-*Done when:* the list is agreed and every kept column has a type.
+**6.1 — Column list.** ✅ **Done — `columns.md`.** Both files profiled in full:
+288 columns in the union, ~143 kept, placed across `styles` / `style_sizes` /
+`style_colorways` / `colorway_yarns` / `style_prices` by measured variance.
+*Awaiting review* — the open decisions moved to `columns.md` §8.
 
 **6.2 — Migration.** Alembic baseline creating the tables from 6.1.
 *Done when:* `alembic upgrade head` builds it from empty, `downgrade` reverses it.
