@@ -173,16 +173,16 @@ styles). The *margins* are size-level and live in `style_sizes` §2.7.
 | 96 | `similar_repeat_price_note` | text | IB | HL |
 | 97 | `price_final_from_pb` | text | IC | · |
 
-### 1.11 Merchandising and app fields (4) — **not from the workbooks**
+### 1.11 Merchandising and app fields (4)
 
-Neither IM MASTER file contains any of these. They are the app's own fields,
-typed by staff from day one. See §7.
+`collection` **is** in the workbooks — as banner rows, not as a column (§7.2).
+The other three are the app's own.
 
 | # | Column | Type | Source |
 |---|---|---|---|
-| 98 | `collection` | text | **new** — self-teaching reference list |
-| 99 | `sub_group` | text | **new** — self-teaching reference list |
-| 100 | `status` | text NOT NULL DEFAULT 'draft' | **new** — `draft` / `active` |
+| 98 | `collection` | text | **banner rows** — §7.2 |
+| 99 | `sub_group` | text | **new** — self-teaching reference list, no source |
+| 100 | `status` | text NOT NULL DEFAULT 'draft' | `draft`/`active`; F26 banners also carry `HOLD STYLE` / `CANCEL STYLE` (§7.2) |
 | 101 | `photo_url` | text | **new** — server-generated path |
 
 ### 1.12 Audit (3)
@@ -387,7 +387,7 @@ headers found **no** column for any of these:
 
 | Missing | Now | Evidence |
 |---|---|---|
-| Collection | `styles.collection` | No `COLLECT`/`GROUP`/`FAMILY`/`DIVISION` header in either file |
+| ~~Collection~~ | `styles.collection` | **Correction — it is in the files, as banner rows. See §7.2** |
 | Sub group | `styles.sub_group` | as above |
 | Status (draft/active) | `styles.status` | No `STATUS`/`ACTIVE`/`DRAFT` header |
 | Style photo | `styles.photo_url` | No `PHOTO`/`IMAGE`/`SKETCH` header |
@@ -398,11 +398,47 @@ All six are in `prd.md` §7 as v1 requirements, and all six were in the previous
 app's schema — where they were also empty, because its Excel extractor had
 nothing to fill them from either.
 
-**Do not try to derive collection from the style name.** The names do carry a
-theme — `KEY WEST` leads 26 names, `BEACH` 46 — but the pattern is
-`<theme> <silhouette> <yarn>` with no delimiter and a varying word count
-(`ALEX STRIPED | CREW | COTTON`, `AIX FAIR ISLE | BUTTON CARDI | COTTON`). That
-is the same unreliable-parsing trap as the size suffix (`columns.md` §2.1).
+### 7.2 Collection lives in **banner rows**
+
+Corrects §7.1. Collection is in both workbooks — as a horizontal divider, which
+is why a column search missed it.
+
+**A banner row** is a row where the DESCRIPTION cell holds a label and **every
+other column contains a literal `X`** — 252 of 255 columns in S27. That is also
+the source of the stray `x`/`X` values that showed up as text samples inside
+otherwise-numeric columns throughout `columns.md`.
+
+**The banner closes the block above it.** Proven three ways:
+
+1. Style names run **alphabetically A→Z within each block and restart** after
+   every banner: rows 58–1590 go `ALEX` → `WRAP CARDIGAN`, then the banner, then
+   1593–2032 restart at `ALIANA` → `VALERIE`.
+2. The block ending at the `EASTER` banner (r2278) contains
+   `HIP HARE PRINTED CREW COTTON` — a rabbit.
+3. The largest block, 1,533 rows, closes with `ESSENTIALS` — the core
+   year-round line.
+
+**Banners come in groups of one to three**, and the labels are of three kinds:
+
+| Kind | Examples | Maps to |
+|---|---|---|
+| Material | `COTTON`, `GRASSY`, `COTTON & GRASSY` | already held in `content_code` (#7) |
+| **Collection** | `ESSENTIALS`, `SPRING ONE`, `EASTER`, `SAIL AWAY`, `AMERICANA`, `BEACH`, `SUMMER`, `WINTER BEACH`, `GAME DAY`, `SPOOKY`, `THANKSGIVING`, `CHRISTMAS COTTON`, `SKI SNOW`, `LUXE`, `CHEERS!`, `WHISKEY WEATHER`, `YEAR ROUND` | **`styles.collection`** |
+| Status | `HOLD STYLE`, `CANCEL STYLE` | `styles.status` (#100) |
+
+S27 has **15 banner rows** over 4,048 data rows; F26 has **25** over 8,342.
+The material banner is optional — `SPRING DAYS` and `EASTER` stand alone.
+
+**Import rule, when we get there:** walk the sheet downward; a data row belongs
+to the label of the next banner group **below** it. Take the non-material,
+non-status label from the group as the collection. This is a rule to apply at
+import, not a parse of any single cell — and it is why the collection values
+must be *carried in a column* in our schema rather than reconstructed later.
+
+⚠️ Two consequences worth noting. The banner rows must be **excluded from the
+data** on import (they are 15 and 25 rows of pure `X`). And a style's collection
+is positional in the sheet — move a row and you change its collection, with
+nothing to flag it. In our table it becomes an explicit value that cannot drift.
 
 ⚠️ **Related correction.** §1.1 says `style_name` is `DESCRIPTION` with the size
 suffix stripped. That is not enough — the suffix chain runs up to three
@@ -434,19 +470,20 @@ whether data gets *captured* at all. The rest are renames and conversions.
 
 | Table | Columns | Rows per style | New fields |
 |---|---|---|---|
-| `styles` | 104 | 1 | 4 |
+| `styles` | 104 | 1 | 3 + 1 derived |
 | `style_sizes` | 48 | ~4 | — |
 | `style_colorways` | 6 | 1–11 | 1 |
 | `colorway_yarns` | 5 | 1–21 per colorway | — |
 | `style_prices` | 9 | 2–3 | — |
 | `style_measurements` | 4 | point × size | 4 |
-| **Total** | **176** | | **9** |
+| **Total** | **176** | | **8 + 1** |
 
 Two different sources:
 
 - **167 columns come from the workbooks** — kept out of 288 in the union, with
   121 dropped as labels, worker names, stale notes and duplicates
   (`columns.md` §7).
-- **9 columns have no source in either file** — `collection`, `sub_group`,
-  `status`, `photo_url`, `sku`, and the whole `style_measurements` table. They
-  are requirements from `prd.md` §7 that IM MASTER never recorded (§7).
+- **1 column comes from banner rows, not a column** — `collection` (§7.2).
+- **8 columns have no source in either file** — `sub_group`, `status`,
+  `photo_url`, `sku`, and the whole `style_measurements` table. They are
+  requirements from `prd.md` §7 that IM MASTER never recorded (§7.1).
