@@ -1,489 +1,463 @@
-# IM Master — Final Column List
+# IM Master — Database Schema (v2)
 
-**Created 2026-09-11.** The complete, DDL-ready inventory. Supersedes the
-placement tables in `columns.md` §4–§6 (which stay for the evidence and the
-fill-rate analysis).
+**Revised 2026-09-19** from the live `F26 IM MASTER.xlsx` (Google Sheets export
+saved into this folder today). Replaces v1, which is in git history
+(`b8fb22f`, `6223a89`).
 
-**176 columns across 6 tables.** Every placement below was decided by measuring
-whether the value changes between rows of the same style number in S27 —
-not by judgement.
-
-Legend: **ƒ** = formula result in the spreadsheet (see `columns.md` §8.1) ·
-**S27** / **F26** = source column letter · `·` = absent from that file ·
-**?** = pending a decision in §7.
+> **Proposal — nothing is built.** §8 lists what needs a yes before the
+> migration is written.
 
 ---
 
-## 1. `styles` — 104 columns, one row per style per season
+## 1. What changed, in one paragraph
 
-### 1.1 Keys and identity (4)
+v1 treated every spreadsheet column as something to store: 176 columns. This
+time I read which cells are **formulas** (the xlsx records them), and the answer
+reshapes everything: of F26's 236 columns, **88 are formulas, 31 are empty and
+25 hold one value for the entire season**. Only **38 are genuinely typed per
+style**, plus the yarn lines. The formulas are all simple arithmetic over those
+inputs and about 35 rate cells kept in rows 51–53. So the efficient design is:
+**store the inputs, keep the rates in one place, and compute the rest.**
 
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 1 | `id` | bigserial PRIMARY KEY | — | — |
-| 2 | `season` | text NOT NULL | B | B |
-| 3 | `style_number` | text | F | F |
-| 4 | `style_name` | text NOT NULL | I | K |
+This **reverses my earlier recommendation** (`columns.md` §8.1, "store formula
+results as entered"). That advice was made without seeing the formulas. Storing
+88 computed values per row would mean staff retype them or they go stale the
+moment an exchange rate changes.
 
-`style_name` comes from `DESCRIPTION` **with the size suffix stripped**.
+---
 
-### 1.2 Classification (7)
+## 2. What the live F26 file contains
 
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 5 | `cat` | text | A | A |
-| 6 | `style_type` | text | E | E |
-| 7 | `content_code` | text | C | C |
-| 8 | `gauge_code` | smallint | D | D |
-| 9 | `whs_code` | text | G | G |
-| 10 | `cc_marker` | text | H | J |
-| 11 | `category` | text | · | H |
-
-### 1.3 Channel flags (3)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 12 | `sell_in_sy` | boolean | K + L | M + N |
-| 13 | `final_finishing_category` | text | J | L |
-| 14 | `shopify_only` | boolean | derived | derived |
-
-### 1.4 Construction and knit (8)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 15 | `construction` | text | N | Q |
-| 16 | `logo_label` | text | P | S |
-| 17 | `details` | text | Q | T |
-| 18 | `lining` | text | R | U |
-| 19 | `total_ends` | text | S | V |
-| 20 | `gauge_full` | text | T | W |
-| 21 | `tension` | text | U | X |
-| 22 | `color_sequence` | text | V | Y |
-
-⚠️ `COMPOSITION & CARE LABEL` is **not** here — it moved to `style_sizes` (§6.1).
-
-### 1.5 Spec, tags and packaging (11)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 23 | `spec` | text | DO | DD |
-| 24 | `hang_tag_instructions` | text | DQ | DF |
-| 25 | `hook_sock_tag` | text | DR | DG |
-| 26 | `bagging_method` | text | DS | DH |
-| 27 | `poly_bag_sticker` | text | DT | DI |
-| 28 | `packing_method` | text | DU | DJ |
-| 29 | `ship_via` | text | DW | DL |
-| 30 | `packing_method_in_box` | text | DX | DM |
-| 31 | `special_customer_order_instructions` | text | DY | DN |
-| 32 | `box_labeling` | text | DZ | DO |
-| 33 | `based_body` | text | EE | DT |
-
-### 1.6 Box (7)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 34 | `box_length_cm` | numeric(8,2) | EA | DP |
-| 35 | `box_depth_cm` | numeric(8,2) | EB | DQ |
-| 36 | `box_height_cm` | numeric(8,2) | EC | DR |
-| 37 | `empty_box_wt_kg` | numeric(8,3) | EI | DX |
-| 38 | `plastic_wt_kg` | numeric(8,3) | EH | DV |
-| 39 | `volumetric_min_kg_full_box` ƒ | numeric(8,3) | EL | EA |
-| 40 | `pct_vol_box_in_20ft` ƒ | numeric(9,6) | HC | GT |
-
-### 1.7 Labour and production rates (30)
-
-The six `price_*` columns are the price of the operation named by the empty
-label column beside them in the sheet (`columns.md` §4.6).
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 41 | `production_vendor` | text | CX | CM |
-| 42 | `minutes_per_pc_prod_line` | numeric(8,2) | CY | CN |
-| 43 | `minutes_per_pc_dev` | numeric(8,2) | CZ | CO |
-| 44 | `minutes_per_pc_with_breakdown` | text | DA | CP |
-| 45 | `price_handknit_crochet_embro` | numeric(12,2) | DD | CS |
-| 46 | `price_lipat_jitet_kancing` | numeric(12,2) | DF | CU |
-| 47 | `price_jitet_emb_to_item` | numeric(12,2) | DH | CW |
-| 48 | `price_pasang_kancing_tali` | numeric(12,2) | DJ | CY |
-| 49 | `price_rumbai` | numeric(12,2) | DL | DA |
-| 50 | `price_crochet_pompom` | numeric(12,2) | DN | DC |
-| 51 | `knitting_price` | numeric(12,2) | FM | FB |
-| 52 | `cek_pola` | numeric(12,2) | FN | FC |
-| 53 | `link` | numeric(12,2) | FO | FD |
-| 54 | `qc_link` | numeric(12,2) | FP | FE |
-| 55 | `finishing` | numeric(12,2) | FQ | FF |
-| 56 | `cleaning_yarn` | numeric(12,2) | FR | FG |
-| 57 | `service_intarsia` | numeric(12,2) | FS | FH |
-| 58 | `sosok` | numeric(12,2) | FT | FI |
-| 59 | `qc_finishing` | numeric(12,2) | FU | FJ |
-| 60 | `label_sewing_logo_content` | numeric(12,2) | FV | FK |
-| 61 | `steam` | numeric(12,2) | FW | FL |
-| 62 | `qc_pre` | numeric(12,2) | FX | FM |
-| 63 | `stamp` | numeric(12,2) | FY | FN |
-| 64 | `cuci_screen` | numeric(12,2) | GA | FP |
-| 65 | `jemur` | numeric(12,2) | GB | FQ |
-| 66 | `qc_final` | numeric(12,2) | GG | FV |
-| 67 | `harga_embroidery` | numeric(12,2) | EZ | EO |
-| 68 | `waktu_embro_menit` | text | FA | EP |
-| 69 | `finishing_bawa_pulang` | numeric(12,2) | EU | EJ |
-| 70 | `waktu_finishing_menit` | text | EV | EK |
-
-### 1.8 Admin and overhead (6)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 71 | `admin_pct` | numeric(7,4) | GI | FX |
-| 72 | `additional_admin` | numeric(12,2) | GJ | FY |
-| 73 | `admin_amount` ƒ | numeric(12,2) | GK | FZ |
-| 74 | `labels_and_tag_cost` | numeric(12,2) | GL | GA |
-| 75 | `packaging_fee` | numeric(12,2) | GQ | GF |
-| 76 | `receiving_cost_bali_sf` | numeric(12,2) | GO | GD |
-
-### 1.9 Duty and customs (10)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 77 | `duty_category` | text | GR | GG |
-| 78 | `tariff_category` | text | GS | GH |
-| 79 | `duty_rate` | numeric(7,4) | GT | GI |
-| 80 | `duty_tax` ƒ | numeric(12,2) | GU | GJ |
-| 81 | `disbursement_fee` ƒ | numeric(12,2) | GV | GK |
-| 82 | `merchandise_processing_fee` ƒ | numeric(12,2) | GW | GL |
-| 83 | `duty_to_usa` ƒ | numeric(12,2) | GX | GM |
-| 84 | `duty_to_canada` ƒ | numeric(12,2) | · | GN |
-| 85 | `customs` | numeric(12,2) | GY | GO |
-| 86 | `outgoing_freight` | numeric(12,2) | HH | GY |
-
-### 1.10 Selling prices (11)
-
-**Measured: prices are style-level** (they vary within a style in only 1% of S27
-styles). The *margins* are size-level and live in `style_sizes` §2.7.
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 87 | `whls_fob_bali` | numeric(12,2) | HP | · |
-| 88 | `whls_line_price` | numeric(12,2) | IA | HG |
-| 89 | `whls_reps` | numeric(12,2) | ID | HJ |
-| 90 | `final_retail_price` | numeric(12,2) | IR | HU |
-| 91 | `final_mark_up` ƒ | numeric(7,4) | IS | HV |
-| 92 | `final_sample_price` | numeric(12,2) | IV | · |
-| 93 | `suggested_retail_x22` ƒ | numeric(12,2) | IL | HS |
-| 94 | `suggested_retail_x225` ƒ | numeric(12,2) | IM | · |
-| 95 | `suggested_retail_x23` ƒ | numeric(12,2) | IN | · |
-| 96 | `similar_repeat_price_note` | text | IB | HL |
-| 97 | `price_final_from_pb` | text | IC | · |
-
-### 1.11 Merchandising and app fields (4)
-
-`collection` **is** in the workbooks — as banner rows, not as a column (§7.2).
-The other three are the app's own.
-
-| # | Column | Type | Source |
-|---|---|---|---|
-| 98 | `collection` | text | **banner rows** — §7.2 |
-| 99 | `sub_group` | text | **new** — self-teaching reference list, no source |
-| 100 | `status` | text NOT NULL DEFAULT 'draft' | `draft`/`active`; F26 banners also carry `HOLD STYLE` / `CANCEL STYLE` (§7.2) |
-| 101 | `photo_url` | text | **new** — server-generated path |
-
-### 1.12 Audit (3)
-
-| # | Column | Type |
+| | New (today) | Old copy (May) |
 |---|---|---|
-| 102 | `created_at` | timestamptz NOT NULL DEFAULT now() |
-| 103 | `updated_at` | timestamptz NOT NULL DEFAULT now() |
-| 104 | `version` | integer NOT NULL DEFAULT 1 |
+| Sheet extent | `A1:IO4766` | `A1:II8438` |
+| Header row | 54 | 54 |
+| Data rows | **4,684** | 8,342 |
+| Styles | **311** | ~416 |
+| Banner rows (collections) | 19 | 25 |
+| Rows per style (avg) | 15.1 | — |
 
-`UNIQUE (season, style_name)` — or `(season, style_number)`, §7.2.
+### 2.1 The 236 columns, by what they really are
 
----
+| Kind | Count | Examples | Where it goes |
+|---|---|---|---|
+| **Formula** | 88 | tolerances, gross kg/box, every labour cost, total cost, duty, freight, landed costs, margins | **computed** in a view — §5 |
+| **Colour slots** | 54 | `C1Y%`, `C1 ENDS`, `COLOR1` … C18 | `colorway_yarns` rows |
+| **Typed input** | 38 | content, gauge, #, description, pcs/box, box dims, admin %, line price, retail, sale | the style tables — §4 |
+| **Empty** | 31 | label captions, worker-name columns, `LOGO LABEL` | dropped |
+| **Constant all season** | 25 | `CONSTRUCTION`=MACHINE KNIT, `TENSION`=LIHAT POLA, `SPEC`, `HANG TAG`, `BAGGING`, `PACKING METHOD`, `SHIP VIA`, `BOX LABELING`, plastic wt 0.06 | `seasons` defaults — typed once, never per style |
 
-## 2. `style_sizes` — 48 columns, ~4 rows per style
+### 2.2 The calculation chain (decoded from the formulas)
 
-Everything here was **measured to vary 100% within a style** unless noted.
-Weight drives cost, so the entire cost chain is per-size.
+```
+TYPED PER STYLE                    SEASON RATES (rows 51-53)        COMPUTED
+───────────────                    ─────────────────────────        ────────
+weight per size (CE, CJ) ───────┬─ × 0.96 / × 1.04 ─────────────▶  low/high tolerance
+                                ├─ + 0.009 × 1.04 ──────────────▶  distribution / pricing wt
+                                └─ × material price per kg ─────▶  raw material cost
+knit minutes (CO) ──────────────── ÷ 60 × 35,061 IDR/h × 1.6 ───▶  knitting cost
+minutes per operation ──────────── ÷ 60 × 35,061 IDR/h × 1.6 ───▶  link, QC, steam, finishing …
+                                                                    ↓ sum ÷ 16,000 IDR/USD
+admin % ────────────────────────── × 24,000 + 10,000 + 2,727 ───▶  TOTAL ALL COSTS (USD)
+box type + pcs/box ─────────────── volumetric ÷ 5,000; ÷ 29.7M cm³▶  gross kg/box, vol kg, sea share
+content code → duty category ───── × 0.29 / 0.285, +2%, +0.35% ─▶  duty USA / Canada
+                                   × 13.91 / 23.04 USD per kg ──▶  DHL / FedEx freight
+                                                                    ↓ sum
+                                                                    6 landed costs
+USA line price (HG) ────────────── × 0.88 commission, × 2.2 ────▶  Canada price, retail, 8 margins
+```
 
-### 2.1 Key (2)
+Every arrow is a formula I read out of the file; §5 lists them.
 
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 1 | `style_id` | bigint REFERENCES styles(id) ON DELETE CASCADE | — | — |
-| 2 | `size` | text NOT NULL | **M** | **none** |
+### 2.3 Lookups hiding in plain sight
 
-`PRIMARY KEY (style_id, size)`. F26 has no size column at all — §7.5.
-
-### 2.2 Label (1)
-
-| # | Column | Type | S27 | F26 | Note |
-|---|---|---|---|---|---|
-| 3 | `composition_care_label` | text | O | R | Varies **98%** — the string embeds the size (`XBIG60CT40AC GREY-XS`) |
-
-### 2.3 Weights (9)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 4 | `pre_component_wt` | numeric(8,4) | CP | CE |
-| 5 | `pc_wt_low_tolerance` | numeric(8,4) | CQ | CF |
-| 6 | `pc_wt_high_tolerance` | numeric(8,4) | CR | CG |
-| 7 | `distribution_wt` | numeric(8,4) | CS | CH |
-| 8 | `wt_for_pricing_info` | numeric(8,4) | CT | CI |
-| 9 | `finished_kgs_item` | numeric(8,4) | CU | CJ |
-| 10 | `finished_low_tolerance` | numeric(8,4) | CV | CK |
-| 11 | `finished_high_tolerance` | numeric(8,4) | CW | CL |
-| 12 | `ws_factory` | numeric(12,2) | EX | EM |
-
-### 2.4 Box fill and volume (7)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 13 | `pcs_per_box` | integer | ED | DS |
-| 14 | `gross_kg_full_box` ƒ | numeric(8,3) | EJ | DY |
-| 15 | `actual_wt_lbs_item` ƒ | numeric(8,4) | EK | DZ |
-| 16 | `volumetric_kg_item` ƒ | numeric(8,4) | EM | EB |
-| 17 | `finished_volumetric_lbs_item` ƒ | numeric(8,4) | EN | EC |
-| 18 | `packing_volume_sf` | numeric(12,4) | IY | IA |
-| 19 | `pct_vol_item_in_20ft` ƒ | numeric(9,6) | HD | GU |
-
-### 2.5 Material and production cost (7)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 20 | `vendor_price` | numeric(12,2) | FJ | EY |
-| 21 | `raw_material_for_price` | numeric(12,2) | FK | EZ |
-| 22 | `raw_materials_by_wt` | numeric(12,2) | FL | FA |
-| 23 | `receiving_cost_bali` | numeric(12,2) | GM | GB |
-| 24 | `receiving_cost_bali_selling` | numeric(12,2) | GN | GC |
-| 25 | `extra_charges_boxes` | numeric(12,2) | GP | GE |
-| 26 | `total_all_costs` ƒ | numeric(12,2) | GH | FW |
-
-### 2.6 Freight and landed cost (12)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 27 | `dhl_air_frt_item` ƒ | numeric(12,2) | GZ | GP |
-| 28 | `dhl_volumetric_air_frt_item` ƒ | numeric(12,2) | HA | GR |
-| 29 | `fedex_canada_volumetric_air_frt` ƒ | numeric(12,2) | · | GQ |
-| 30 | `sea_c_frt_item` ƒ | numeric(12,2) | HE | GV |
-| 31 | `sea_p_frt_item` ƒ | numeric(12,2) | HF | GW |
-| 32 | `fedex_landed_air_cost` ƒ | numeric(12,2) | HI | GZ |
-| 33 | `dhl_landed_volumetric_air_cost` ƒ | numeric(12,2) | HJ | HB |
-| 34 | `canada_landed_volumetric_air_cost` ƒ | numeric(12,2) | · | HA |
-| 35 | `landed_sea_cost` ƒ | numeric(12,2) | HK | HC |
-| 36 | `landed_consolidated_sea_cost` ƒ | numeric(12,2) | HL | HD |
-| 37 | `dhl_landed_vol_air_cost_sy` ƒ | numeric(12,2) | HM | HE |
-| 38 | `dhl_landed_vol_air_cost_sy_2` ƒ | numeric(12,2) | HN | HF |
-
-### 2.7 Margins — size-level because landed cost is (10)
-
-| # | Column | Type | S27 | F26 |
-|---|---|---|---|---|
-| 39 | `air_cost_pct_of_selling_price` ƒ | numeric(7,4) | HB | GS |
-| 40 | `sea_p_cost_pct_of_selling_price` ƒ | numeric(7,4) | HG | GX |
-| 41 | `margin_fob_bali` ƒ | numeric(7,4) | HQ | · |
-| 42 | `vol_air_margin_reps` ƒ | numeric(7,4) | IG | HN |
-| 43 | `sea_margin_line_price` ƒ | numeric(7,4) | II | HQ |
-| 44 | `sea_margin_reps` ƒ | numeric(7,4) | IJ | HR |
-| 45 | `vol_air_margin_retail_x22` ƒ | numeric(12,2) | IO | HT |
-| 46 | `vol_air_margin_retail_x225` ƒ | numeric(12,2) | IP | HW |
-| 47 | `vol_air_margin_retail_x23` ƒ | numeric(12,2) | IQ | HX |
-| 48 | `final_retail_price_override` **?** | numeric(12,2) | — | — |
-
-Column 48 is the §7.4 answer: retail price is style-level for 90–99% of styles,
-so it lives on `styles`, with this nullable override for the minority that
-genuinely price by size. Strike it if you would rather force one price per style.
+- **Content code decides duty, completely.** `Y`, `YPE`, `YE`, `YP`, `PB`, `P` → duty
+  category **446** (grassy, 29%); `C`, `CPE`, `CE`, `CP`, `A` → **345** (cotton,
+  28.5%). No exceptions in any row that has a duty category (32 rows carry `0`).
+  One choice replaces 9 duty columns.
+- **Boxes are a short list.** Rows 51–53 define `DHL 6` 41.7×35.9×36.9 cm /
+  1.32 kg empty, `DHL 7` 48×41×39 / 1.6 kg and `DHL 8` 54.1×44.4×40.9 / 1.9 kg.
+  The data uses DHL 6 (3,643 rows), DHL 7 (984) and an unnamed 43×37×37 (24);
+  DHL 8 is unused. One choice replaces 8 box columns — but see §7 on empty-box
+  weight, which the sheet does **not** take from the box.
+- **Rows 1–32 are a materials price list**: yarns (`NEW GRASSY` code YST,
+  `SMALL COTTON` AC, `COTTON ACRYLIC` CA, `TX`, `POODLE` YP), zippers
+  (`XZIPAB` 30–80 cm) and buttons (`XBP…`), each with IDR price incl. 10% tax
+  and USD price after the 5% VAT-refund reduction. The raw-material formula
+  picks a row by *pointing at it* (`$FA$2`, `$FA$6` …) — an invisible choice
+  that becomes an explicit foreign key.
+- **Yarn colours carry their material in the prefix**: `YST …` (97 colours),
+  `YCA …` (63), `YAC …`, `YP …` — matching the material codes above.
+- **The style code is computed**: an unlabelled column `I` is
+  `CONCATENATE(CAT, SEASON, CONTENT, GAUGE, STYLE, #)` → e.g. `K57Y2W653`. That
+  is also why `CAT`, `SEASON` and `STYLE` are constants: they are code
+  components, not attributes.
+- **Care label = base + size code**: `XBIG76A12M12W …-XS / -SM / -ML / -XL`.
+  Store the base once; the four labels are derived.
+- **Operations are minutes × one hourly rate.** Every labour column is
+  `(minutes ÷ 60) × 35,061.30 × 1.6`. Only the minutes differ per style, and
+  most styles use the standard minutes (cek pola 16, link 26, QC link 5,
+  finishing 23, steam 6, QC pre 6, QC final 5 …).
 
 ---
 
-## 3. `style_colorways` — 6 columns, 1–11 rows per style
+## 3. The shape
 
-| # | Column | Type | S27 | F26 | Note |
-|---|---|---|---|---|---|
-| 1 | `id` | bigserial PRIMARY KEY | — | — | |
-| 2 | `style_id` | bigint REFERENCES styles(id) ON DELETE CASCADE | — | — | |
-| 3 | `ws_tag_color` | text NOT NULL | CL | CB | The colorway name |
-| 4 | `whs_channel` | text | CM | CC | `000`/`SY`/`BOTH`; F26 adds `SO`,`CO`,`CN`. Measured colorway-level (varies 27%) |
-| 5 | `reps_color` | text | CN | CD | |
-| 6 | `sku` | text | · | · | **new** — not in either workbook. §7.3 if it varies by size |
+```
+SEASON SETUP — filled once per season, by one person          ~11 small tables
+  seasons ─┬─ season_rates        the ~35 numbers in rows 51-53
+           ├─ collections         ESSENTIALS, GAME DAY, SPOOKY … (banner rows)
+           ├─ materials           yarns + zippers + buttons, with prices
+           ├─ duty_categories     345 / 446
+           └─ markets             USA, CANADA (S27 had others)
+  content_codes → duty_categories
+  box_types                        DHL 6 / 7 / 8
+  yarn_colors → materials          YCA BREAKER WHITE - 658 …
+  operations                       LINK, QC LINK, STEAM … with standard minutes
+  sizes                            X/S · S/M · M/L · X/L
+
+STYLE DATA — what staff type                                   8 tables
+  styles ─┬─ style_sizes           weight + pcs/box per size
+          ├─ style_colorways ── colorway_yarns
+          ├─ style_operations      only where minutes differ from standard
+          ├─ style_trims           zippers, buttons, stamp
+          ├─ style_market_prices   only where a market price is overridden
+          └─ style_measurements    point-of-measure (PRD; not in the sheet)
+
+COMPUTED — no storage                                          2 views
+  v_sku_costing    one row per style × size × colorway = one IM MASTER row
+  v_im_export      the same, in IM MASTER column order, for sending the IM
+```
+
+---
+
+## 4. Tables and columns
+
+Types: money in IDR is `numeric(14,2)`, USD `numeric(12,4)` (the sheet carries
+4 dp), weights `numeric(8,4)`, rates `numeric(10,6)`. `snake_case` throughout.
+
+### 4.1 Season setup
+
+**`seasons`**
+
+| Column | Type | Source | Note |
+|---|---|---|---|
+| `id` | bigserial PK | | |
+| `code` | text UNIQUE | | `F26`, `S27` |
+| `sheet_code` | smallint | `SEASON` col B | `57` for F26, `58` for S27 — part of the style code |
+| `cat_code` | text | `CAT` col A | `K` |
+| `style_letter` | text | `STYLE` col E | `W` |
+| `default_construction` | text | Q | `MACHINE KNIT` |
+| `default_details`, `default_lining` | text | T, U | `X` |
+| `default_tension` | text | X | `LIHAT POLA` |
+| `default_production_vendor` | text | CM | `WS` |
+| `default_spec` | text | DD | `FINAL ST 1&2` |
+| `default_hang_tag_instructions` | text | DF | |
+| `default_hook_sock_tag` | text | DG | `NO` |
+| `default_bagging_method` | text | DH | `MIX BULK PACKING` |
+| `default_poly_bag_sticker` | text | DI | |
+| `default_packing_method` | text | DJ | `LGHT VAC PACK` |
+| `default_ship_via` | text | DL | `SEA OR AIR OK` |
+| `default_packing_method_in_box` | text | DM | `FLAT` |
+| `default_special_instructions` | text | DN | `AS USUAL. NOTHING SPECIAL` |
+| `default_box_labeling` | text | DO | `BARCODED SHIPPING LABEL` |
+| `is_current` | boolean | | |
+
+Each of these fifteen holds **a single value wherever it is filled** in F26
+(66–99% of rows).
+None has ever been overridden this season, so there is no per-style column for
+them. If a style ever needs a different value, add a nullable override column
+then — adding columns is free (see our earlier discussion).
+
+**`season_rates`** — one row per season; replaces rows 51–53
+
+| Column | F26 value | Used by |
+|---|---|---|
+| `season_id` PK/FK | | |
+| `exchange_rate_idr_usd` | 16,000 | every IDR→USD step |
+| `labour_rate_idr_per_hour` | 35,061.30 | all operations, knitting |
+| `labour_multiplier` | 1.6 | all operations |
+| `special_op_rate_idr_per_hour` | 5,000 | handknit / embro / rumbai ops |
+| `admin_base_idr` | 24,000 | admin = % × base + additional |
+| `additional_admin_idr` | 10,000 | |
+| `labels_tag_cost_idr` | 2,727 | |
+| `packaging_fee_idr` | 5,000 | |
+| `box_charge_idr`, `plastic_charge_idr` | 776.16 / 13,000 | extra charges per box |
+| `plastic_wt_kg` | 0.06 | gross kg per box |
+| `wt_tolerance_low`, `wt_tolerance_high` | 0.96 / 1.04 | tolerances |
+| `pricing_wt_factor` | 1.04 | pricing weight |
+| `distribution_wt_add_kg` | 0.009 | distribution weight |
+| `volumetric_divisor` | 5,000 | volumetric kg |
+| `kg_to_lb` | 2.2046 | |
+| `container_20ft_cm3` | 29,700,000 | sea share per box |
+| `sea_c_rate_usd`, `sea_p_rate_usd` | 10,220.5 / 14,420.5 | sea freight |
+| `dhl_usd_per_kg` | 13.91 | DHL air |
+| `dhl_grassy_usd_per_kg` | 13.91 | DHL volumetric |
+| `fedex_canada_usd_per_kg` | 23.04 | Canada air |
+| `disbursement_pct` | 0.02 | duty USA |
+| `mpf_pct` | 0.0035 | duty USA |
+| `canada_duty_pct` | 0.25 | duty Canada |
+| `customs_usd` | 0.10 | landed |
+| `outgoing_freight_usd` | 0 | landed |
+| `sy_only_dhl_1pc_usd`, `sy_only_dhl_2pc_usd` | 30.15 / 18.11 | SY-only landed |
+| `reps_commission_factor` | 0.88 | after-commission prices |
+| `retail_markup` | 2.2 | suggested / default retail |
+| `target_retail_margin`, `min_retail_margin` | 0.69 / 0.65 | warnings (from notes in row 53) |
+| `target_sea_margin` | 0.70 | warnings |
+| `min_order_pcs` | 18 | from note in row 53 |
+
+Change the exchange rate here and **every cost for every style recomputes**. In
+the sheet that is a fill-down across 4,684 rows and a hope that nothing was
+pasted as a value.
+
+**`collections`** — `id`, `season_id`, `name`, `sort_order`.
+F26: `ESSENTIALS`, `WINTER BEACH`, `GAME DAY`, `FALL BABE`, `SPOOKY`, `COZY`,
+`THANKSGIVING`/`FALL`, `CHRISTMAS`, `SKI SNOW`, `LUXE`, `WS COLLECTION`,
+`SPECIAL ORDER & CUSTOM ORDER`. The material banners (`COTTON`, `GRASSY`) and
+the material half of `COZY - GRASSY` / `CHRISTMAS COTTON` are **not**
+collections — they are derivable from the content code. ⚠️ The first block
+(748 rows) is closed by a lone `COTTON` banner with no collection label; by the
+S27 pattern it is cotton `ESSENTIALS`. Worth confirming.
+
+**`content_codes`** — `code` PK (`Y`, `C`, `YPE`, `CPE`, `YE`, `CE`, `PB`, `A`,
+`YP`, `CP`, `P`), `description`, `material_family` (`GRASSY`/`COTTON`),
+`duty_category_id`.
+
+**`duty_categories`** — `id`, `season_id`, `code` (345 / 446), `tariff_code`
+(`6110.20.2020` / `6110.30.1520`), `usa_duty_rate` (0.285 / 0.29),
+`declared_value_usd` (col GD: 21.30 / 21.15).
+
+**`box_types`** — `id`, `code` (`DHL 6/7/8`), `length_cm`, `depth_cm`,
+`height_cm`, `empty_box_wt_kg`.
+
+**`materials`** — `id`, `season_id`, `code` (`YST`, `AC`, `CA`, `TX`, `YP`,
+`M` …), `name`, `kind` (`yarn`/`zipper`/`button`/`stamp`), `unit`
+(`kg`/`pcs`), `exchange_rate`, `price_idr` (incl. 10% tax), `price_usd`
+(after 5% VAT-refund reduction).
+
+**`yarn_colors`** — `id`, `material_id`, `prefix` (`YCA`), `name`
+(`BREAKER WHITE`), `color_code` (`658`). Unique on (prefix, name, code).
+Self-teaching: a colour typed once is offered next time.
+
+**`operations`** — `id`, `code`, `name` (`CEK POLA`, `LINK`, `QC LINK`,
+`FINISHING`, `CLEANING YARN`, `SERVICE INTARSIA`, `SOSOK`, `QC FINISHING`,
+`LABEL SEWING`, `STEAM`, `QC PRE`, `EMBRO/STAMP`, `CUCI SCREEN`, `JEMUR`,
+`QC FINAL`), `default_minutes`, `rate_basis` (`standard`/`special`),
+`applies_by_default` (boolean), `sort_order`.
+
+**`sizes`** — `code` PK (`X/S`…), `label_suffix` (`XS`, `SM`, `ML`, `XL`),
+`sort_order`.
+
+**`markets`** — `id`, `season_id`, `code` (`USA`, `CANADA`), `pricing_rule`
+(`input` / `usa_plus_landed_variance_rounddown`), `commission_factor`.
+Kept because S27 priced to Diverse / EFSN / Ellis and F26 to USA / Canada —
+markets change between seasons.
+
+### 4.2 Style data — what staff actually type
+
+**`styles`** — one row per style per season
+
+| Column | Type | Source | Note |
+|---|---|---|---|
+| `id` | bigserial PK | | |
+| `season_id` | FK | | |
+| `collection_id` | FK | banner rows | |
+| `style_number` | integer | `#` F | 100% filled — but **not unique**, see below |
+| `style_name` | text | `DESCRIPTION` K | without size / channel suffixes |
+| `status` | text | | `draft` / `active` / `hold` / `cancel` |
+| `content_code` | FK | C | drives duty and material family |
+| `gauge` | smallint | `GAUCE` D | 1–9; part of the style code |
+| `whs_code` | text | G | `-000` / `-003` |
+| `print_placement` | text | `CATEGORY` H | `A (front only)` / `B (back only)` / `C (front & back)` |
+| `cc_marker` | text | J | `CC-M` / `CC` / `CC-M - PB` |
+| `final_finishing_category` | text | L | `FAF` / `FAH` |
+| `total_ends` | text | V | |
+| `gauge_detail` | text | W | `3B + 3GG` |
+| `care_label_base` | text | R | per-size labels derived |
+| `based_body` | text | DT | `Palomina Crew` |
+| `material_id` | FK | the `$FA$n` pointer | yarn price used for raw material |
+| `box_type_id` | FK | DP/DQ/DR | |
+| `knit_minutes_dev` | numeric(8,2) | CO | |
+| `knit_minutes_breakdown` | text | CO formula | e.g. `(9*2)+2+(44+8+2.5)+(19+1)+(3+0.5)` — kept for traceability |
+| `admin_pct` | numeric(6,4) | `ADMIN %` FX | 6 distinct values |
+| `finishing_home_price_idr` | numeric(14,2) | EJ | |
+| `finishing_home_minutes` | numeric(8,2) | EK | |
+| `embroidery_price_idr` | numeric(14,2) | EO | |
+| `embroidery_minutes` | numeric(8,2) | EP | |
+| `whls_line_price_usd` | numeric(12,2) | HG | **the one price everything else keys off** |
+| `final_retail_price_usd` | numeric(12,2) | HU | 97% typed; NULL → `ROUNDUP(line × 2.2)` |
+| `final_sale_price_usd` | numeric(12,2) | HY | NULL where the sheet says N/A |
+| `similar_repeat_price_note` | text | HL | |
+| `photo_url` | text | — | PRD |
+| `notes` | text | — | |
+| `created_at`, `updated_at` | timestamptz | | |
+| `version` | integer | | optimistic locking |
+
+**Key: the surrogate `id`, not `style_number`.** In the live file `#99` is used
+by two different styles (`FOOTBALL BACK ZIP CARDI CHUNKY` and
+`TUCK CABLE BOYFRIEND CREW CHUNKY`), and five styles carry two numbers each —
+`AUTUMN LEAF CREW CHUNKY` (646, 980), `JAXON FAIR ISLE RAGLAN CHUNKY` (488, 753),
+`PUMPKIN FAIR ISLE CREW CHUNKY` (146, 975), `CHIN-CHIN CREW CHUNKY` (183, 978),
+`WONDERFUL CHRISTMAS CREW CHUNKY` (635, 747). `UNIQUE (season_id, style_number)`
+would reject real rows today. Add it once those six are resolved (§8).
+
+**`style_sizes`**
+
+| Column | Type | Source |
+|---|---|---|
+| `style_id` | FK | |
+| `size` | FK → sizes | DESCRIPTION suffix |
+| `pre_component_wt_kg` | numeric(8,4) | CE |
+| `finished_wt_kg` | numeric(8,4) | CJ |
+| `pcs_per_box` | smallint | DS |
+
+`PRIMARY KEY (style_id, size)`. The sheet sometimes grades weights from the base
+size (`× 1.1` up, `× 0.92` down) and sometimes types them. Store the weights; let
+the UI offer "grade from base size" as a shortcut.
+
+**`style_colorways`**
+
+| Column | Type | Source |
+|---|---|---|
+| `id` | bigserial PK | |
+| `style_id` | FK | |
+| `ws_tag_color` | text | CB |
+| `whs_channel` | text | CC — `000` / `SY` / `SO` / `CO` / `CN` |
+| `reps_color` | boolean | CD |
+| `color_sequence` | text | Y — varies by colorway |
+| `sell_restriction` | text | N — `NO XL - HEAVY`, `NO - SY - HEAVY` |
+| `sort_order` | smallint | |
 
 `UNIQUE (style_id, ws_tag_color)`
 
----
+**`colorway_yarns`** — `colorway_id`, `slot` (1–18), `yarn_color_id`,
+`percent`, `ends`. `PRIMARY KEY (colorway_id, slot)`. Replaces 54 columns.
 
-## 4. `colorway_yarns` — 5 columns, 1–21 rows per colorway
+**`style_operations`** — `style_id`, `operation_id`, `minutes`,
+`colorway_id` (NULL = all colorways). **Only rows that differ from the
+operation's standard minutes**, or add an operation the style doesn't normally
+get (embro/stamp, cuci screen, intarsia). Most styles need none.
 
-Replaces 63 spreadsheet columns (`C1Y%`…`COLOR21`).
+**`style_trims`** — `style_id`, `material_id` (zipper/button/stamp),
+`qty_per_piece`. Feeds raw material cost.
 
-| # | Column | Type | Source | Note |
-|---|---|---|---|---|
-| 1 | `colorway_id` | bigint REFERENCES style_colorways(id) ON DELETE CASCADE | — | |
-| 2 | `slot` | smallint NOT NULL | position | 1–21 |
-| 3 | `color` | text NOT NULL | `COLOR{n}` | `YCA BREAKER WHITE - 658` |
-| 4 | `percent` | numeric(7,4) | `C{n}Y%` | Source is a **fraction** (`0.8677`) — §7.6 |
-| 5 | `ends` | numeric(5,2) | `C{n} ENDS` | |
+**`style_market_prices`** — `style_id`, `market_id`, `line_price_usd`.
+**Override only**; Canada is otherwise computed as
+`ROUNDDOWN(USA line + landed-cost variance)`, exactly as the sheet does in 69%
+of rows.
 
-`PRIMARY KEY (colorway_id, slot)`
-
----
-
-## 5. `style_prices` — 9 columns, 2–3 rows per style
-
-The market set differs completely between seasons, so markets are rows.
-
-| # | Column | Type | Note |
-|---|---|---|---|
-| 1 | `style_id` | bigint REFERENCES styles(id) ON DELETE CASCADE | |
-| 2 | `market` | text NOT NULL | `DIVERSE`·`EFSN`·`ELLIS` (S27) · `USA`·`CANADA` (F26) |
-| 3 | `fob_price` | numeric(12,2) | S27 HR / HU / HX |
-| 4 | `ws_margin` | numeric(7,4) | S27 HS / HV / HY |
-| 5 | `discount_pct` | numeric(7,4) | S27 HT / HW / HZ |
-| 6 | `line_price` | numeric(12,2) | F26 HG (USA) / HI (Canada) |
-| 7 | `line_price_after_reps_commission` | numeric(12,2) | F26 HJ / HK |
-| 8 | `vol_air_margin_line_price` | numeric(7,4) | F26 HM / HO |
-| 9 | `reps_commission` | numeric(7,4) | S27 HO · F26 HN / HP |
-
-`PRIMARY KEY (style_id, market)`
+**`style_measurements`** — `style_id`, `size`, `point`, `value_cm`. From the
+PRD; not in the sheet.
 
 ---
 
-## 6. `style_measurements` — 4 columns, point × size — **not from the workbooks**
+## 5. Computed — `v_sku_costing`
 
-`prd.md` §7 lists point-of-measure values per size as a v1 must-have. No such
-column exists in either IM MASTER file — measurements live in the spec/tech pack,
-not here. Modelled as a tall table so the grid is sparse by nature.
+One row per style × size × colorway — the same grain as an IM MASTER row — built
+from the inputs and `season_rates`. Every column below is a formula read from
+the file:
 
-| # | Column | Type | Note |
-|---|---|---|---|
-| 1 | `style_id` | bigint REFERENCES styles(id) ON DELETE CASCADE | |
-| 2 | `size` | text NOT NULL | Must exist in `style_sizes` |
-| 3 | `point` | text NOT NULL | `CHEST`, `BODY LENGTH`, `SLEEVE` … |
-| 4 | `value_cm` | numeric(6,2) | |
+| Output | Formula (sheet column) |
+|---|---|
+| `style_code` | cat ‖ sheet_code ‖ content ‖ gauge ‖ letter ‖ number (I) |
+| `description` | name ‖ ` - ` ‖ size ‖ channel suffix (K) |
+| `care_label` | base ‖ `-` ‖ size suffix (R) |
+| tolerances | weight × 0.96 / × 1.04 (CF, CG, CK, CL) |
+| `distribution_wt` | pre-component + 0.009 (CH) |
+| `pricing_wt` | distribution × 1.04 (CI) |
+| `gross_kg_full_box` | pcs × finished + empty box + pcs × plastic (DY) |
+| `lbs_per_item` | gross ÷ pcs × 2.2046 (DZ) |
+| volumetric kg / lbs | L×D×H ÷ 5000, vs gross (EA, EB, EC) |
+| `raw_material_idr` | distribution wt × material price + trims (FA) |
+| `knitting_idr` | minutes ÷ 60 × rate × 1.6 (FB) |
+| each operation | minutes ÷ 60 × rate × 1.6 (FC–FV) |
+| `total_all_costs_usd` | Σ FA…FV ÷ exchange rate (FW) |
+| `admin_idr` | admin % × 24,000 + 10,000 (FZ) |
+| `receiving_cost_usd` | (vendor + admin + labels) ÷ exchange (GB, GC) |
+| extra charges | pcs/4 × box charge + plastic ÷ pcs (GE) |
+| duty USA | declared × rate + 2% + 0.35% (GJ–GM) |
+| duty Canada | declared × 25% (GN) |
+| freight | DHL / FedEx / sea (GP–GW) |
+| 6 landed costs | receiving + extras + packaging + duty + customs + freight (GZ–HF) |
+| Canada line price | ROUNDDOWN(USA + variance) unless overridden (HI) |
+| after-commission prices | × 0.88 (HJ, HK) |
+| suggested retail | line × 2.2 (HS) |
+| 8 margins | 1 − landed ÷ price (HM–HX) |
+| `below_target` | margin < target from `season_rates` |
 
-`PRIMARY KEY (style_id, size, point)`
+A plain view is enough — 4,684 rows is nothing for Postgres. Materialize it only
+if it ever gets slow.
+
+`v_im_export` reorders the same columns into IM MASTER layout, so producing the
+file for Paola is a query, not a copy-paste-and-delete (§6).
+
+**How we know the view is right:** before it replaces anything, compute it for
+20 real F26 styles and diff every output against the sheet's own values. They
+must match to the cent. If one doesn't, the formula table above is wrong and we
+find out on day one.
 
 ---
 
-## 7. What changed from `columns.md`
+## 6. What this buys
 
-Four placements moved once every column was variance-tested rather than reasoned
-about. All four moved **to the more granular table**, which is the safe direction
-(a child→parent move loses data; parent→child does not).
-
-| Column | Was | Now | Evidence |
-|---|---|---|---|
-| `composition_care_label` | `styles` | `style_sizes` | Varies **98%** — the label embeds the size (`…GREY-XS`) |
-| `packing_volume_sf` | `styles` | `style_sizes` | Varies **100%** |
-| `ws_factory` | `styles` | `style_sizes` | Varies **100%** |
-| `extra_charges_boxes` | `styles` | `style_sizes` | Varies **100%** |
-
-And one rule emerged that `columns.md` did not state: **selling prices are
-style-level, margins are size-level.** The price is one number for the style;
-the margin depends on which size's landed cost you measure it against. That is
-why §1.10 and §2.7 are separate blocks.
-
-### 7.1 The workbooks do not hold everything the app needs
-
-Building the list from the two files made it faithful to the source — and
-therefore silent about everything the source never had. Searching all 288
-headers found **no** column for any of these:
-
-| Missing | Now | Evidence |
+| | Sheet | Database |
 |---|---|---|
-| ~~Collection~~ | `styles.collection` | **Correction — it is in the files, as banner rows. See §7.2** |
-| Sub group | `styles.sub_group` | as above |
-| Status (draft/active) | `styles.status` | No `STATUS`/`ACTIVE`/`DRAFT` header |
-| Style photo | `styles.photo_url` | No `PHOTO`/`IMAGE`/`SKETCH` header |
-| SKU | `style_colorways.sku` | No `SKU`/`BARCODE`/`UPC` header |
-| Point-of-measure | `style_measurements` | No `CHEST`/`SLEEVE`/`LENGTH`/`POM` header |
+| Values per style | ~15 rows × 236 cols ≈ **3,500 cells** | roughly **60–80 typed values** |
+| Change the exchange rate | fill-down over 4,684 rows | edit **one** number |
+| Duty for a new style | copy 9 columns from a similar row | pick the content code |
+| Box | type 3 dimensions, copy 5 derived columns | pick `DHL 6/7/8` |
+| Yarn price used | a hidden `$FA$n` pointer in a formula | a visible FK |
+| Labour | 15 columns of formulas per row | standard minutes, override the exceptions |
+| Colours | 54 columns, mostly blank | one row per yarn |
+| Collection | position under a banner row | a field that can't drift |
+| Sending the IM | delete rows marked "(Delete this when sending IM to Paola)" | `v_im_export WHERE status = 'active'` |
+| Margin below target | read a note in row 53 | flagged per SKU |
 
-All six are in `prd.md` §7 as v1 requirements, and all six were in the previous
-app's schema — where they were also empty, because its Excel extractor had
-nothing to fill them from either.
-
-### 7.2 Collection lives in **banner rows**
-
-Corrects §7.1. Collection is in both workbooks — as a horizontal divider, which
-is why a column search missed it.
-
-**A banner row** is a row where the DESCRIPTION cell holds a label and **every
-other column contains a literal `X`** — 252 of 255 columns in S27. That is also
-the source of the stray `x`/`X` values that showed up as text samples inside
-otherwise-numeric columns throughout `columns.md`.
-
-**The banner closes the block above it.** Proven three ways:
-
-1. Style names run **alphabetically A→Z within each block and restart** after
-   every banner: rows 58–1590 go `ALEX` → `WRAP CARDIGAN`, then the banner, then
-   1593–2032 restart at `ALIANA` → `VALERIE`.
-2. The block ending at the `EASTER` banner (r2278) contains
-   `HIP HARE PRINTED CREW COTTON` — a rabbit.
-3. The largest block, 1,533 rows, closes with `ESSENTIALS` — the core
-   year-round line.
-
-**Banners come in groups of one to three**, and the labels are of three kinds:
-
-| Kind | Examples | Maps to |
-|---|---|---|
-| Material | `COTTON`, `GRASSY`, `COTTON & GRASSY` | already held in `content_code` (#7) |
-| **Collection** | `ESSENTIALS`, `SPRING ONE`, `EASTER`, `SAIL AWAY`, `AMERICANA`, `BEACH`, `SUMMER`, `WINTER BEACH`, `GAME DAY`, `SPOOKY`, `THANKSGIVING`, `CHRISTMAS COTTON`, `SKI SNOW`, `LUXE`, `CHEERS!`, `WHISKEY WEATHER`, `YEAR ROUND` | **`styles.collection`** |
-| Status | `HOLD STYLE`, `CANCEL STYLE` | `styles.status` (#100) |
-
-S27 has **15 banner rows** over 4,048 data rows; F26 has **25** over 8,342.
-The material banner is optional — `SPRING DAYS` and `EASTER` stand alone.
-
-**Import rule, when we get there:** walk the sheet downward; a data row belongs
-to the label of the next banner group **below** it. Take the non-material,
-non-status label from the group as the collection. This is a rule to apply at
-import, not a parse of any single cell — and it is why the collection values
-must be *carried in a column* in our schema rather than reconstructed later.
-
-⚠️ Two consequences worth noting. The banner rows must be **excluded from the
-data** on import (they are 15 and 25 rows of pure `X`). And a style's collection
-is positional in the sheet — move a row and you change its collection, with
-nothing to flag it. In our table it becomes an explicit value that cannot drift.
-
-⚠️ **Related correction.** §1.1 says `style_name` is `DESCRIPTION` with the size
-suffix stripped. That is not enough — the suffix chain runs up to three
-segments: `AIX FAIR ISLE CREW COTTON - M/L - 000 ONLY - FAH`. It only matters if
-we ever import, but the note was wrong as written.
+For the entry screen specifically: of the ~30 fields on `styles`, most default
+sensibly (season, collection carried from the last style entered, standard
+operations, box type from pcs/box). The honest minimum to create a costed style
+is **name, number, content, gauge, box, one weight per size, pcs/box, colorways
+with yarns, and the USA line price**.
 
 ---
 
-## 8. Still open — these block the migration
+## 7. Problems in the sheet the schema fixes
 
-| § | Question | Recommendation |
-|---|---|---|
-| 7.1 | Store the **58 ƒ columns** (formula results), or omit them? | Store as entered. The app records the numbers; it does not compute them. |
-| 7.2 | Key on `(season, style_name)` or `(season, style_number)`? | `style_number`, but F26's is only 90% filled — 10% of rows have none |
-| 7.3 | `season`: store the label (`S27`), the code (`58`), or both? | Label; the code means nothing outside the sheet |
-| 7.4 | Retail price by size? | `styles` + the nullable `style_sizes` override (col 48) |
-| 7.5 | Sizes: fixed list or free text? | Fixed — `X/S · S/M · M/L · X/L` are the only real ones in either file |
-| 7.6 | Yarn percent: fraction (`0.8677`) or percent (`86.77`)? | Percent — it is what a person types |
-| 7.7 | `style_prices` as rows, or flat columns? | Rows |
-| 7.8 | Is `sku` per colorway, or per colorway **and size**? | Per colorway. If it is per size it needs a `colorway_sizes` table — ask before building one |
-| 7.9 | Are `collection` / `sub_group` the right two levels? | They match the previous app. Confirm the names mean what staff expect |
-
-**None of these are hard to change later except 7.1 and 7.4**, which decide
-whether data gets *captured* at all. The rest are renames and conversions.
+- **External workbook link.** `TARIFF CATEGORY` is `=[1]F26!GE$8` — a reference
+  to *another file*. Move or rename it and every tariff breaks. Here it is a
+  lookup.
+- **Broken formula.** `PCS/ BOX` (DU) contains `16+(16*#REF!)`.
+- **Subtotal rows inside the data** — e.g. r1796 `SUBTOTAL(1,CE1763:CE1794)`.
+  Like banner rows, these would import as fake styles.
+- **Junk in colour slots** — `COLOR1` includes `155.5`, `176`, `302`, `TBD`, `X`.
+  An FK to `yarn_colors` rejects these.
+- **Inconsistent weight grading** — `× 1.1` in some styles, `× 0.92` in others,
+  typed in the rest.
+- **Invisible material choice** — the `$FA$n` pointer (§2.3).
+- **Empty-box weight ignores the box.** `EMPTY BOX WT` is `=$DY$15` — one fixed
+  cell — whatever box the style uses. So the 48 cm box is costed at **1.32 kg in
+  971 of 972 rows**, although row 53 lists it at **1.6 kg**. That under-states
+  gross weight, and with it freight, for about a fifth of F26. Either the sheet is
+  wrong or the 1.6 is stale — see §8.
+- **Mixed box dimensions** — 12 rows use 48 × 35.9 × 36.9: the big box's length
+  with the small box's depth and height. A `box_types` FK makes that impossible.
+- **`#` reused** — one number, two styles (§4.2).
+- **The 31 empty columns** — labour captions and eleven worker-name columns.
 
 ---
 
-## 9. Totals
+## 8. Needs your yes before I write the migration
 
-| Table | Columns | Rows per style | New fields |
-|---|---|---|---|
-| `styles` | 104 | 1 | 3 + 1 derived |
-| `style_sizes` | 48 | ~4 | — |
-| `style_colorways` | 6 | 1–11 | 1 |
-| `colorway_yarns` | 5 | 1–21 per colorway | — |
-| `style_prices` | 9 | 2–3 | — |
-| `style_measurements` | 4 | point × size | 4 |
-| **Total** | **176** | | **8 + 1** |
+| # | Question | My recommendation |
+|---|---|---|
+| 1 | **Compute** the 88 formula columns in a view instead of storing them? | **Yes.** Reverses v1 §8.1, for the reasons in §1 |
+| 2 | Fifteen season-constant fields on `seasons` only, no per-style override yet? | Yes — add overrides when a style first needs one |
+| 3 | Material cost uses **one** material price per style, as the sheet does? | Yes for parity. A blend weighted by yarn % is more accurate but will not match the sheet — later, if wanted |
+| 4 | `style_operations` stores **exceptions only**? | Yes |
+| 5 | Key on `style_number`? | **Not yet** — surrogate `id` until `#99` and the five double-numbered styles are resolved (§4.2) |
+| 6 | Keep `markets` for USA/Canada (and S27's Diverse/EFSN/Ellis)? | Yes — markets change between seasons |
+| 7 | Build the 20-style golden test (§5) before any UI? | Yes. It is what makes "compute" safe |
+| 8 | Empty-box weight: take it from the box (1.6 kg for DHL 7), or copy the sheet's fixed 1.32? | From the box — but it **changes freight and margins for ~970 rows**, so the golden test must use DHL 6 styles until this is decided |
 
-Two different sources:
-
-- **167 columns come from the workbooks** — kept out of 288 in the union, with
-  121 dropped as labels, worker names, stale notes and duplicates
-  (`columns.md` §7).
-- **1 column comes from banner rows, not a column** — `collection` (§7.2).
-- **8 columns have no source in either file** — `sub_group`, `status`,
-  `photo_url`, `sku`, and the whole `style_measurements` table. They are
-  requirements from `prd.md` §7 that IM MASTER never recorded (§7.1).
+Items 1, 3 and 8 are the ones that change numbers people see. The rest can be
+revised later without losing data.

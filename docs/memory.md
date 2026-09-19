@@ -52,6 +52,33 @@ do not inherit the schema**).
 
 ## 3. Checkpoint log
 
+### 2026-09-19 — Checkpoint 2: schema v2 — store inputs, compute the rest
+
+Re-read the **live** `F26 IM MASTER.xlsx` (Google Sheets export saved into this
+folder; 4,684 data rows / 311 styles, about half the May copy). This time read
+which cells are formulas. Of 236 columns: **88 formula, 54 colour slots, 38 typed,
+31 empty, 25 constant all season.** The formulas are plain arithmetic over the
+typed inputs and ~35 rate cells in rows 51–53 (exchange rate 16,000, labour
+35,061 IDR/h × 1.6, DHL 13.91 USD/kg, duty 29% / 28.5% …).
+
+**Direction change:** compute the 88 formula columns in a view
+(`v_sku_costing`) instead of storing them. Reverses `columns.md` §8.1. Rates move
+to `season_rates`; the 15 season-constant text fields to `seasons`. See
+`schema.md` v2.
+
+Found along the way: content code fully determines duty category; boxes are a
+3-item list; rows 1–32 are a materials price list (yarns, zippers, buttons);
+the style code is `CONCATENATE(CAT,SEASON,CONTENT,GAUGE,STYLE,#)`.
+
+**Not safe yet:** `#` as a key (`#99` = two styles; five styles have two
+numbers). Empty-box weight is a fixed cell, so the 48 cm box is costed at
+1.32 kg in 971 rows vs 1.6 kg in row 53 — decision needed before the golden test.
+
+**Next step:** answers to `schema.md` §8, then the migration and the 20-style
+golden test (computed view vs the sheet's own values, to the cent).
+
+---
+
 ### 2026-09-10 — Checkpoint 1: doc set written, project scoped
 
 Nine documents written into `docs/`, following the convention established in
