@@ -136,13 +136,73 @@ COMPUTED — no storage                                          2 views
 Types: money in IDR is `numeric(14,2)`, USD `numeric(12,4)` (the sheet carries
 4 dp), weights `numeric(8,4)`, rates `numeric(10,6)`. `snake_case` throughout.
 
+### 4.0 Keys — one rule for every table
+
+**Every table has its own primary key:**
+
+```sql
+id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY
+```
+
+The database assigns it, nobody types it, it never changes and it means nothing.
+**Every foreign key points at an `id`** — never at a style name, `#`, style
+code, SKU, colour name or lookup code.
+
+Everything people *read* as an identifier is an ordinary column: editable,
+indexed for search, and `UNIQUE` only where the data proves it is safe.
+
+**Why this matters here specifically.** Every business identifier in the sheet
+has already changed or collided:
+
+| Identifier | Problem in the live F26 |
+|---|---|
+| Style name | Suffixes vary (`- X/S - 000 ONLY - FAH`); typos get corrected |
+| `#` | `#99` is two styles; five styles have two numbers (§4.2) |
+| Style code / SKU (`K57Y2W653`) | Built from content + gauge + `#`, so it changes whenever any of those is corrected |
+| Colour name | Free text, re-spelled between seasons |
+
+With a surrogate key, renumbering `AUTUMN LEAF` from 646 to 980, fixing a name,
+or regenerating the style code is **one `UPDATE` on one row**. Sizes, colorways,
+yarns, operations and prices keep pointing at the same `id`. With a natural key
+the same change has to cascade through every child table, or it breaks them.
+
+**`bigint`, not UUID.** Smaller, faster, and readable — "style 1042" in a log or a
+conversation. UUIDs earn their cost when IDs must be created outside the
+database (offline entry, merging two databases); neither applies here.
+
+**A reference staff can quote.** The UI shows the id as **`IM-1042`**, so there is
+a stable way to say "that style" even while its `#` or name is being fixed. It is
+display formatting of `id`, not a stored column.
+
+**Natural identity becomes a constraint, not the key:**
+
+| Table | Unique on | Note |
+|---|---|---|
+| `styles` | *nothing yet* | plain indexes on `style_number`, `style_name`; see §4.2 |
+| `style_sizes` | `(style_id, size_id)` | |
+| `style_colorways` | `(style_id, ws_tag_color)` | |
+| `colorway_yarns` | `(colorway_id, slot)` | |
+| `style_operations` | `(style_id, operation_id, colorway_id)` `NULLS NOT DISTINCT` | Postgres 15+; a NULL colorway means "all colorways" and must not duplicate |
+| `style_trims` | `(style_id, material_id)` | |
+| `style_market_prices` | `(style_id, market_id)` | |
+| `style_measurements` | `(style_id, size_id, point)` | |
+| `season_rates` | `(season_id)` | one rate row per season |
+| `seasons` | `(code)` | |
+| `collections`, `materials`, `markets`, `duty_categories` | `(season_id, code or name)` | per season |
+| `sizes`, `content_codes`, `box_types`, `operations` | `(code)` | |
+| `yarn_colors` | `(prefix, name, color_code)` | |
+
+`GENERATED ALWAYS` also means an import cannot slip in its own ids by accident —
+Postgres rejects a supplied `id` unless the insert deliberately says
+`OVERRIDING SYSTEM VALUE`.
+
 ### 4.1 Season setup
 
 **`seasons`**
 
 | Column | Type | Source | Note |
 |---|---|---|---|
-| `id` | bigserial PK | | |
+| `id` | bigint identity PK | | §4.0 |
 | `code` | text UNIQUE | | `F26`, `S27` |
 | `sheet_code` | smallint | `SEASON` col B | `57` for F26, `58` for S27 — part of the style code |
 | `cat_code` | text | `CAT` col A | `K` |
@@ -173,7 +233,8 @@ then — adding columns is free (see our earlier discussion).
 
 | Column | F26 value | Used by |
 |---|---|---|
-| `season_id` PK/FK | | |
+| `id` | | §4.0 |
+| `season_id` | | FK, `UNIQUE` — one rate row per season |
 | `exchange_rate_idr_usd` | 16,000 | every IDR→USD step |
 | `labour_rate_idr_per_hour` | 35,061.30 | all operations, knitting |
 | `labour_multiplier` | 1.6 | all operations |
@@ -219,8 +280,8 @@ collections — they are derivable from the content code. ⚠️ The first block
 (748 rows) is closed by a lone `COTTON` banner with no collection label; by the
 S27 pattern it is cotton `ESSENTIALS`. Worth confirming.
 
-**`content_codes`** — `code` PK (`Y`, `C`, `YPE`, `CPE`, `YE`, `CE`, `PB`, `A`,
-`YP`, `CP`, `P`), `description`, `material_family` (`GRASSY`/`COTTON`),
+**`content_codes`** — `id`, `code` UNIQUE (`Y`, `C`, `YPE`, `CPE`, `YE`, `CE`,
+`PB`, `A`, `YP`, `CP`, `P`), `description`, `material_family` (`GRASSY`/`COTTON`),
 `duty_category_id`.
 
 **`duty_categories`** — `id`, `season_id`, `code` (345 / 446), `tariff_code`
@@ -245,7 +306,7 @@ Self-teaching: a colour typed once is offered next time.
 `QC FINAL`), `default_minutes`, `rate_basis` (`standard`/`special`),
 `applies_by_default` (boolean), `sort_order`.
 
-**`sizes`** — `code` PK (`X/S`…), `label_suffix` (`XS`, `SM`, `ML`, `XL`),
+**`sizes`** — `id`, `code` UNIQUE (`X/S`…), `label_suffix` (`XS`, `SM`, `ML`, `XL`),
 `sort_order`.
 
 **`markets`** — `id`, `season_id`, `code` (`USA`, `CANADA`), `pricing_rule`
@@ -259,7 +320,7 @@ markets change between seasons.
 
 | Column | Type | Source | Note |
 |---|---|---|---|
-| `id` | bigserial PK | | |
+| `id` | bigint identity PK | | §4.0 |
 | `season_id` | FK | | |
 | `collection_id` | FK | banner rows | |
 | `style_number` | integer | `#` F | 100% filled — but **not unique**, see below |
@@ -293,25 +354,28 @@ markets change between seasons.
 | `created_at`, `updated_at` | timestamptz | | |
 | `version` | integer | | optimistic locking |
 
-**Key: the surrogate `id`, not `style_number`.** In the live file `#99` is used
-by two different styles (`FOOTBALL BACK ZIP CARDI CHUNKY` and
-`TUCK CABLE BOYFRIEND CREW CHUNKY`), and five styles carry two numbers each —
-`AUTUMN LEAF CREW CHUNKY` (646, 980), `JAXON FAIR ISLE RAGLAN CHUNKY` (488, 753),
-`PUMPKIN FAIR ISLE CREW CHUNKY` (146, 975), `CHIN-CHIN CREW CHUNKY` (183, 978),
-`WONDERFUL CHRISTMAS CREW CHUNKY` (635, 747). `UNIQUE (season_id, style_number)`
-would reject real rows today. Add it once those six are resolved (§8).
+**Key: `id`, per §4.0 — never `style_number`, name or style code.** None of the
+three is unique in the live file. `#99` is used by two different styles
+(`FOOTBALL BACK ZIP CARDI CHUNKY` and `TUCK CABLE BOYFRIEND CREW CHUNKY`), and
+five styles carry two numbers each — `AUTUMN LEAF CREW CHUNKY` (646, 980),
+`JAXON FAIR ISLE RAGLAN CHUNKY` (488, 753), `PUMPKIN FAIR ISLE CREW CHUNKY`
+(146, 975), `CHIN-CHIN CREW CHUNKY` (183, 978), `WONDERFUL CHRISTMAS CREW CHUNKY`
+(635, 747). `style_number` and `style_name` get plain (non-unique) indexes for
+search. A `UNIQUE (season_id, style_number)` *validation* can be added once those
+six are resolved — but even then it is a data-quality rule, not the key.
 
 **`style_sizes`**
 
 | Column | Type | Source |
 |---|---|---|
+| `id` | bigint identity PK | §4.0 |
 | `style_id` | FK | |
-| `size` | FK → sizes | DESCRIPTION suffix |
+| `size_id` | FK → sizes | DESCRIPTION suffix |
 | `pre_component_wt_kg` | numeric(8,4) | CE |
 | `finished_wt_kg` | numeric(8,4) | CJ |
 | `pcs_per_box` | smallint | DS |
 
-`PRIMARY KEY (style_id, size)`. The sheet sometimes grades weights from the base
+`UNIQUE (style_id, size_id)`. The sheet sometimes grades weights from the base
 size (`× 1.1` up, `× 0.92` down) and sometimes types them. Store the weights; let
 the UI offer "grade from base size" as a shortcut.
 
@@ -319,7 +383,7 @@ the UI offer "grade from base size" as a shortcut.
 
 | Column | Type | Source |
 |---|---|---|
-| `id` | bigserial PK | |
+| `id` | bigint identity PK | §4.0 |
 | `style_id` | FK | |
 | `ws_tag_color` | text | CB |
 | `whs_channel` | text | CC — `000` / `SY` / `SO` / `CO` / `CN` |
@@ -330,24 +394,26 @@ the UI offer "grade from base size" as a shortcut.
 
 `UNIQUE (style_id, ws_tag_color)`
 
-**`colorway_yarns`** — `colorway_id`, `slot` (1–18), `yarn_color_id`,
-`percent`, `ends`. `PRIMARY KEY (colorway_id, slot)`. Replaces 54 columns.
+**`colorway_yarns`** — `id`, `colorway_id`, `slot` (1–18), `yarn_color_id`,
+`percent`, `ends`. `UNIQUE (colorway_id, slot)`. Replaces 54 columns.
 
-**`style_operations`** — `style_id`, `operation_id`, `minutes`,
-`colorway_id` (NULL = all colorways). **Only rows that differ from the
+**`style_operations`** — `id`, `style_id`, `operation_id`, `minutes`,
+`colorway_id` (NULL = all colorways).
+`UNIQUE NULLS NOT DISTINCT (style_id, operation_id, colorway_id)`. **Only rows that differ from the
 operation's standard minutes**, or add an operation the style doesn't normally
 get (embro/stamp, cuci screen, intarsia). Most styles need none.
 
-**`style_trims`** — `style_id`, `material_id` (zipper/button/stamp),
-`qty_per_piece`. Feeds raw material cost.
+**`style_trims`** — `id`, `style_id`, `material_id` (zipper/button/stamp),
+`qty_per_piece`. `UNIQUE (style_id, material_id)`. Feeds raw material cost.
 
-**`style_market_prices`** — `style_id`, `market_id`, `line_price_usd`.
+**`style_market_prices`** — `id`, `style_id`, `market_id`, `line_price_usd`.
+`UNIQUE (style_id, market_id)`.
 **Override only**; Canada is otherwise computed as
 `ROUNDDOWN(USA line + landed-cost variance)`, exactly as the sheet does in 69%
 of rows.
 
-**`style_measurements`** — `style_id`, `size`, `point`, `value_cm`. From the
-PRD; not in the sheet.
+**`style_measurements`** — `id`, `style_id`, `size_id`, `point`, `value_cm`.
+`UNIQUE (style_id, size_id, point)`. From the PRD; not in the sheet.
 
 ---
 
@@ -454,7 +520,7 @@ with yarns, and the USA line price**.
 | 2 | Fifteen season-constant fields on `seasons` only, no per-style override yet? | Yes — add overrides when a style first needs one |
 | 3 | Material cost uses **one** material price per style, as the sheet does? | Yes for parity. A blend weighted by yarn % is more accurate but will not match the sheet — later, if wanted |
 | 4 | `style_operations` stores **exceptions only**? | Yes |
-| 5 | Key on `style_number`? | **Not yet** — surrogate `id` until `#99` and the five double-numbered styles are resolved (§4.2) |
+| 5 | ~~Key on `style_number`?~~ | **Decided 2026-09-19:** every table keyed on its own `id` (§4.0). `#`, name and style code are ordinary columns |
 | 6 | Keep `markets` for USA/Canada (and S27's Diverse/EFSN/Ellis)? | Yes — markets change between seasons |
 | 7 | Build the 20-style golden test (§5) before any UI? | Yes. It is what makes "compute" safe |
 | 8 | Empty-box weight: take it from the box (1.6 kg for DHL 7), or copy the sheet's fixed 1.32? | From the box — but it **changes freight and margins for ~970 rows**, so the golden test must use DHL 6 styles until this is decided |
