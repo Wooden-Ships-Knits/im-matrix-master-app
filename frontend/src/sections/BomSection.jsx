@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { Field, NumberInput, Combo } from '../components/ui.jsx';
 
 const emptyLine = () => ({ yarn: '', percent: '', ends: '', note: '' });
+const emptyColorway = () => ({ name: '', sub_to: '', sub_reason: '', bom: [emptyLine()] });
 
 /**
  * Colorways and their yarn lines. The BOM is the same for every size,
@@ -12,8 +13,10 @@ export default function BomSection({ form, update, meta }) {
 
   const setColorways = (next) => update({ colorways: next });
 
-  const addColorway = () =>
-    setColorways([...colorways, { name: '', bom: [emptyLine()] }]);
+  const addColorway = () => setColorways([...colorways, emptyColorway()]);
+
+  const setColorway = (i, patch) =>
+    setColorways(colorways.map((cw, x) => (x === i ? { ...cw, ...patch } : cw)));
 
   const removeColorway = (i) =>
     setColorways(colorways.filter((_, x) => x !== i));
@@ -77,6 +80,35 @@ export default function BomSection({ form, update, meta }) {
           <button type="button" className="btn-chip" onClick={() => addLine(i)}>
             + yarn line
           </button>
+
+          {/* Substitution. Keep this colourway and point it at the one that
+              replaced it — editing the tag in place is how the history is
+              lost today (identity.md §6). */}
+          <div className="sub-row">
+            <Field label="Sub to">
+              <select className="input" value={cw.sub_to || ''}
+                onChange={(e) => setColorway(i, { sub_to: e.target.value })}>
+                <option value="">Not substituted</option>
+                {colorways
+                  .filter((o, x) => x !== i && o.name)
+                  .map((o) => (
+                    <option key={o.name} value={o.name}>{o.name}</option>
+                  ))}
+              </select>
+            </Field>
+            {cw.sub_to && (
+              <Field label="Reason">
+                <input className="input" value={cw.sub_reason || ''}
+                  placeholder="e.g. yarn volume short"
+                  onChange={(e) => setColorway(i, { sub_reason: e.target.value })} />
+              </Field>
+            )}
+          </div>
+          {cw.sub_to && (
+            <p className="sub-note">
+              {cw.name || 'This colour'} → {cw.sub_to} · kept for sales history
+            </p>
+          )}
         </div>
       ))}
 

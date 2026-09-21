@@ -52,6 +52,9 @@ function toForm(s) {
   f.sizes = (s.sizes || []).map((x) => ({ size: x.size, weight_kg: x.weight_kg ?? '' }));
   f.colorways = (s.colorways || []).map((cw) => ({
     name: cw.name,
+    sub_to: cw.sub_to ?? '',
+    sub_reason: cw.sub_reason ?? '',
+    subbed_on: cw.subbed_on ?? '',
     bom: (cw.bom || []).map((b) => ({
       yarn: b.yarn ?? '', percent: b.percent ?? '', ends: b.ends ?? '', note: b.note ?? '',
     })),

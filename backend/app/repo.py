@@ -145,10 +145,15 @@ def load_style(style_id: int) -> dict | None:
                 """, (style_id,))
             out["sizes"] = [dict(r) for r in cur.fetchall()]
 
+            # `sub_to` is the *name* of the colourway this one was replaced by
+            # (identity.md §6). Names rather than ids, because the client sends
+            # colourways as a list with no ids of its own.
             cur.execute(
                 """
-                SELECT cw.id, cw.ws_tag_color AS name
+                SELECT cw.id, cw.ws_tag_color AS name, cw.subbed_on, cw.sub_reason,
+                       t.ws_tag_color AS sub_to
                 FROM style_colorways cw
+                LEFT JOIN style_colorways t ON t.id = cw.subbed_to_colorway_id
                 WHERE cw.style_id = %s ORDER BY cw.sort_order, cw.id
                 """, (style_id,))
             colorways = [dict(r) for r in cur.fetchall()]
@@ -294,6 +299,27 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                         (cw_id, slot, yarn_id, _num(line.get("percent")),
                          _num(line.get("ends"))),
                     )
+
+            # Resolve "sub to" once every colourway exists, by name within
+            # this style. A colourway cannot be subbed to itself.
+            cur.execute(
+                "SELECT id, ws_tag_color FROM style_colorways WHERE style_id = %s",
+                (style_id,))
+            by_name = {r["ws_tag_color"].strip().lower(): r["id"] for r in cur.fetchall()}
+            for cw in payload.get("colorways") or []:
+                name = _clean(cw.get("name"))
+                target = _clean(cw.get("sub_to"))
+                if not name:
+                    continue
+                src = by_name.get(name.strip().lower())
+                dst = by_name.get(target.strip().lower()) if target else None
+                if src and (dst or cw.get("sub_reason") or cw.get("subbed_on")):
+                    cur.execute(
+                        "UPDATE style_colorways SET subbed_to_colorway_id = %s,"
+                        " subbed_on = %s, sub_reason = %s WHERE id = %s",
+                        (dst if dst != src else None,
+                         cw.get("subbed_on") or None,
+                         _clean(cw.get("sub_reason")), src))
 
             for m in payload.get("measurements") or []:
                 point = _clean(m.get("pom"))

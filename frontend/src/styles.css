@@ -407,3 +407,12 @@ select.input {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---- colourway substitution (identity.md §6) ---- */
+.sub-row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 12px; }
+.sub-row > * { flex: 1 1 200px; }
+.sub-note {
+  margin: 8px 0 0; font-size: 0.86rem; color: var(--muted);
+  background: var(--inset); border-left: 3px solid var(--tan);
+  padding: 6px 10px; border-radius: 6px;
+}
