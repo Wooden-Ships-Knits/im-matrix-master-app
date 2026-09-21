@@ -55,40 +55,69 @@ Some of that is ordinary: new colours every season is normal in fashion. But the
 files give no way to tell a *new colour* from a *renamed or substituted* one.
 That distinction exists only in someone's memory.
 
-### 2.3 The substitution leaves no trace at all
+### 2.3 Substitutions are real, scoped to a style, and almost never recorded
 
-I looked for the Cornish Blue → Indigo Coast case across all four seasons.
+I scanned every shared string in all four workbooks — roughly 17,000 data rows —
+for substitution language (`SUB`, `SUBSTIT`, `GANTI`, `PENGGANTI`, `REPLACE`,
+`TUKAR`).
 
-| | F25 | S26 | F26 | S27 |
-|---|---|---|---|---|
-| Styles with a Cornish tag | 1 | 9 | 0 | 3 |
-| Styles with an Indigo Coast tag | 1 | 5 | 17 | 12 |
+**Exactly one match, in four seasons:**
 
-**Not one style shows Cornish in one season and Indigo Coast in the next.** Both
-names are in use in overlapping seasons, on different styles.
+```
+YCA INDIGO - 860 (INDIA SEA SUB)
+```
 
-The likely explanation fits what you described: the substitution happens
-**inside** a season, when the yarn runs short. The IM cell is simply edited, so
-the sheet ends up holding only the final value. The change is not recorded
-anywhere — not as a second row, not as a note.
+And it behaves exactly as described. In S27:
 
-**This is the finding that matters most.** The history cannot be reconstructed
-from the files, however carefully. It only exists if it is captured at the moment
-someone makes the change.
+| Style | Yarn | Tag colour |
+|---|---|---|
+| **SAWYER STRIPED RAGLAN CREW CHUNKY COTTON** | `YCA INDIGO - 860 (INDIA SEA SUB)` | INDIGO STRIPE |
+| FLAG BACK BUTTON CARDI CHUNKY COTTON | `YCA INDIA SEA - 965` | INDIA SEA FLAG |
+| FLAG RAGLAN CHUNKY COTTON | `YCA INDIA SEA - 965` | DARKEST INDIGO |
+| HUDSON STRIPED TOP COTTON | `YCA INDIA SEA - 965` | INDIA SEA/BREAKER WHITE |
 
----
+**One style was substituted. Three kept the original yarn.** India Sea → Indigo
+applies to Sawyer and to nothing else — which is the rule: a substitution names
+the styles it affects, and it can name more than one, but never all of them.
+
+Three things follow:
+
+1. **It is recorded as free text inside the yarn name.** Not a field, not a date,
+   not a reason — a note in parentheses that happens to survive.
+2. **It is recorded once.** One note across four seasons and ~17,000 rows. The
+   other substitutions left nothing at all.
+3. **The history cannot be reconstructed from the files.** It exists only if it
+   is captured when someone makes the change.
+
+### 2.4 A substitution happens to the yarn; the reporting damage is at the tag
+
+Sawyer's yarn changed from `YCA INDIA SEA - 965` to `YCA INDIGO - 860`. Its tag
+colour is `INDIGO STRIPE` — and the tag is what goes into the SKU, and therefore
+into the sales file.
+
+So a substitution has two separate effects:
+
+| | Changes | Effect |
+|---|---|---|
+| **Yarn** | always | costing changes — different yarn, possibly different price |
+| **Tag colour** | sometimes | **if the tag changes, the SKU changes, and sales split in two** |
+
+A substitution where the tag is left alone is invisible to sales and visible to
+costing. One where the tag is renamed is the opposite problem. Both need
+recording, and they are not the same event.
 
 ## 3. What that means for the design
 
 ### 3.1 Colour identity must be scoped to the style, never global
 
-Cornish Blue was substituted *for a certain style*, because that style's yarn ran
-out. Other styles kept using Cornish Blue — S27 still has three.
+India Sea was substituted **for Sawyer**. Flag Back Button Cardi, Flag Raglan and
+Hudson Striped Top kept it (§2.3).
 
-So a global "Cornish Blue = Indigo Coast" alias table would be **wrong**. It
-would merge two genuinely different colours everywhere else.
+So a global "India Sea = Indigo" alias table would be **wrong** — it would merge
+two genuinely different colours on the three styles that never changed.
 
-Identity belongs on `product_colorways`, which is scoped to one product.
+Identity belongs on `product_colorways`, scoped to one product. The substitution
+is then a statement about *that* style's colourway, not about a colour name.
 
 ### 3.2 A rename and a substitution are not the same event
 
@@ -132,15 +161,33 @@ product_identifiers         every label this product has ever carried
   · first_seen · last_seen
   kind ∈ style_name | style_number | style_code | sku | ws_tag_color
 
-identity_events             the change log
-  id · occurred_on · season_id · kind · product_id · product_colorway_id
-  · from_value · to_value · reason · recorded_by
+identity_events             the change log — one row per affected thing
+  id · notice_id · occurred_on · season_id · kind
+  · product_id · product_colorway_id
+  · from_value · to_value · tag_changed · reason · recorded_by
   kind ∈ renamed | renumbered | sku_changed | colorway_renamed
-       | colorway_substituted | merged | split
+       | yarn_substituted | merged | split
+
+substitution_notices        the decision itself — one notice, many styles
+  id · issued_on · season_id · from_yarn_id · to_yarn_id · reason · issued_by
 ```
 
 `product_identifiers` answers **"which product is this sales row?"**
 `identity_events` answers **"what happened, when, and why?"**
+
+**Why a notice *and* events.** A substitution is one decision — "India Sea is
+short, use Indigo" — that names the styles it affects. Sometimes one, sometimes
+several, never all. So the notice is the header and the events are its lines:
+
+```
+notice #41  2026-08-14  INDIA SEA → INDIGO      reason: yarn volume short
+   ├── SAWYER STRIPED RAGLAN CREW CHUNKY COTTON · INDIGO STRIPE   tag_changed: yes
+   └── (any other style named on the same notice)
+```
+
+That keeps one decision visible as one decision, while still recording it per
+style — which is what makes it safe to roll up for sales and keep apart for
+costing.
 
 ### How a sales row resolves
 
