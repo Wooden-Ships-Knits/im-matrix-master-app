@@ -54,6 +54,35 @@ do not inherit the schema**).
 
 ## 3. Checkpoint log
 
+### 2026-09-21 — Checkpoint 4: the Salesforce feed is the first deliverable
+
+Why the database is worth it, settled. Not "spreadsheets are bad" — the IM is
+already a machine input. `im-to-sales-force` parses this workbook and pushes it
+to Salesforce.
+
+Measured: 13.7 MB file → **53 MB of sheet XML** (May copy: 92 MB). Streaming it
+with the stdlib, discarding values, takes 1.5 s; pandas building a 4,766 × 249
+DataFrame costs several times that, after the file syncs down from Drive. Then
+four pipeline steps and an 84-entry field map kept up to date **by hand**, with
+`header_row=56` hardcoded (F26 is 54, S27 is 57) and column-letter fallbacks —
+against a sheet where 247 of 254 headers moved in three months. It maps 12 BOM
+slots; S27 has 21, so the rest never arrive.
+
+From the database that is one query. Added `v_salesforce_export`, whose column
+names **are** the Salesforce API field names, so the mapping becomes part of the
+schema. `schema.md` §10.
+
+**Decision:** the Salesforce feed is the first thing to build — it needs no
+entry screens, works while the sheet is still where people work, and forces the
+golden test (computed values vs the sheet, to the cent) before anyone depends on
+the numbers.
+
+**Correction:** `prd.md` listed "safe concurrent editing" as a primary goal. The
+IM is a Google Sheet, which already does that. The real drivers are this feed
+and the silent errors in `schema.md` §7.
+
+---
+
 ### 2026-09-21 — Checkpoint 3: schema checked against S27
 
 Profiled `Copy of S27 IM MASTER.xlsx` (19 Aug) the same way as F26 and compared.

@@ -124,9 +124,10 @@ STYLE DATA — what staff type                                   8 tables
           ├─ style_market_prices   only where a market price is overridden
           └─ style_measurements    point-of-measure (PRD; not in the sheet)
 
-COMPUTED — no storage                                          2 views
-  v_sku_costing    one row per style × size × colorway = one IM MASTER row
-  v_im_export      the same, in IM MASTER column order, for sending the IM
+COMPUTED — no storage                                          3 views
+  v_sku_costing        one row per style × size × colorway = one IM MASTER row
+  v_im_export          the same, in IM MASTER column order, for sending the IM
+  v_salesforce_export  Salesforce API field names — the CSV feed, §10
 ```
 
 ---
@@ -500,6 +501,11 @@ if it ever gets slow.
 `v_im_export` reorders the same columns into IM MASTER layout, so producing the
 file for Paola is a query, not a copy-paste-and-delete (§6).
 
+`v_salesforce_export` emits the **Salesforce API field names directly** —
+`KUGO2P__STANDARDPRICE__C`, `DUTY_CATEGORY__C`, `BOM1__C` … — so the feed is
+`COPY (SELECT * FROM v_salesforce_export WHERE season_id = …) TO STDOUT CSV HEADER`.
+See §10.
+
 **How we know the view is right:** before it replaces anything, compute it for
 20 real F26 styles and diff every output against the sheet's own values. They
 must match to the cent. If one doesn't, the formula table above is wrong and we
@@ -694,3 +700,68 @@ and the Diverse / EFSN / Ellis distributors are what the newer season adds.**
 
 Practical consequence: **S27 is the better model of where things are heading**,
 and the newer season is the one to build the first screens against.
+
+
+---
+
+## 10. The Salesforce feed — the part that pays for itself first
+
+`im-to-sales-force` already reads this workbook and pushes it to Salesforce. It
+is the strongest reason to hold this data in a database, and the first thing
+worth building.
+
+### 10.1 What it costs today
+
+| | |
+|---|---|
+| File | 13.7 MB on disk |
+| Sheet XML to parse | **53 MB** (the May copy: 92 MB) |
+| Stream-parsing alone | **1.5 s** — standard library, values discarded. pandas building a 4,766 × 249 DataFrame is several times that, plus memory |
+| Before that | the file has to sync down from Google Drive |
+| Pipeline | four steps, `Output/Step_1` … `Step_4` |
+| Field map | 84 entries in `im_field_mapping.py`, **maintained by hand**, whose docstring says to update it from the README |
+
+And it is fragile in the exact ways §9.2 measured:
+
+- `header_row=56` is hardcoded — F26's header is row 54, S27's is 57.
+- Fields still resolve by **column letter** as a fallback (`CAT`→A, `#`→F,
+  `PACKING_VOLUME__C`→IY). 247 of 254 headers moved inside S27 in three months.
+- It maps **12 BOM slots**; S27 carries **21**. Yarns past the 12th never reach
+  Salesforce, silently.
+
+### 10.2 What it becomes
+
+```sql
+COPY (SELECT * FROM v_salesforce_export WHERE season_id = :season)
+TO STDOUT WITH (FORMAT csv, HEADER);
+```
+
+The view's column names **are** the Salesforce API names, so the mapping stops
+being a document someone must remember to update and becomes part of the schema.
+
+What disappears:
+
+| Today | With the database |
+|---|---|
+| Parse 53 MB of XML | index lookup |
+| Guess/hardcode the header row | no header row |
+| Column-letter fallbacks | no columns — fields |
+| Hand-maintained 84-entry map | the view *is* the map |
+| 12 BOM slots, rest dropped | all 21 — `colorway_yarns` is already one row per yarn |
+| Banner and subtotal rows must be filtered out | they never existed |
+| `TBD` / `X` / `#REF!` can reach Salesforce | rejected at entry |
+| Four transformation steps | one query |
+
+Most of those four steps exist to undo the spreadsheet's *shape* — pivoting 63
+colour columns into BOM slots, dropping banner rows, finding the header. None of
+that work is needed against normalized data.
+
+### 10.3 Why this is the right first deliverable
+
+It needs **no data entry screens**. Populate a season, run the golden test
+(§5) so the computed numbers match the sheet to the cent, and point the
+Salesforce job at the database instead of the workbook.
+
+That delivers value while the sheet is still where people work — which is also
+the lowest-risk way to prove the calculations are right before anyone depends on
+them for entry.

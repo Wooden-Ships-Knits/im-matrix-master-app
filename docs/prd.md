@@ -50,13 +50,20 @@ changed, when, or why.
 
 1. **One authoritative record per style.** Not a file, not a copy, not a tab —
    a row, with a known shape and enforced constraints.
-2. **Safe concurrent editing.** Two people working the same season at the same
-   time is normal, not an incident.
+2. **Feed the Salesforce automation directly.** `im-to-sales-force` currently
+   parses the workbook — 13.7 MB on disk, **53 MB of XML** — through a four-step
+   pipeline, with a hand-maintained field map, a hardcoded header row and
+   column-letter fallbacks. From a database it is one query. See `schema.md` §10.
 3. **Data that is right by construction.** Percentages that must total 100 do.
-   A SKU that must be unique is. The database refuses what the spreadsheet
-   silently accepted.
+   The database refuses what the spreadsheet silently accepted — see the defects
+   in `schema.md` §7.
 4. **Deploys like everything else we run.** Same compose shape, same VM, same
    backup story as the sibling applications.
+
+~~**Safe concurrent editing.**~~ **Corrected 2026-09-21:** this was listed as a
+primary goal, wrongly. The IM lives in **Google Sheets**, which already handles
+several people editing at once. The database still gives per-record conflict
+detection, but it is not a reason to build one.
 
 **Secondary**
 
