@@ -1,0 +1,72 @@
+# IM Master — one compose for the whole project.
+#
+# Same shape as wholesale-order-entry, which already runs this on the VM:
+# Postgres, a FastAPI backend, and an nginx container that serves the built
+# SPA and reverse-proxies /api to the backend.
+#
+#   docker compose up -d --build        # db + backend
+#   docker compose --profile web up -d  # + the React client (once it is in frontend/)
+#   docker compose logs -f backend
+#
+# Run this from a LOCAL clone, not from the Google Drive folder the repo
+# currently lives in — Drive's sync and file locking make bind mounts
+# unreliable (caveats.md §7).
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-im_master}
+      POSTGRES_USER: ${POSTGRES_USER:-im_master}
+      # No default on purpose: `:?` fails loudly if it is unset, rather than
+      # shipping a password that is public in this file.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-im_master} -d ${POSTGRES_DB:-im_master}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      # Passed as separate parts, NOT as a URL. A password is not URL-safe —
+      # a "/" in one terminates the URL's authority section and the host then
+      # parses as the database name. psycopg quotes each value properly when
+      # given them separately. See backend.md §9.
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-im_master}
+      POSTGRES_USER: ${POSTGRES_USER:-im_master}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      # Style photos. A named volume, so it behaves the same on the VM as on a
+      # laptop, and survives a rebuild. Back this up alongside pg_dump.
+      - uploads:/app/data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    build: ./frontend
+    ports:
+      # Host loopback only — the VM's own nginx terminates TLS and proxies to
+      # this. 8082 is wholesale-order-entry and 8083 is ymal-project, so this
+      # stack takes 8084. Override with IM_MASTER_WEB_PORT in .env.
+      - "127.0.0.1:${IM_MASTER_WEB_PORT:-8084}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    # Profile-gated until the React client from ../im-master/client is moved
+    # into frontend/. Without this, `docker compose up` would fail on a
+    # frontend that has no package.json yet.
+    profiles: ["web"]
+
+volumes:
+  pgdata:
+  uploads:
