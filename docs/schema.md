@@ -262,7 +262,7 @@ then — adding columns is free (see our earlier discussion).
 | `outgoing_freight_usd` | 0 | landed |
 | `sy_only_dhl_1pc_usd`, `sy_only_dhl_2pc_usd` | 30.15 / 18.11 | SY-only landed |
 | `reps_commission_factor` | 0.88 | after-commission prices |
-| `retail_markup` | 2.2 | suggested / default retail |
+| `retail_markups` `numeric[]` | `{2.2}` | suggested retail — one column per entry. **S27 uses `{2.2, 2.25, 2.3}`** (§9) |
 | `target_retail_margin`, `min_retail_margin` | 0.69 / 0.65 | warnings (from notes in row 53) |
 | `target_sea_margin` | 0.70 | warnings |
 | `min_order_pcs` | 18 | from note in row 53 |
@@ -309,7 +309,8 @@ Self-teaching: a colour typed once is offered next time.
 **`sizes`** — `id`, `code` UNIQUE (`X/S`…), `label_suffix` (`XS`, `SM`, `ML`, `XL`),
 `sort_order`.
 
-**`markets`** — `id`, `season_id`, `code` (`USA`, `CANADA`), `pricing_rule`
+**`markets`** — `id`, `season_id`, `code` (F26: `USA`, `CANADA`; S27: `FOB BALI`,
+`DIVERSE`, `EFSN`, `ELLIS`, plus `SY` for the Shopify channel), `pricing_rule`
 (`input` / `usa_plus_landed_variance_rounddown`), `commission_factor`.
 Kept because S27 priced to Diverse / EFSN / Ellis and F26 to USA / Canada —
 markets change between seasons.
@@ -327,7 +328,7 @@ markets change between seasons.
 | `style_name` | text | `DESCRIPTION` K | without size / channel suffixes |
 | `status` | text | | `draft` / `active` / `hold` / `cancel` |
 | `content_code` | FK | C | drives duty and material family |
-| `gauge` | smallint | `GAUCE` D | 1–9; part of the style code |
+| `gauge` | **text** | `GAUCE` D | Not numeric — S27 has `2I` alongside 2, 3, 8 (§9) |
 | `whs_code` | text | G | `-000` / `-003` |
 | `print_placement` | text | `CATEGORY` H | `A (front only)` / `B (back only)` / `C (front & back)` |
 | `cc_marker` | text | J | `CC-M` / `CC` / `CC-M - PB` |
@@ -347,7 +348,8 @@ markets change between seasons.
 | `embroidery_minutes` | numeric(8,2) | EP | |
 | `whls_line_price_usd` | numeric(12,2) | HG | **the one price everything else keys off** |
 | `final_retail_price_usd` | numeric(12,2) | HU | 97% typed; NULL → `ROUNDUP(line × 2.2)` |
-| `final_sale_price_usd` | numeric(12,2) | HY | NULL where the sheet says N/A |
+| `final_sale_price_usd` | numeric(12,2) | HY (F26) | NULL where the sheet says N/A |
+| `final_sample_price_usd` | numeric(12,2) | IX (S27) | S27 carries a sample price and no sale price; F26 the reverse (§9) |
 | `similar_repeat_price_note` | text | HL | |
 | `photo_url` | text | — | PRD |
 | `notes` | text | — | |
@@ -527,3 +529,108 @@ with yarns, and the USA line price**.
 
 Items 1, 3 and 8 are the ones that change numbers people see. The rest can be
 revised later without losing data.
+
+---
+
+## 9. Does the schema hold S27 as well as F26?
+
+**Yes — same 19 tables, no new ones.** Four columns changed as a result; they are
+already applied above and listed in §9.4.
+
+Compared with the same method: `Copy of S27 IM MASTER.xlsx` (19 Aug, the newest
+S27) against `F26 IM MASTER.xlsx` (the copy in this folder).
+
+### 9.1 Structure
+
+| | S27 | F26 |
+|---|---|---|
+| Header row | 57 | 54 |
+| Columns | 255 | 236 |
+| Data rows | 3,779 | 4,684 |
+| Styles | 222 | 311 |
+| Banner rows | 18 | 19 |
+| Colour slots | C1–**C21** | C1–**C18** |
+| `DESCRIPTION` at | K | K |
+| Size column | **`NEED MAL?` (col O), 4 sizes, filled** | **absent** (`PERLU MALL?` is empty) |
+
+**Column kinds land almost identically** — strong evidence the two seasons are
+the same model, not two different problems:
+
+| Kind | S27 | F26 |
+|---|---|---|
+| Formula | **88** | **88** |
+| Colour slots | 63 | 54 |
+| Typed input | 35 | 38 |
+| Empty | 38 | 31 |
+| Constant all season | 31 | 25 |
+
+### 9.2 Column letters are unusable — now proven twice over
+
+Between the two seasons, 201 headers appear in both, and only **11 (5%)** sit in
+the same column.
+
+Worse, the **same season drifts inside a single year**. Comparing the May and
+August copies of S27: of 254 shared headers, **247 moved to a different column**
+in three months — two columns were inserted near the front and pushed everything
+along (`DESCRIPTION` I→K, `CONSTRUCTION` N→P, and so on).
+
+Any mapping by column letter is wrong within one season, never mind across two.
+
+### 9.3 What is the same
+
+- **Same grain** — one row per style × size × colorway.
+- **Same collection mechanism** — banner rows, material banner (`COTTON`,
+  `GRASSY`) plus a collection banner, both ending with a
+  "ADDITIONAL FULL PRICE AND SALE…" block and a `WS COLLECTION` section.
+- **Same labour formula**, only at different parameter rows:
+  S27 `(16/60)*($FP$55*$FP$54)` · F26 `(16/60)*($FC$53*$FC$52)`.
+- **Same 15 season-constant fields**, with *different values* — the hang tag is
+  `#1 PALM OR #2 BEACH` in S27 and `#3 HORSE OR #4 DESERT` in F26. Exactly why
+  they belong on `seasons` rather than hard-coded.
+- **Same duty model** — categories 345 / 446, tariffs 6110.20.2020 /
+  6110.30.1520, rates 0.285 / 0.29, driven by the content code. (The mix
+  inverts: S27 is mostly cotton, F26 mostly grassy.)
+- **Same sizes** — X/S, S/M, M/L, X/L.
+- **Same materials price list** in rows 1–32.
+- **Same three parameter rows** above the header.
+
+### 9.4 What differs — and where each difference lands
+
+| Difference | S27 | F26 | Absorbed by |
+|---|---|---|---|
+| Markets | FOB Bali, Diverse, EFSN, Ellis + an SY price block | USA, Canada | `markets` + `style_market_prices` |
+| Final price | **sample** price | **sale** price | ⚠️ `styles` now has both, nullable |
+| Retail multipliers | 2.2, **2.25, 2.3** | 2.2 | ⚠️ `season_rates.retail_markups` is now an array |
+| Carriers | DHL air, DHL volumetric | + FedEx Canada, DHL grassy | `season_rates` — nullable per season |
+| Boxes in use | **1** (41.7×35.9×36.9) | **3** | `box_types` — S27 simply has one row |
+| Gauge values | 2, 3, 8 **and `2I`** | 2, 3, 4, 8 | ⚠️ `gauge` is **text**, not smallint |
+| Content codes | 7 | 12 | `content_codes` |
+| Embroidery | `STAMP` on its own | `EMBRO/STAMP` combined | `operations` — different rows per season |
+| Colorway channel column | `WHS MARK` | `WHS` | same field, renamed (§9.5) |
+| Size | a real column | only inside `DESCRIPTION` | `style_sizes.size_id` is entered either way |
+
+The four ⚠️ items are the only schema changes S27 forced, and all four are
+column-level, not table-level.
+
+### 9.5 One consequence for importing, if we ever do
+
+The same logical field is **named differently each season** — `WHS` vs
+`WHS MARK`, `NEED MAL?` vs `PERLU MALL?`, `EXTRA CHARGES - BOXES` vs
+`EXTRA CHARGES - BOXES, PLASTIC`, `DUTY RATE` vs `DUTY RATE to USA`.
+
+So an importer cannot key on header text alone any more than on column letters.
+It needs a small per-season mapping — logical field → that season's header — which
+would be a 20th table (`sheet_column_map`) and is only worth building if an
+import is actually wanted. Entering styles directly needs none of it.
+
+### 9.6 Verdict
+
+The 19 tables hold both seasons. Everything that differs is **data inside the
+lookup tables** (different markets, different collections, different rates,
+one box versus three) rather than a difference in shape — which is what you want
+from a schema that has to survive S28.
+
+The one thing to confirm: S27's **SY price block** means a style can carry a
+different price for the Shopify channel than for wholesale. Modelling `SY` as a
+market row handles it, but it is worth checking that is how the team thinks
+about it.

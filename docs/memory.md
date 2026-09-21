@@ -52,6 +52,30 @@ do not inherit the schema**).
 
 ## 3. Checkpoint log
 
+### 2026-09-21 — Checkpoint 3: schema checked against S27
+
+Profiled `Copy of S27 IM MASTER.xlsx` (19 Aug) the same way as F26 and compared.
+**The 19 tables hold both seasons.** Column kinds land almost identically —
+88 formula columns in each. Same grain, same banner-row collections, same labour
+formula, same duty model, same sizes, same materials list, same three parameter
+rows.
+
+Four column-level changes came out of it: `gauge` is **text** (S27 has `2I`),
+`styles` needs **both** sample (S27) and sale (F26) price, `retail_markups`
+becomes an array (S27 uses 2.2/2.25/2.3), and `markets` must cover S27's
+FOB Bali / Diverse / EFSN / Ellis and the SY channel.
+
+**Column letters are dead as an identifier, proven twice:** only 11 of 201
+shared headers sit in the same column across seasons — and within S27 alone,
+**247 of 254 headers moved between the May and August copies**. Header *text*
+also drifts (`WHS` vs `WHS MARK`), so an importer would need a per-season
+field→header map (`sheet_column_map`, a 20th table) — only if we ever import.
+
+See `schema.md` §9. Open: is SY really a market (S27 carries a separate SY
+price block)?
+
+---
+
 ### 2026-09-19 — Checkpoint 2: schema v2 — store inputs, compute the rest
 
 Re-read the **live** `F26 IM MASTER.xlsx` (Google Sheets export saved into this
