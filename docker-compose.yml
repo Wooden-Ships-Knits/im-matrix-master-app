@@ -47,6 +47,12 @@ services:
       # Style photos. A named volume, so it behaves the same on the VM as on a
       # laptop, and survives a rebuild. Back this up alongside pg_dump.
       - uploads:/app/data/uploads
+    ports:
+      # For `npm run dev`: vite on :5173 proxies /api here (vite.config.js).
+      # Host 8085 because 8080 is taken by ppic-order-export on this machine.
+      # In production nginx reaches the backend over the compose network, so
+      # this mapping is only for development. Loopback only either way.
+      - "127.0.0.1:${IM_MASTER_API_PORT:-8085}:8080"
     depends_on:
       db:
         condition: service_healthy

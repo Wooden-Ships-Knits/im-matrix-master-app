@@ -6,8 +6,8 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/uploads': 'http://localhost:8080',
+      '/api': 'http://localhost:8085',
+      '/uploads': 'http://localhost:8085',
     },
   },
   build: { outDir: 'dist' },
