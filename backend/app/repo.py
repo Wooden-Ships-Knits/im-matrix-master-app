@@ -16,8 +16,8 @@ from .db import pool, transaction
 
 # Columns on `styles` that the client sends and reads back unchanged.
 FLAT = [
-    "style_name", "status", "sku_code", "sub_group", "sell_sy", "sell_000",
-    "construction", "composition_care", "color_sequence", "gauge", "tension",
+    "style_name", "status", "style_number", "sku_code", "sub_group", "sell_sy", "sell_000",
+    "construction", "composition_care", "color_sequence", "gauge_detail", "tension",
     "total_ends", "logo_label", "details", "bagging_method", "polybag_sticker",
     "packing_method", "packing_in_box", "box_labeling", "box_length_cm",
     "box_depth_cm", "box_height_cm", "pcs_per_box", "ship_via", "hs_code",
@@ -29,6 +29,9 @@ FLAT = [
 # client name -> column name, where they differ
 ALIAS = {
     "name": "style_name",
+    # The sheet keeps two: GAUCE (col D, "1") is part of the style code, GAUGE
+    # (col V, "1.5GG & 3GG") is the knit detail. The UI collects the detail.
+    "gauge": "gauge_detail",
     "wholesale_price": "whls_line_price_usd",
     "retail_price": "whls_retail_price_usd",
     "sy_price": "sy_retail_price_usd",
@@ -43,7 +46,7 @@ NUMERIC = {
     "whls_retail_price_usd", "sy_retail_price_usd", "final_sale_price_usd",
     "price_000", "final_sample_price_usd",
 }
-INTEGER = {"pcs_per_box"}
+INTEGER = {"pcs_per_box", "style_number"}
 
 
 def _num(v):
@@ -120,10 +123,12 @@ def load_style(style_id: int) -> dict | None:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(
                 """
-                SELECT s.*, se.code AS season, c.name AS collection
+                SELECT s.*, se.code AS season, c.name AS collection,
+                       cc.code AS content_code
                 FROM styles s
                 LEFT JOIN seasons se ON se.id = s.season_id
                 LEFT JOIN collections c ON c.id = s.collection_id
+                LEFT JOIN content_codes cc ON cc.id = s.content_code_id
                 WHERE s.id = %s
                 """,
                 (style_id,),
@@ -133,7 +138,7 @@ def load_style(style_id: int) -> dict | None:
                 return None
 
             out = {"id": s["id"], "season": s["season"], "collection": s["collection"],
-                   "version": s["version"]}
+                   "content_code": s["content_code"], "version": s["version"]}
             for col in FLAT:
                 out[UNALIAS.get(col, col)] = s.get(col)
 
@@ -238,6 +243,17 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                 else:
                     values[col] = _clean(raw)
             values["status"] = _clean(payload.get("status")) or "draft"
+            # The content code decides the duty category, and with it every
+            # duty and landed figure (schema.md §2.3).
+            if "content_code" in payload:
+                code = _clean(payload.get("content_code"))
+                content_id = None
+                if code:
+                    cur.execute("SELECT id FROM content_codes WHERE upper(code) = upper(%s)",
+                                (code,))
+                    row = cur.fetchone()
+                    content_id = row["id"] if row else None
+                values["content_code_id"] = content_id
             values["season_id"] = season_id
             values["collection_id"] = collection_id
             if not values.get("style_name"):
@@ -367,6 +383,7 @@ def meta() -> dict:
             return {
                 "seasons": seasons,
                 "sizes": col("SELECT code AS v FROM sizes ORDER BY sort_order"),
+                "contentCodes": col("SELECT code AS v FROM content_codes ORDER BY v"),
                 "collections": col("SELECT DISTINCT name AS v FROM collections ORDER BY v"),
                 "subGroups": distinct("sub_group"),
                 "yarns": col("SELECT DISTINCT name AS v FROM yarn_colors ORDER BY v"),
@@ -400,3 +417,13 @@ def add_meta(kind: str, name: str) -> None:
             else:
                 table, column = targets[kind]
                 get_or_create(cur, table, column, name)
+
+
+def costing(style_id: int) -> list[dict]:
+    """Read v_sku_costing for one style (migration 0004)."""
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT * FROM v_sku_costing WHERE style_id = %s"
+                " ORDER BY colorway, size_id", (style_id,))
+            return [dict(r) for r in cur.fetchall()]

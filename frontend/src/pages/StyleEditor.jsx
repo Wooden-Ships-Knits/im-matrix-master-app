@@ -24,7 +24,7 @@ const SECTIONS = [
 ];
 
 const emptyForm = (season = '') => ({
-  name: '', sku_code: '', status: 'active',
+  name: '', sku_code: '', status: 'active', content_code: '', style_number: '',
   season, collection: '', sub_group: '',
   sell_sy: true, sell_000: true,
   sizes: [],
@@ -76,6 +76,7 @@ export default function StyleEditor() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!id);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [costing, setCosting] = useState([]);
 
   const [serverImage, setServerImage] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
@@ -109,7 +110,11 @@ export default function StyleEditor() {
     if (!id) return;
     setLoading(true);
     api.getStyle(id)
-      .then((s) => { hydrate(toForm(s), s.image_path); setLoading(false); })
+      .then((s) => {
+        hydrate(toForm(s), s.image_path);
+        setLoading(false);
+        api.costing(id).then(setCosting).catch(() => setCosting([]));
+      })
       .catch((e) => { showToast(e.message, 'error'); navigate('/browse'); });
   }, [id]); // eslint-disable-line
 
@@ -160,6 +165,7 @@ export default function StyleEditor() {
         image = r.image_path;
       }
       hydrate(toForm(saved), image);
+      api.costing(saved.id).then(setCosting).catch(() => setCosting([]));
       showToast(asDraft ? 'Draft saved' : 'Style saved');
       if (!id) navigate(`/edit/${saved.id}`, { replace: true });
     } catch (e) {
@@ -174,7 +180,7 @@ export default function StyleEditor() {
     else navigate('/browse');
   }
 
-  const sectionProps = { form, update, meta };
+  const sectionProps = { form, update, meta, costing };
   const Body = {
     bom: BomSection, yarn: YarnSection, pricing: PricingSection,
     packaging: PackagingSection, shipping: ShippingSection,
@@ -215,6 +221,14 @@ export default function StyleEditor() {
             <label>Sub group</label>
             <Combo value={form.sub_group} onChange={field('sub_group')}
               options={meta?.subGroups || []} placeholder="Pick or type new" />
+            {/* Content decides the duty category, and with it every duty and
+                landed figure on the Pricing screen. */}
+            <label>Content</label>
+            <Combo value={form.content_code} onChange={field('content_code')}
+              options={meta?.contentCodes || []} placeholder="C, Y, CPE…" />
+            <label>Style #</label>
+            <TextInput value={form.style_number} onChange={field('style_number')}
+              placeholder="709" />
           </div>
         </div>
       </header>

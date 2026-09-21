@@ -416,3 +416,23 @@ select.input {
   background: var(--inset); border-left: 3px solid var(--tan);
   padding: 6px 10px; border-radius: 6px;
 }
+
+/* ---- calculated costing (schema.md §5) ---- */
+.calc-block { margin-top: 22px; border-top: 1px solid var(--border); padding-top: 16px; }
+.calc-head { font-weight: 700; margin-bottom: 10px; display: flex; align-items: center; gap: 9px; }
+.calc-tag {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--muted); background: var(--inset); border: 1px solid var(--border);
+  padding: 2px 7px; border-radius: 5px;
+}
+.calc-scroll { overflow-x: auto; }
+.calc-table { border-collapse: collapse; width: 100%; font-size: 0.92rem; min-width: 520px; }
+.calc-table th {
+  text-align: left; font-size: 0.72rem; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--muted); font-weight: 600; padding: 4px 10px 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.calc-table td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--inset); }
+.calc-table .n { text-align: right; font-variant-numeric: tabular-nums; }
+.calc-table td.low { color: var(--danger); font-weight: 600; }
+.calc-note { margin: 10px 0 0; font-size: 0.82rem; color: var(--muted); }

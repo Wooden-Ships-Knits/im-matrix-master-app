@@ -22,6 +22,7 @@ export const api = {
     return request(`/api/styles?${qs}`);
   },
   getStyle: (id) => request(`/api/styles/${id}`),
+  costing: (id) => request(`/api/styles/${id}/costing`),
   createStyle: (data) =>
     request('/api/styles', { method: 'POST', body: JSON.stringify(data) }),
   updateStyle: (id, data) =>

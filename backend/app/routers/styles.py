@@ -49,3 +49,15 @@ def delete_style(style_id: int):
     if not repo.delete_style(style_id):
         raise HTTPException(status_code=404, detail="Style not found")
     return {"ok": True}
+
+
+@router.get("/{style_id}/costing")
+def get_costing(style_id: int):
+    """The calculated columns for this style — one row per size x colourway.
+
+    Nothing here is stored: it is recomputed from the style's inputs and the
+    season's rates every time it is asked for (schema.md §5).
+    """
+    if not repo.load_style(style_id):
+        raise HTTPException(status_code=404, detail="Style not found")
+    return repo.costing(style_id)
