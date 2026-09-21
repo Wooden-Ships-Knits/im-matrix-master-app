@@ -765,3 +765,119 @@ Salesforce job at the database instead of the workbook.
 That delivers value while the sheet is still where people work — which is also
 the lowest-risk way to prove the calculations are right before anyone depends on
 them for entry.
+
+---
+
+## 11. Appendix — every table and column
+
+The consolidated list. **19 tables, ~190 columns, 5 views.** Every table has
+`id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` (§4.0); FKs end in `_id`.
+
+### Season setup — 11 tables
+
+**`seasons`** (25)
+`id` · `code` · `name` · `sheet_code` · `starts_on` · `cat_code` ·
+`style_letter` · `default_construction` · `default_details` · `default_lining` ·
+`default_tension` · `default_production_vendor` · `default_spec` ·
+`default_hang_tag_instructions` · `default_hook_sock_tag` ·
+`default_bagging_method` · `default_poly_bag_sticker` ·
+`default_packing_method` · `default_ship_via` · `default_packing_method_in_box` ·
+`default_special_instructions` · `default_box_labeling` · `is_current` ·
+`created_at` · `updated_at`
+
+**`season_rates`** (38) — one row per season, replaces the sheet's rate rows
+`id` · `season_id` · `exchange_rate_idr_usd` · `labour_rate_idr_per_hour` ·
+`labour_multiplier` · `special_op_rate_idr_per_hour` · `admin_base_idr` ·
+`additional_admin_idr` · `labels_tag_cost_idr` · `packaging_fee_idr` ·
+`box_charge_idr` · `plastic_charge_idr` · `plastic_wt_kg` ·
+`wt_tolerance_low` · `wt_tolerance_high` · `pricing_wt_factor` ·
+`distribution_wt_add_kg` · `volumetric_divisor` · `kg_to_lb` ·
+`container_20ft_cm3` · `sea_c_rate_usd` · `sea_p_rate_usd` · `dhl_usd_per_kg` ·
+`dhl_grassy_usd_per_kg` · `fedex_canada_usd_per_kg` · `disbursement_pct` ·
+`mpf_pct` · `canada_duty_pct` · `customs_usd` · `outgoing_freight_usd` ·
+`sy_only_dhl_1pc_usd` · `sy_only_dhl_2pc_usd` · `reps_commission_factor` ·
+`retail_markups`❲❳ · `target_retail_margin` · `min_retail_margin` ·
+`target_sea_margin` · `min_order_pcs`
+
+**`collections`** (4) — `id` · `season_id` · `name` · `sort_order`
+
+**`content_codes`** (5) — `id` · `code` · `description` · `material_family` · `duty_category_id`
+
+**`duty_categories`** (7) — `id` · `season_id` · `code` · `tariff_code` · `usa_duty_rate` · `declared_value_usd` · `description`
+
+**`box_types`** (6) — `id` · `code` · `length_cm` · `depth_cm` · `height_cm` · `empty_box_wt_kg`
+
+**`materials`** (9) — `id` · `season_id` · `code` · `name` · `kind` · `unit` · `exchange_rate` · `price_idr` · `price_usd`
+
+**`yarn_colors`** (5) — `id` · `material_id` · `prefix` · `name` · `color_code`
+
+**`operations`** (7) — `id` · `code` · `name` · `default_minutes` · `rate_basis` · `applies_by_default` · `sort_order`
+
+**`sizes`** (4) — `id` · `code` · `label_suffix` · `sort_order`
+
+**`markets`** (5) — `id` · `season_id` · `code` · `pricing_rule` · `commission_factor`
+
+### Style data — 8 tables
+
+**`styles`** (37)
+`id` · `season_id` · `collection_id` · `style_number` · `style_name` · `status` ·
+`content_code_id` · `gauge` · `whs_code` · `print_placement` · `cc_marker` ·
+`final_finishing_category` · `total_ends` · `gauge_detail` · `care_label_base` ·
+`based_body` · `material_id` · `box_type_id` · `knit_minutes_dev` ·
+`knit_minutes_breakdown` · `admin_pct` · `finishing_home_price_idr` ·
+`finishing_home_minutes` · `embroidery_price_idr` · `embroidery_minutes` ·
+`whls_line_price_usd` · `whls_retail_price_usd` · `sy_retail_price_usd` ·
+`sy_mark_up` · `final_sale_price_usd` · `final_sample_price_usd` ·
+`similar_repeat_price_note` · `photo_url` · `notes` · `created_at` ·
+`updated_at` · `version`
+
+**`style_sizes`** (6) — `id` · `style_id` · `size_id` · `pre_component_wt_kg` · `finished_wt_kg` · `pcs_per_box`
+
+**`style_colorways`** (8) — `id` · `style_id` · `ws_tag_color` · `whs_channel` · `reps_color` · `color_sequence` · `sell_restriction` · `sort_order`
+
+**`colorway_yarns`** (6) — `id` · `colorway_id` · `slot` · `yarn_color_id` · `percent` · `ends`
+
+**`style_operations`** (5) — `id` · `style_id` · `operation_id` · `colorway_id` · `minutes`
+
+**`style_trims`** (4) — `id` · `style_id` · `material_id` · `qty_per_piece`
+
+**`style_market_prices`** (4) — `id` · `style_id` · `market_id` · `line_price_usd`
+
+**`style_measurements`** (5) — `id` · `style_id` · `size_id` · `point` · `value_cm`
+
+### Views — 5, no storage
+
+| View | Grain | Purpose |
+|---|---|---|
+| `v_sku_costing` | style × size × colorway | the 88 calculated columns — §5 |
+| `v_im_export` | style × size × colorway | IM MASTER column order |
+| `v_salesforce_export` | style × size × colorway | Salesforce API field names — §10 |
+| `v_style_weights_wide` | one row per style | sizes as columns, for the entry grid — §11.1 |
+| `v_style_bom_wide` | style × colorway | yarn slots as `BOM1…BOM21` columns |
+
+### 11.1 Wide when you want wide
+
+Storage is one row per size; reading it as a grid is a view, not a different
+table:
+
+```sql
+CREATE VIEW v_style_weights_wide AS
+SELECT ss.style_id,
+       MAX(ss.finished_wt_kg) FILTER (WHERE z.code = 'X/S') AS xs,
+       MAX(ss.finished_wt_kg) FILTER (WHERE z.code = 'S/M') AS sm,
+       MAX(ss.finished_wt_kg) FILTER (WHERE z.code = 'M/L') AS ml,
+       MAX(ss.finished_wt_kg) FILTER (WHERE z.code = 'X/L') AS xl
+FROM style_sizes ss JOIN sizes z ON z.id = ss.size_id
+GROUP BY ss.style_id;
+```
+
+`v_style_bom_wide` does the same for yarn slots, which is what
+`v_salesforce_export` needs for `BOM1__C … BOM21__C`. Adding a size or a slot is
+one row plus one line here — not a migration across every table and screen.
+
+### 11.2 What staff actually type
+
+Of ~190 columns, most are lookup rows filled once per season or audit fields.
+Creating a costed style touches roughly **25–30 values**: name, number, content
+code, gauge, collection, box type, material, admin %, knit minutes, three values
+per size, a colorway with its yarn lines, and the prices.
