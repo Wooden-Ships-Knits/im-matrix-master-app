@@ -817,12 +817,12 @@ them for entry.
 
 ## 11. Appendix — every table and column
 
-The consolidated list. **19 tables, ~190 columns, 5 views.** Every table has
+The consolidated list. **22 tables, 214 columns, 5 views.** Every table has
 `id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY` (§4.0); FKs end in `_id`.
 
 ### Season setup — 11 tables
 
-**`seasons`** (25) — ◆ = generated, see §4.1.1
+**`seasons`** (26) — ◆ = generated, see §4.1.1
 `id` · `season_type` · `year_yy` · `code`◆ · `name`◆ · `season_number`◆ · `cat_code` ·
 `style_letter` · `default_construction` · `default_details` · `default_lining` ·
 `default_tension` · `default_production_vendor` · `default_spec` ·
@@ -864,10 +864,25 @@ The consolidated list. **19 tables, ~190 columns, 5 views.** Every table has
 
 **`markets`** (5) — `id` · `season_id` · `code` · `pricing_rule` · `commission_factor`
 
+### Identity — 3 tables
+
+These carry style identity **across** seasons, which is the point of the project
+(`identity.md`). `styles` and `style_colorways` gain a link into them.
+
+**`products`** (6) — the stable id sales merges on
+`id` · `product_code` · `display_name` · `status` · `first_season_id` · `notes`
+
+**`product_colorways`** (4) — colour identity within a product, across seasons
+`id` · `product_id` · `canonical_name` · `notes`
+
+**`product_identifiers`** (8) — every label this product has ever carried
+`id` · `product_id` · `product_colorway_id` · `kind` · `value` · `season_id` ·
+`first_seen` · `last_seen`
+
 ### Style data — 8 tables
 
-**`styles`** (37)
-`id` · `season_id` · `collection_id` · `style_number` · `style_name` · `status` ·
+**`styles`** (38)
+`id` · `season_id` · **`product_id`** · `collection_id` · `style_number` · `style_name` · `status` ·
 `content_code_id` · `gauge` · `whs_code` · `print_placement` · `cc_marker` ·
 `final_finishing_category` · `total_ends` · `gauge_detail` · `care_label_base` ·
 `based_body` · `material_id` · `box_type_id` · `knit_minutes_dev` ·
@@ -880,7 +895,10 @@ The consolidated list. **19 tables, ~190 columns, 5 views.** Every table has
 
 **`style_sizes`** (6) — `id` · `style_id` · `size_id` · `pre_component_wt_kg` · `finished_wt_kg` · `pcs_per_box`
 
-**`style_colorways`** (8) — `id` · `style_id` · `ws_tag_color` · `whs_channel` · `reps_color` · `color_sequence` · `sell_restriction` · `sort_order`
+**`style_colorways`** (12) — `id` · `style_id` · **`product_colorway_id`** ·
+`ws_tag_color` · `whs_channel` · `reps_color` · `color_sequence` ·
+`sell_restriction` · `sort_order` · **`subbed_to_colorway_id`** ·
+**`subbed_on`** · **`sub_reason`** *(the last three: `identity.md` §6)*
 
 **`colorway_yarns`** (6) — `id` · `colorway_id` · `slot` · `yarn_color_id` · `percent` · `ends`
 
@@ -922,9 +940,28 @@ GROUP BY ss.style_id;
 `v_salesforce_export` needs for `BOM1__C … BOM21__C`. Adding a size or a slot is
 one row plus one line here — not a migration across every table and screen.
 
-### 11.2 What staff actually type
+### 11.2 Totals
 
-Of ~190 columns, most are lookup rows filled once per season or audit fields.
+| Group | Tables | Columns |
+|---|---|---|
+| Season setup | 11 | 116 |
+| Identity | 3 | 18 |
+| Style data | 8 | 80 |
+| **Total** | **22** | **214** |
+
+Plus 5 views, which store nothing.
+
+**Not counted here**, because they are proposed rather than decided: the Matrix
+Master additions in `matrix-master.md` §6 — about 10 more columns on `styles`,
+plus `style_workflow`, `style_colorway_status` and `length_categories`. Folding
+those in would make it **25 tables, ~245 columns**.
+
+Also not counted: `substitution_notices` and `identity_events`, deferred in
+`identity.md` §6 in favour of the three `subbed_*` columns above.
+
+### 11.3 What staff actually type
+
+Of 214 columns, most are lookup rows filled once per season or audit fields.
 Creating a costed style touches roughly **25–30 values**: name, number, content
 code, gauge, collection, box type, material, admin %, knit minutes, three values
 per size, a colorway with its yarn lines, and the prices.
