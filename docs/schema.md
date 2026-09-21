@@ -206,7 +206,7 @@ Postgres rejects a supplied `id` unless the insert deliberately says
 | `id` | bigint identity PK | | §4.0 |
 | `code` | text UNIQUE | | `F26`, `S27` — letter + two-digit year |
 | `name` | text | | **`Fall 2026`**, **`Spring 2027`** |
-| `sheet_code` | smallint | `SEASON` col B | `57` = F26, `58` = S27. A running counter, so it also gives season order — **S27 (Spring 2027) is the newer season**, not F26 |
+| `season_number` | smallint | `SEASON` col B | The company's own running season counter: `57` = F26, `58` = S27, `56` = the season before F26. **Not derivable from `code` or `name`** — and it is a component of the style code (§5), which reaches Salesforce, so it has to be stored. Renamed from `sheet_code`, which wrongly suggested it identified the spreadsheet |
 | `starts_on` | date | | for sorting and "current season" |
 | `cat_code` | text | `CAT` col A | `K` |
 | `style_letter` | text | `STYLE` col E | `W` |
@@ -225,6 +225,13 @@ Postgres rejects a supplied `id` unless the insert deliberately says
 | `default_special_instructions` | text | DN | `AS USUAL. NOTHING SPECIAL` |
 | `default_box_labeling` | text | DO | `BARCODED SHIPPING LABEL` |
 | `is_current` | boolean | | |
+
+⚠️ **`season_number` is almost, but not quite, per season.** The May copy of S27
+had **24 rows carrying `56`** instead of `58` — carry-over styles keeping an
+older season number, and therefore an older style code. They are gone from the
+August copy. Keep it on `seasons` for now and have the import flag any row whose
+number disagrees with its season; if carry-overs turn out to be deliberate, the
+fix is a nullable `season_number_override` on `styles`, not a redesign.
 
 Each of these fifteen holds **a single value wherever it is filled** in F26
 (66–99% of rows).
@@ -466,7 +473,7 @@ the file:
 
 | Output | Formula (sheet column) |
 |---|---|
-| `style_code` | cat ‖ sheet_code ‖ content ‖ gauge ‖ letter ‖ number (I) |
+| `style_code` | cat ‖ season_number ‖ content ‖ gauge ‖ letter ‖ number (I) — e.g. `K` ‖ `57` ‖ `Y` ‖ `2` ‖ `W` ‖ `653` = `K57Y2W653` |
 | `description` | name ‖ ` - ` ‖ size ‖ channel suffix (K) |
 | `care_label` | base ‖ `-` ‖ size suffix (R) |
 | tolerances | weight × 0.96 / × 1.04 (CF, CG, CK, CL) |
@@ -776,7 +783,7 @@ The consolidated list. **19 tables, ~190 columns, 5 views.** Every table has
 ### Season setup — 11 tables
 
 **`seasons`** (25)
-`id` · `code` · `name` · `sheet_code` · `starts_on` · `cat_code` ·
+`id` · `code` · `name` · `season_number` · `starts_on` · `cat_code` ·
 `style_letter` · `default_construction` · `default_details` · `default_lining` ·
 `default_tension` · `default_production_vendor` · `default_spec` ·
 `default_hang_tag_instructions` · `default_hook_sock_tag` ·
