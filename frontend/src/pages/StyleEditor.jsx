@@ -25,6 +25,7 @@ const SECTIONS = [
 
 const emptyForm = (season = '') => ({
   name: '', sku_code: '', status: 'active', content_code: '', style_number: '',
+  gauge_code: '', material: '', admin_pct: '', knit_minutes_dev: '',
   season, collection: '', sub_group: '',
   sell_sy: true, sell_000: true,
   sizes: [],
@@ -49,7 +50,9 @@ function toForm(s) {
   f.status = s.status || 'active';
   f.sell_sy = !!s.sell_sy;
   f.sell_000 = !!s.sell_000;
-  f.sizes = (s.sizes || []).map((x) => ({ size: x.size, weight_kg: x.weight_kg ?? '' }));
+  f.sizes = (s.sizes || []).map((x) => ({
+    size: x.size, weight_kg: x.weight_kg ?? '', pcs_per_box: x.pcs_per_box ?? '',
+  }));
   f.colorways = (s.colorways || []).map((cw) => ({
     name: cw.name,
     sub_to: cw.sub_to ?? '',
@@ -127,7 +130,7 @@ export default function StyleEditor() {
     setForm((f) => {
       const order = meta?.sizes || [];
       const sizes = checked
-        ? [...f.sizes, { size, weight_kg: '' }]
+        ? [...f.sizes, { size, weight_kg: '', pcs_per_box: '' }]
             .sort((a, b) => order.indexOf(a.size) - order.indexOf(b.size))
         : f.sizes.filter((x) => x.size !== size);
       return { ...f, sizes };
@@ -229,6 +232,10 @@ export default function StyleEditor() {
             <label>Style #</label>
             <TextInput value={form.style_number} onChange={field('style_number')}
               placeholder="709" />
+            {/* GAUCE (col D) — the style-code digit, not the knit detail */}
+            <label>Gauge code</label>
+            <TextInput value={form.gauge_code} onChange={field('gauge_code')}
+              placeholder="1" />
           </div>
         </div>
       </header>

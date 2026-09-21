@@ -30,6 +30,9 @@ export default function PricingSection({ form, update, costing = [] }) {
         <Field label="000 Price">
           <PriceInput value={form.price_000} onChange={field('price_000')} />
         </Field>
+        <Field label="Admin %" hint="Multiplies the season's admin base">
+          <PriceInput value={form.admin_pct} onChange={field('admin_pct')} />
+        </Field>
         <Field label="Sample price">
           <PriceInput value={form.sample_price} onChange={field('sample_price')} />
         </Field>

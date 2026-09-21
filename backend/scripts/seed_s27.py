@@ -63,6 +63,28 @@ CONTENT = [("C", "Cotton", "COTTON", "345"), ("CPE", "Cotton PE", "COTTON", "345
 
 BOXES = [("DHL 6", 41.7, 35.9, 36.9, 1.32)]      # EC/ED/EE, EK = $EL$21
 
+# The materials price list, rows 1-32: name, code, kind, unit, exchange,
+# IDR/kg incl. 10% tax (FN), USD after the 5% VAT-refund reduction (FO).
+# $FN$6 (Cotton Acrylic) is the price 2,167 of S27's rows are costed against.
+MATERIALS = [
+    ("NEW GRASSY (95A 5W)", "YST", "yarn", "kg", 16300, 154850, 9.5),
+    ("YST",                 "YST", "yarn", "kg", 16300, 126977, 7.79),
+    ("SMALL COTTON",        "AC",  "yarn", "kg", 15800, 137791.8, 8.721),
+    ("GRASSY",              "Y",   "yarn", "kg", 15800, 189600, 12.0),
+    ("COTTON ACRYLIC 60/40","CA",  "yarn", "kg", 15800, 202334.8, 12.806),
+    ("YP",                  "YP",  "yarn", "kg", 16000, 111568, 6.973),
+    ("YAR",                 "YTX", "yarn", "kg", 16503, 111155.9565, 6.7355),
+    ("YP (POODLE) 100% ACRYLIC", "YP", "yarn", "kg", None, 113988, 7.275),
+    ("NEW GRASSY YARN 88% ACRYLIC", None, "yarn", "kg", None, 145740, None),
+    ("STAMP",                     None, "stamp",  "pcs", None, 8400, None),
+    ("XBP 005-2CM-PEARL",         None, "button", "pcs", None, 347.222222, None),
+    ("XBTULANG 2CM - PEARL",      None, "button", "pcs", None, 1736.111111, None),
+    ("XKANCING MAS 1.8CM-BRONZE", None, "button", "pcs", None, 871.5, None),
+    ("ZIPPER JEPANG 20\" BLACK",  None, "zipper", "pcs", None, 7437.5, None),
+    ("XZIP VFO56-50CM BRONZE",    None, "zipper", "pcs", None, 18375, None),
+    ("XZIP GIGI 5 BIASA",         None, "zipper", "pcs", None, 12000, None),
+]
+
 # Standard minutes, read from each operation's own formula in S27.
 OPERATIONS = [("CEK_POLA", "Cek pola", 16, True), ("LINK", "Link", 26, True),
               ("QC_LINK", "QC link", 4, True), ("FINISHING", "Finishing", 22, True),
@@ -125,6 +147,16 @@ def main() -> None:
                 " depth_cm = EXCLUDED.depth_cm, height_cm = EXCLUDED.height_cm,"
                 " empty_box_wt_kg = EXCLUDED.empty_box_wt_kg", (code, l, d, h, empty))
 
+        for name, code, kind, unit, fx, idr, usd in MATERIALS:
+            cur.execute(
+                "INSERT INTO materials (season_id, code, name, kind, unit,"
+                " exchange_rate, price_idr, price_usd) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)"
+                " ON CONFLICT (season_id, name) DO UPDATE SET code = EXCLUDED.code,"
+                " kind = EXCLUDED.kind, unit = EXCLUDED.unit,"
+                " exchange_rate = EXCLUDED.exchange_rate,"
+                " price_idr = EXCLUDED.price_idr, price_usd = EXCLUDED.price_usd",
+                (season_id, code, name, kind, unit, fx, idr, usd))
+
         for i, (code, name, minutes, applies) in enumerate(OPERATIONS):
             cur.execute(
                 "INSERT INTO operations (code, name, default_minutes, rate_basis,"
@@ -136,7 +168,7 @@ def main() -> None:
 
     print(f"S27 seeded: season {season_id}, {len(RATES)} rates, {len(DUTY)} duty "
           f"categories, {len(CONTENT)} content codes, {len(BOXES)} box type, "
-          f"{len(OPERATIONS)} operations")
+          f"{len(OPERATIONS)} operations, {len(MATERIALS)} materials")
 
 
 if __name__ == "__main__":

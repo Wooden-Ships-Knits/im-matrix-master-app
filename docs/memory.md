@@ -54,6 +54,38 @@ do not inherit the schema**).
 
 ## 3. Checkpoint log
 
+### 2026-09-21 — Checkpoint 5: the costing chain reproduces the sheet exactly
+
+First end-to-end proof that "store inputs, calculate the rest" works. Entered
+S27's RIHANNA CARDI CHUNKY COTTON through the API and compared `v_sku_costing`
+against the workbook's own values:
+
+| | computed | sheet |
+|---|---|---|
+| style code | `K58C1W709` | `K58C1W709` |
+| raw materials by wt | 62,319.12 | 62,319.1184 (FN) |
+| **total all costs** | **14.1852** | **14.185247** (GJ) |
+| **receiving cost** | **16.8032** | **16.803247** (GO) |
+| **landed, DHL volumetric** | **32.4123** | **32.412266** (HL) |
+| duty to USA | 6.2665 | 6.266460 (GZ) |
+| gross kg / box | 7.4190 | 7.419000 (EL) |
+| volumetric kg / item | 0.5815 | 0.581478 (EO) |
+| tolerances, distribution, pricing wt | exact | CS / CT / CU / CV |
+
+**The finding that made it match: operation minutes are per style, not per
+season.** Rihanna uses link 30 and finishing 26 where the seeded defaults are
+26 and 22, and adds sosok 3. With her real minutes the total lands on
+14.1852 to four decimals; with the defaults it read 13.5167.
+
+So `operations.default_minutes` is a starting point only, and `style_operations`
+has to be editable in the UI — it is not yet, and the test values were inserted
+by hand.
+
+Stack now runs: Postgres + FastAPI + the design-2 React client, 4 migrations,
+22 tables, the costing view, S27 seeded (27 rates, 16 materials, 15 operations).
+
+---
+
 ### 2026-09-21 — Checkpoint 4: the Salesforce feed is the first deliverable
 
 Why the database is worth it, settled. Not "spreadsheets are bad" — the IM is

@@ -436,3 +436,7 @@ select.input {
 .calc-table .n { text-align: right; font-variant-numeric: tabular-nums; }
 .calc-table td.low { color: var(--danger); font-weight: 600; }
 .calc-note { margin: 10px 0 0; font-size: 0.82rem; color: var(--muted); }
+
+/* weight + pcs per box, side by side in one size row */
+.size-row { display: flex; gap: 8px; }
+.size-row > * { flex: 1 1 0; min-width: 0; }

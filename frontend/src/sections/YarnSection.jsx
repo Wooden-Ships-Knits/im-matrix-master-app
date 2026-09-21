@@ -9,9 +9,24 @@ export default function YarnSection({ form, update, meta }) {
       sizes: form.sizes.map((x) => (x.size === size ? { ...x, weight_kg: v } : x)),
     });
 
+  const setPcs = (size) => (v) =>
+    update({
+      sizes: form.sizes.map((x) => (x.size === size ? { ...x, pcs_per_box: v } : x)),
+    });
+
   return (
     <div>
       <div className="form-grid">
+        <Field label="Knit minutes / pc"
+          hint="Drives the knitting cost">
+          <NumberInput value={form.knit_minutes_dev} min="0"
+            onChange={field('knit_minutes_dev')} placeholder="e.g. 72.25" />
+        </Field>
+        <Field label="Material (yarn price)"
+          hint="Sets the raw-material cost, and with it landed cost and margin">
+          <Combo value={form.material} onChange={field('material')}
+            options={meta?.materials || []} placeholder="e.g. COTTON ACRYLIC 60/40" />
+        </Field>
         <Field label="Construction">
           <Combo value={form.construction} onChange={field('construction')}
             options={meta?.options?.construction || []} placeholder="e.g. MACHINE KNIT" />
@@ -48,8 +63,13 @@ export default function YarnSection({ form, update, meta }) {
         <div className="form-grid">
           {form.sizes.map((x) => (
             <Field key={x.size} label={x.size}>
-              <NumberInput value={x.weight_kg} min="0" onChange={setWeight(x.size)}
-                placeholder="e.g. 0.275" />
+              <div className="size-row">
+                <NumberInput value={x.weight_kg} min="0" onChange={setWeight(x.size)}
+                  placeholder="kg" />
+                {/* Pcs per box differs by size — 19 / 17 / 15 / 13 is typical */}
+                <NumberInput value={x.pcs_per_box} min="0" onChange={setPcs(x.size)}
+                  placeholder="pcs/box" />
+              </div>
             </Field>
           ))}
         </div>

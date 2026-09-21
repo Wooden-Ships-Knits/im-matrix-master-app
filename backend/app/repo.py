@@ -17,11 +17,14 @@ from .db import pool, transaction
 # Columns on `styles` that the client sends and reads back unchanged.
 FLAT = [
     "style_name", "status", "style_number", "sku_code", "sub_group", "sell_sy", "sell_000",
-    "construction", "composition_care", "color_sequence", "gauge_detail", "tension",
+    "construction", "composition_care", "color_sequence", "gauge_detail", "gauge",
+    "tension",
     "total_ends", "logo_label", "details", "bagging_method", "polybag_sticker",
     "packing_method", "packing_in_box", "box_labeling", "box_length_cm",
     "box_depth_cm", "box_height_cm", "pcs_per_box", "ship_via", "hs_code",
     "duty_category", "hang_tag", "special_instructions", "notes", "photo_url",
+    # cost inputs: admin % and the knit minutes the labour cost is built from
+    "admin_pct", "knit_minutes_dev",
     "whls_line_price_usd", "whls_retail_price_usd", "sy_retail_price_usd",
     "final_sale_price_usd", "price_000", "final_sample_price_usd",
 ]
@@ -30,8 +33,9 @@ FLAT = [
 ALIAS = {
     "name": "style_name",
     # The sheet keeps two: GAUCE (col D, "1") is part of the style code, GAUGE
-    # (col V, "1.5GG & 3GG") is the knit detail. The UI collects the detail.
+    # (col V, "1.5GG & 3GG") is the knit detail. The UI collects both.
     "gauge": "gauge_detail",
+    "gauge_code": "gauge",
     "wholesale_price": "whls_line_price_usd",
     "retail_price": "whls_retail_price_usd",
     "sy_price": "sy_retail_price_usd",
@@ -42,6 +46,7 @@ ALIAS = {
 UNALIAS = {v: k for k, v in ALIAS.items()}
 
 NUMERIC = {
+    "admin_pct", "knit_minutes_dev",
     "box_length_cm", "box_depth_cm", "box_height_cm", "whls_line_price_usd",
     "whls_retail_price_usd", "sy_retail_price_usd", "final_sale_price_usd",
     "price_000", "final_sample_price_usd",
@@ -124,11 +129,12 @@ def load_style(style_id: int) -> dict | None:
             cur.execute(
                 """
                 SELECT s.*, se.code AS season, c.name AS collection,
-                       cc.code AS content_code
+                       cc.code AS content_code, mt.name AS material
                 FROM styles s
                 LEFT JOIN seasons se ON se.id = s.season_id
                 LEFT JOIN collections c ON c.id = s.collection_id
                 LEFT JOIN content_codes cc ON cc.id = s.content_code_id
+                LEFT JOIN materials mt ON mt.id = s.material_id
                 WHERE s.id = %s
                 """,
                 (style_id,),
@@ -138,13 +144,15 @@ def load_style(style_id: int) -> dict | None:
                 return None
 
             out = {"id": s["id"], "season": s["season"], "collection": s["collection"],
-                   "content_code": s["content_code"], "version": s["version"]}
+                   "content_code": s["content_code"], "material": s["material"],
+                   "version": s["version"]}
             for col in FLAT:
                 out[UNALIAS.get(col, col)] = s.get(col)
 
             cur.execute(
                 """
-                SELECT z.code AS size, ss.finished_wt_kg AS weight_kg
+                SELECT z.code AS size, ss.finished_wt_kg AS weight_kg,
+                       ss.pcs_per_box
                 FROM style_sizes ss JOIN sizes z ON z.id = ss.size_id
                 WHERE ss.style_id = %s ORDER BY z.sort_order
                 """, (style_id,))
@@ -254,6 +262,11 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                     row = cur.fetchone()
                     content_id = row["id"] if row else None
                 values["content_code_id"] = content_id
+            # The yarn price drives material cost, and with it landed and margin.
+            if "material" in payload:
+                values["material_id"] = get_or_create(
+                    cur, "materials", "name", payload.get("material"),
+                    {"season_id": season_id} if season_id else None)
             values["season_id"] = season_id
             values["collection_id"] = collection_id
             if not values.get("style_name"):
@@ -289,7 +302,8 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                         "INSERT INTO style_sizes (style_id, size_id, finished_wt_kg,"
                         " pcs_per_box) VALUES (%s,%s,%s,%s)",
                         (style_id, size_id, _num(row.get("weight_kg")),
-                         values.get("pcs_per_box")),
+                         # per size, falling back to the style-level figure
+                         _int(row.get("pcs_per_box")) or values.get("pcs_per_box")),
                     )
 
             for order, cw in enumerate(payload.get("colorways") or []):
@@ -384,6 +398,8 @@ def meta() -> dict:
                 "seasons": seasons,
                 "sizes": col("SELECT code AS v FROM sizes ORDER BY sort_order"),
                 "contentCodes": col("SELECT code AS v FROM content_codes ORDER BY v"),
+                "materials": col("SELECT name AS v FROM materials WHERE kind = 'yarn'"
+                                 " ORDER BY v"),
                 "collections": col("SELECT DISTINCT name AS v FROM collections ORDER BY v"),
                 "subGroups": distinct("sub_group"),
                 "yarns": col("SELECT DISTINCT name AS v FROM yarn_colors ORDER BY v"),
