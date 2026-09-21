@@ -204,10 +204,11 @@ Postgres rejects a supplied `id` unless the insert deliberately says
 | Column | Type | Source | Note |
 |---|---|---|---|
 | `id` | bigint identity PK | | §4.0 |
-| `code` | text UNIQUE | | `F26`, `S27` — letter + two-digit year |
-| `name` | text | | **`Fall 2026`**, **`Spring 2027`** |
-| `season_number` | smallint | `SEASON` col B | The company's own running season counter: `57` = F26, `58` = S27, `56` = the season before F26. **Not derivable from `code` or `name`** — and it is a component of the style code (§5), which reaches Salesforce, so it has to be stored. Renamed from `sheet_code`, which wrongly suggested it identified the spreadsheet |
-| `starts_on` | date | | for sorting and "current season" |
+| `season_type` | text NOT NULL | | **`SPRING`** or **`FALL`** — an input |
+| `year_yy` | smallint NOT NULL | | **`26`**, `27` — an input |
+| `code` | text, **generated** | | `'S'`/`'F'` ‖ `year_yy` → `S27` |
+| `name` | text, **generated** | | `Spring 2027` |
+| `season_number` | smallint, **generated** | `SEASON` col B | `2 × year_yy + 4` (Spring) or `+ 5` (Fall) — see §4.1.1 |
 | `cat_code` | text | `CAT` col A | `K` |
 | `style_letter` | text | `STYLE` col E | `W` |
 | `default_construction` | text | Q | `MACHINE KNIT` |
@@ -226,12 +227,51 @@ Postgres rejects a supplied `id` unless the insert deliberately says
 | `default_box_labeling` | text | DO | `BARCODED SHIPPING LABEL` |
 | `is_current` | boolean | | |
 
-⚠️ **`season_number` is almost, but not quite, per season.** The May copy of S27
-had **24 rows carrying `56`** instead of `58` — carry-over styles keeping an
-older season number, and therefore an older style code. They are gone from the
-August copy. Keep it on `seasons` for now and have the import flag any row whose
-number disagrees with its season; if carry-overs turn out to be deliberate, the
-fix is a nullable `season_number_override` on `styles`, not a redesign.
+#### 4.1.1 `season_number` is calculated, not stored
+
+**Given 2026-09-21:**
+
+```
+Spring 20YY → 2 × YY + 4
+Fall   20YY → 2 × YY + 5
+```
+
+Verified against every file to hand:
+
+| Season | Formula | Expected | In the sheet |
+|---|---|---|---|
+| S26 Spring 2026 | 2×26 + 4 | 56 | **56** ✓ (4,117 rows) |
+| F26 Fall 2026 | 2×26 + 5 | 57 | **57** ✓ |
+| S27 Spring 2027 | 2×27 + 4 | 58 | **58** ✓ |
+| F27 Fall 2027 | 2×27 + 5 | 59 | — |
+
+So the only real inputs are **season type and year**; `code`, `name` and
+`season_number` all follow:
+
+```sql
+season_type   text NOT NULL CHECK (season_type IN ('SPRING','FALL')),
+year_yy       smallint NOT NULL,
+code          text     GENERATED ALWAYS AS
+                (CASE season_type WHEN 'SPRING' THEN 'S' ELSE 'F' END
+                 || lpad(year_yy::text, 2, '0')) STORED,
+season_number smallint GENERATED ALWAYS AS
+                (2 * year_yy + CASE season_type WHEN 'SPRING' THEN 4 ELSE 5 END) STORED
+```
+
+Setting up a season becomes two fields, and the style code that reaches
+Salesforce can no longer be typed wrong.
+
+It also makes `season_number` a **reliable chronological sort key** — 56 → 57 →
+58 runs Spring 2026, Fall 2026, Spring 2027 — so `starts_on` is dropped; it was
+only there for ordering.
+
+⚠️ **Carry-over styles keep their original season number.** The May copy of S27
+had **24 rows carrying `56`** — and 56 is now identifiable as **S26**, so those
+are Spring 2026 styles carried into the S27 sheet, keeping their original style
+code. Not a data error. They are gone from the August copy, but if carry-overs
+are deliberate the model is a nullable **`styles.origin_season_id`** — "which
+season's number goes into this style's code" — defaulting to the style's own
+season. Cleaner than an override number, and one column rather than a redesign.
 
 Each of these fifteen holds **a single value wherever it is filled** in F26
 (66–99% of rows).
@@ -782,8 +822,8 @@ The consolidated list. **19 tables, ~190 columns, 5 views.** Every table has
 
 ### Season setup — 11 tables
 
-**`seasons`** (25)
-`id` · `code` · `name` · `season_number` · `starts_on` · `cat_code` ·
+**`seasons`** (25) — ◆ = generated, see §4.1.1
+`id` · `season_type` · `year_yy` · `code`◆ · `name`◆ · `season_number`◆ · `cat_code` ·
 `style_letter` · `default_construction` · `default_details` · `default_lining` ·
 `default_tension` · `default_production_vendor` · `default_spec` ·
 `default_hang_tag_instructions` · `default_hook_sock_tag` ·
