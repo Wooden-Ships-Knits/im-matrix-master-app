@@ -203,8 +203,10 @@ Postgres rejects a supplied `id` unless the insert deliberately says
 | Column | Type | Source | Note |
 |---|---|---|---|
 | `id` | bigint identity PK | | §4.0 |
-| `code` | text UNIQUE | | `F26`, `S27` |
-| `sheet_code` | smallint | `SEASON` col B | `57` for F26, `58` for S27 — part of the style code |
+| `code` | text UNIQUE | | `F26`, `S27` — letter + two-digit year |
+| `name` | text | | **`Fall 2026`**, **`Spring 2027`** |
+| `sheet_code` | smallint | `SEASON` col B | `57` = F26, `58` = S27. A running counter, so it also gives season order — **S27 (Spring 2027) is the newer season**, not F26 |
+| `starts_on` | date | | for sorting and "current season" |
 | `cat_code` | text | `CAT` col A | `K` |
 | `style_letter` | text | `STYLE` col E | `W` |
 | `default_construction` | text | Q | `MACHINE KNIT` |
@@ -310,7 +312,7 @@ Self-teaching: a colour typed once is offered next time.
 `sort_order`.
 
 **`markets`** — `id`, `season_id`, `code` (F26: `USA`, `CANADA`; S27: `FOB BALI`,
-`DIVERSE`, `EFSN`, `ELLIS`, plus `SY` for the Shopify channel), `pricing_rule`
+`DIVERSE`, `EFSN`, `ELLIS`), `pricing_rule`
 (`input` / `usa_plus_landed_variance_rounddown`), `commission_factor`.
 Kept because S27 priced to Diverse / EFSN / Ellis and F26 to USA / Canada —
 markets change between seasons.
@@ -346,10 +348,15 @@ markets change between seasons.
 | `finishing_home_minutes` | numeric(8,2) | EK | |
 | `embroidery_price_idr` | numeric(14,2) | EO | |
 | `embroidery_minutes` | numeric(8,2) | EP | |
-| `whls_line_price_usd` | numeric(12,2) | HG | **the one price everything else keys off** |
-| `final_retail_price_usd` | numeric(12,2) | HU | 97% typed; NULL → `ROUNDUP(line × 2.2)` |
-| `final_sale_price_usd` | numeric(12,2) | HY (F26) | NULL where the sheet says N/A |
-| `final_sample_price_usd` | numeric(12,2) | IX (S27) | S27 carries a sample price and no sale price; F26 the reverse (§9) |
+**Two price tracks — wholesale and SY — and a style can have either or both.**
+See §4.3.
+
+| `whls_line_price_usd` | numeric(12,2) | S27 IC · F26 HG | Wholesale. All wholesale margins key off it. NULL for SY-only styles (724 S27 rows) |
+| `whls_retail_price_usd` | numeric(12,2) | S27 IT · F26 HU | Wholesale retail. Typed; default `ROUNDUP(line × markup)` |
+| `sy_retail_price_usd` | numeric(12,2) | **S27 JC** | **SY retail — a separate price, not derived from wholesale** |
+| `sy_mark_up` | numeric(6,4) | **S27 JD** | Typed, not computed — SY is priced independently |
+| `final_sale_price_usd` | numeric(12,2) | F26 HY | NULL where the sheet says N/A |
+| `final_sample_price_usd` | numeric(12,2) | S27 IX | S27 has sample and no sale price; F26 the reverse (§9) |
 | `similar_repeat_price_note` | text | HL | |
 | `photo_url` | text | — | PRD |
 | `notes` | text | — | |
@@ -417,6 +424,37 @@ of rows.
 **`style_measurements`** — `id`, `style_id`, `size_id`, `point`, `value_cm`.
 `UNIQUE (style_id, size_id, point)`. From the PRD; not in the sheet.
 
+### 4.3 The two price tracks — wholesale and SY
+
+**Confirmed 2026-09-21.** A style is priced twice, independently, and both are
+required. This is not one price with a discount applied.
+
+| | Wholesale (`000`) | SY |
+|---|---|---|
+| Line price | `whls_line_price_usd` — typed | — |
+| Retail | `whls_retail_price_usd` — typed, defaults to `ROUNDUP(line × markup)` | `sy_retail_price_usd` — **typed, independent** |
+| Mark-up | **computed** — `retail ÷ line price` | `sy_mark_up` — **typed** |
+| Sale / sample | `final_sale_price_usd` (F26) · `final_sample_price_usd` (S27) | — |
+| Territory prices | `style_market_prices` (USA, Canada, Diverse, EFSN, Ellis) | — |
+
+In S27 these are two separate blocks: the wholesale retail at column `IT` with a
+**computed** mark-up at `IU`, and the SY retail at `JC` with a **typed** mark-up
+at `JD`. The sheet even carries a `variance` column comparing the two.
+
+**Either can be empty.** 724 S27 rows have `N/A` for the wholesale line price —
+those styles are SY-only. The reverse also happens. So neither column is `NOT
+NULL`, and a style with no price at all is a legitimate draft.
+
+**Not to be confused with the colorway channel.** `style_colorways.whs_channel`
+(`000` / `SY` / `BOTH`) says *which channel a colorway is sold in*. These columns
+say *what it costs there*. A style can be priced for both channels while only
+some of its colorways are sold in each.
+
+**In F26 the SY difference shows up in cost, not price:** two landed-cost columns
+(`DHL LANDED VOLUMETRIC AIR COST FOR SY ONLY`, for 1 pc and 2 pcs) carry the
+direct-to-customer shipping. Those are computed in the view from
+`season_rates.sy_only_dhl_1pc_usd` / `_2pc_usd`.
+
 ---
 
 ## 5. Computed — `v_sku_costing`
@@ -449,7 +487,10 @@ the file:
 | 6 landed costs | receiving + extras + packaging + duty + customs + freight (GZ–HF) |
 | Canada line price | ROUNDDOWN(USA + variance) unless overridden (HI) |
 | after-commission prices | × 0.88 (HJ, HK) |
-| suggested retail | line × 2.2 (HS) |
+| suggested retail | line × each entry of `retail_markups` (S27 gives three: 2.2 / 2.25 / 2.3) |
+| `whls_mark_up` | wholesale retail ÷ line price (S27 IU · F26 HV) |
+| SY mark-up | **not computed** — typed (S27 JD) |
+| `retail_variance` | wholesale retail vs SY retail (S27 JI) |
 | 8 margins | 1 − landed ÷ price (HM–HX) |
 | `below_target` | margin < target from `season_rates` |
 
@@ -634,3 +675,22 @@ The one thing to confirm: S27's **SY price block** means a style can carry a
 different price for the Shopify channel than for wholesale. Modelling `SY` as a
 market row handles it, but it is worth checking that is how the team thinks
 about it.
+
+**Answered 2026-09-21 — SY and wholesale are separate prices and both are
+needed.** So SY is *not* modelled as a market row; it is its own pair of columns
+on `styles` (§4.3). Markets stay for the wholesale line price by territory
+(USA, Canada, Diverse, EFSN, Ellis).
+
+### 9.7 Season order — S27 is the newer season
+
+`F26` = **Fall 2026**, `S27` = **Spring 2027**. The `SEASON` code in the sheet
+is a running counter that confirms it: F26 is 57, S27 is 58.
+
+This corrects an assumption recorded earlier in `plan.md`, which guessed F26
+might be the newer file because its May copy had more rows and a Canada pricing
+track. The opposite is true, and the direction of travel is the other way:
+**Canada is in the older season and gone from the newer one, while the SY block
+and the Diverse / EFSN / Ellis distributors are what the newer season adds.**
+
+Practical consequence: **S27 is the better model of where things are heading**,
+and the newer season is the one to build the first screens against.

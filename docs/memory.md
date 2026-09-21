@@ -24,6 +24,8 @@ the other VM applications run, starting from an empty database.
 | Thing | Value |
 |---|---|
 | Domain | Sweater/knitwear style master data — styles, colorways, yarn BOM, prices, measurements |
+| Seasons | `F26` = Fall 2026, `S27` = Spring 2027. Letter + year; the sheet's `SEASON` counter (57, 58) gives the order — **S27 is the newer season** |
+| Prices | **Wholesale and SY are separate prices; a style needs both.** SY is not a discount off wholesale |
 | Replaces | `S27_IM_MASTER.xlsx` and one workbook per season before it |
 | Stack | Postgres 16 + FastAPI + React/Vite + nginx, one `docker-compose.yml` |
 | Layout | `backend/` · `frontend/` · `docs/` at the repo root |

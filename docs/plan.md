@@ -394,8 +394,11 @@ percentage convention, 5.6 → sizes, and 5.5 touches pricing).
 
 ## 9. Open
 
-- Is `F26 IM MASTER.xlsx` the newer file? It has more rows (8438) and the Canada
-  pricing track, which suggests the schema is still growing. If Canada is the
-  direction of travel, those columns are not optional extras.
-- Which of the two files is the better model for the table — S27 (the plan is
-  written from it) or F26 (bigger, newer, has Canada)?
+~~Is `F26 IM MASTER.xlsx` the newer file?~~ **Answered 2026-09-21 — no.**
+`F26` is **Fall 2026** and `S27` is **Spring 2027**, so **S27 is the newer
+season**; the sheet's own `SEASON` counter agrees (57 vs 58). The guess that
+Canada was "the direction of travel" was backwards: Canada is in the *older*
+season and absent from the newer one, while the newer season adds the **SY price
+block** and the Diverse / EFSN / Ellis distributors.
+
+**S27 is therefore the better model to build against.** See `schema.md` §9.7.
