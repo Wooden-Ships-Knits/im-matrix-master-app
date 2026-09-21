@@ -225,13 +225,61 @@ That is the honest cost, and it buys a sales report that is right across seasons
 
 ---
 
+## 6. Decided — start with one field, not the full model
+
+**2026-09-21.** The notice/event model in §4 is **deferred**. The first version
+is a single field on the colourway: **"Sub to"**.
+
+```sql
+ALTER TABLE style_colorways ADD COLUMN
+  subbed_to_colorway_id bigint REFERENCES style_colorways(id),  -- same style
+  subbed_on             date,
+  sub_reason            text;
+```
+
+It sits on `style_colorways` because that is exactly the scope the data proved —
+(this style, this colour), never a colour name globally (§3.1).
+
+**On screen**, in the colourway block next to *Remove*: a **Sub to** picker
+listing the style's other colourways, plus *add new*. Once set, the colourway
+shows as superseded — `INDIA SEA STRIPE → INDIGO STRIPE` — and stays visible
+rather than disappearing.
+
+### The one rule that makes it work
+
+**Keep the old colourway row. Do not overwrite it.**
+
+If someone edits `INDIA SEA STRIPE` into `INDIGO STRIPE` in place, there is
+nothing left to point from and the field is useless — which is precisely how the
+history is lost in the spreadsheet today. The flow has to be: add the new
+colourway, then point the old one at it.
+
+### What one field already buys
+
+- A sales row carrying the **old** tag resolves to the new colourway.
+- Chains resolve by following the pointers: `A → B → C`.
+- `subbed_on` lets a report choose the season boundary.
+- If the notice model is ever wanted, it can be reconstructed by grouping these
+  pointers by date and yarn — the data will already be there.
+
+### Small things to settle when building it
+
+1. **Direction.** "Sub *to*" (forward, what you asked for) reads naturally at
+   entry time. Be consistent — a mixed direction is unreadable later.
+2. **Guard against cycles** — `A → B → A` should be refused.
+3. **Within a season or across one?** Both happen; the date answers it, but the
+   picker should probably offer this season's colourways first.
+
+---
+
 ## 6. Open
 
 1. When a colour is substituted mid-season, should the **old tag remain
    sellable** on stock already made, or is it replaced everywhere at once?
    Decides whether the old tag stays active or is closed off by date.
 2. Should a substitution ever be reported **separately** for costing, given the
-   yarn genuinely differs?
+   yarn genuinely differs? (Deferred with §4 — the `sub_reason` text is enough
+   to revisit it later.)
 3. Do two styles ever **merge** into one product, or one **split** into two? The
    event kinds are there, but I have not seen a case in the files.
 4. How far back should the link go — S26 only, or the whole `Collection` archive
