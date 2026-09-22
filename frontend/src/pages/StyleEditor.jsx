@@ -4,6 +4,7 @@ import {
   Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer,
 } from 'lucide-react';
 import { api } from '../api.js';
+import { roundFixed } from '../format.js';
 import {
   Field, TextInput, PriceInput, CheckBox, Combo, ConfirmDialog, useToast,
 } from '../components/ui.jsx';
@@ -339,7 +340,7 @@ export default function StyleEditor() {
                               <span className="cw-yarn">{l.yarn}</span>
                               <span className="cw-pct">
                                 {l.percent === '' || l.percent == null
-                                  ? '' : `${Number(l.percent).toFixed(1)}%`}
+                                  ? '' : `${roundFixed(l.percent, 1)}%`}
                               </span>
                             </li>
                           );

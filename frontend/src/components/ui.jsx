@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
 import { Check, CheckCircle2, AlertCircle } from 'lucide-react';
+import { roundFixed } from '../format.js';
 
 /* ---------------- Toast ---------------- */
 
@@ -82,7 +83,7 @@ export function NumberInput({ value, onChange, decimals, ...rest }) {
   // number back to edit.
   const round = decimals != null && !editing
     && value !== '' && value != null && !Number.isNaN(Number(value));
-  const shown = round ? Number(value).toFixed(decimals) : (value ?? '');
+  const shown = round ? roundFixed(value, decimals) : (value ?? '');
 
   return (
     <input className="input" type="number" inputMode="decimal" step="any"

@@ -1,4 +1,5 @@
 import { Field, TextInput, NumberInput, Combo } from '../components/ui.jsx';
+import { roundFixed } from '../format.js';
 
 // Only S/M is measured. The sheet grades the rest off it and says so in the
 // formulas: M/L is =S/M*1.1, and X/L is =M/L*1.1, so 1.21 of S/M. X/S is the
@@ -113,7 +114,7 @@ export default function YarnSection({ form, update, meta }) {
                   ) : (
                     <span className="wt-derived">
                       {x.weight_kg === '' || x.weight_kg == null
-                        ? '\u2014' : Number(x.weight_kg).toFixed(3)}
+                        ? '\u2014' : roundFixed(x.weight_kg, 3)}
                     </span>
                   )}
                   <span className="wt-from">
