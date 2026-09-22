@@ -530,3 +530,28 @@ select.input {
 /* Channel + finishing, beside the Sold through checkboxes */
 .chan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
 @media (max-width: 560px) { .chan-row { grid-template-columns: 1fr; } }
+
+/* ================= Colourway preview =================
+   Which colour the panel is showing, and what it is made of. The dots are
+   matched from the yarn name, so they are an aid to scanning and not a colour
+   reference — an unmatched name gets a hatched chip rather than a guess. */
+.cw-pick { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.cw-pick select.input { font-weight: 600; }
+.cw-yarns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cw-yarns li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.cw-dot {
+  width: 15px; height: 15px; border-radius: 50%; flex: 0 0 auto;
+  border: 1px solid rgba(42,42,42,.22); box-shadow: inset 0 -2px 3px rgba(0,0,0,.06);
+}
+.cw-dot.unknown {
+  background: repeating-linear-gradient(45deg,
+    var(--tile) 0 3px, var(--band) 3px 6px);
+}
+.cw-yarn {
+  font-size: .8rem; color: var(--text); min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cw-pct {
+  margin-left: auto; font-size: .76rem; color: var(--muted);
+  font-variant-numeric: tabular-nums; flex: 0 0 auto;
+}

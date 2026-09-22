@@ -25,6 +25,38 @@ const SECTIONS = [
   { key: 'measurements', label: 'Measurements', icon: Ruler },
 ];
 
+// Yarn colours are named, never given a value: "YCA BREAKER WHITE - 658" says
+// what to order, not what it looks like. These are the plain colour words that
+// appear in the names, so a swatch can be shown for most of them. It is an
+// approximation for scanning, not a colour reference — anything unrecognised
+// gets a neutral chip rather than a guess.
+const COLOR_WORDS = [
+  ['BREAKER WHITE', '#F4F2ED'], ['PURE SNOW', '#FAFAF7'], ['ALABASTER', '#EFEAE0'],
+  ['IVORY', '#F4EFE2'], ['CREAM', '#F2E8D5'], ['OATMEAL', '#DDD3C0'],
+  ['ALMOND BUTTER', '#D8BD93'], ['CAMEL', '#C19A6B'], ['KHAKI', '#B3A078'],
+  ['SAND', '#D9C8AC'], ['STONE', '#C8C0B4'], ['CEMENT', '#A9A69F'],
+  ['FRIGID GRAY', '#A8AFB2'], ['CHARCOAL', '#43484B'], ['GRAY', '#8E9295'],
+  ['GREY', '#8E9295'], ['BLACK', '#23262A'], ['WHITE', '#F6F5F1'],
+  ['DARKEST INDIGO', '#232F45'], ['INDIGO', '#31456B'], ['NAVY', '#1F2D4D'],
+  ['DENIM', '#4A6484'], ['MYKONOS', '#2F6FA8'], ['ALASKA NIGHT', '#2B3A4A'],
+  ['TURQUOISE', '#3AA7A0'], ['TEAL', '#2F6B6B'], ['SAGE', '#9CAD92'],
+  ['OLIVE', '#77794A'], ['GREEN', '#5C7A52'], ['MUSTARD', '#C8972F'],
+  ['YELLOW', '#D9B23C'], ['ORANGE', '#C97A3E'], ['RUST', '#A8543A'],
+  ['BURGUNDY', '#6E2B37'], ['WINE', '#6B2C3A'], ['RED', '#B0413E'],
+  ['PINK WHIM', '#DCA3AE'], ['PINK', '#D79AA6'], ['PURPLE', '#6B5183'],
+  ['CHOCOLATE', '#4E3A2E'], ['BROWN', '#6B5240'], ['TAN', '#B99A73'],
+  ['BEIGE', '#DCCDB4'], ['NATURAL', '#E4DAC6'], ['BLUE', '#3F6390'],
+];
+
+/** Approximate swatch for a yarn colour name, or null when nothing matches. */
+function swatchFor(name) {
+  const n = (name || '').toUpperCase();
+  for (const [word, hex] of COLOR_WORDS) {
+    if (n.includes(word)) return hex;
+  }
+  return null;
+}
+
 const emptyForm = (season = '') => ({
   name: '', sku_code: '', status: 'active', content_code: '', style_number: '',
   gauge_code: '', material: '', admin_pct: '', knit_minutes_dev: '',
@@ -88,6 +120,7 @@ export default function StyleEditor() {
   const [loading, setLoading] = useState(!!id);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [costing, setCosting] = useState([]);
+  const [preview, setPreview] = useState('');
 
   const [serverImage, setServerImage] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
@@ -144,6 +177,13 @@ export default function StyleEditor() {
       return { ...f, sizes };
     });
   };
+
+  // Which colourway the panel is previewing. Defaults to the first one, which
+  // is the top of the BOM, and falls back to it if that colourway is renamed
+  // or removed while it is selected.
+  const colorNames = form.colorways.map((cw) => cw.name).filter(Boolean);
+  const activeColor = colorNames.includes(preview) ? preview : (colorNames[0] || '');
+  const activeCw = form.colorways.find((cw) => cw.name === activeColor);
 
   const primaryColor = form.colorways[0]?.name ?? '';
   const setPrimaryColor = (name) => {
@@ -278,6 +318,35 @@ export default function StyleEditor() {
               {/* ---------- Left: style identity ---------- */}
               <section className="card card-pad style-panel">
                 <div>
+                  <div className="cw-pick">
+                    <select className="input" aria-label="Colourway preview"
+                      value={activeColor}
+                      disabled={colorNames.length === 0}
+                      onChange={(e) => setPreview(e.target.value)}>
+                      {colorNames.length === 0
+                        ? <option value="">No colourways yet</option>
+                        : colorNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    {activeCw && (
+                      <ul className="cw-yarns">
+                        {(activeCw.bom || []).filter((l) => l.yarn).map((l, i) => {
+                          const hex = swatchFor(l.yarn);
+                          return (
+                            <li key={i}>
+                              <span className={`cw-dot${hex ? '' : ' unknown'}`}
+                                style={hex ? { background: hex } : undefined}
+                                title={hex ? 'Approximate, from the name' : 'No colour matched'} />
+                              <span className="cw-yarn">{l.yarn}</span>
+                              <span className="cw-pct">
+                                {l.percent === '' || l.percent == null
+                                  ? '' : `${Number(l.percent).toFixed(1)}%`}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                   <div className="style-photo">
                     {imgSrc ? (
                       <img src={imgSrc} alt={form.name || 'Style photo'} />
@@ -306,10 +375,10 @@ export default function StyleEditor() {
                       placeholder="e.g. MAUI CHUNKY CREW COTTON"
                       onChange={(e) => update({ name: e.target.value })} />
                   </Field>
-                  <Field label="Color" hint="First colorway — add more in the BOM section below">
+                  {/* <Field label="Color" hint="First colorway — add more in the BOM section below">
                     <Combo value={primaryColor} onChange={setPrimaryColor}
                       options={meta?.colorNames || []} placeholder="e.g. BEAUJOLAIS" />
-                  </Field>
+                  </Field> */}
                   <div className="sku-block">
                     <div className="group-label">SKU code</div>
                     <div className="sku-parts">
