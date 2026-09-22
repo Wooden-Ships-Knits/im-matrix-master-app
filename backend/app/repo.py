@@ -27,6 +27,8 @@ FLAT = [
     "admin_pct", "knit_minutes_dev",
     # Which X/S grading factor this style uses, 0.9 or 0.92 (migration 0005).
     "xs_weight_factor",
+    # Channel and finishing, read from the DESCRIPTION suffix (migration 0006).
+    "whs_channel", "finishing_location",
     "whls_line_price_usd", "whls_retail_price_usd", "sy_retail_price_usd",
     "final_sale_price_usd", "price_000", "final_sample_price_usd",
 ]

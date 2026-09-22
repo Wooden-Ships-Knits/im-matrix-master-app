@@ -200,6 +200,46 @@ class Sheet:
         return out
 
 
+# The DESCRIPTION suffix carries more than the size. Spellings drifted between
+# seasons — S25 wrote "FINISHING AT FACTORY" where F25 onward writes "FAF", and
+# "BOTH" became "BOTH WHS" — and segments get combined ("000 ONLY- FAF") or
+# annotated ("BOTH (NAME FOR SY: PETRA ZIP)"). So these are searched for inside
+# the whole suffix rather than matched against a segment.
+#
+# Order matters: "000 ONLY (NAME FOR SY: KERRY)" mentions SY but is not SY only.
+_CHANNEL = [
+    (re.compile(r"\bBOTH\b"), "BOTH"),
+    (re.compile(r"\b000\s*ONLY\b"), "000 ONLY"),
+    (re.compile(r"\b(?:SHOPIFY|SY)\s*ONLY\b"), "SY ONLY"),
+]
+_FINISHING = [
+    (re.compile(r"\bFAF\b|\bFINISHING\s+AT\s+FACTORY\b"), "FAF"),
+    (re.compile(r"\bFAH\b|\bFINISHING\s+TAKE\s+HOME\b"), "FAH"),
+]
+
+
+def _suffix(text):
+    return " - ".join(text.split(" - ")[1:]).upper()
+
+
+def channel_of(text):
+    """'... - X/S - 000 ONLY' -> '000 ONLY'. None when the row does not say."""
+    s = _suffix(text or "")
+    for pattern, value in _CHANNEL:
+        if pattern.search(s):
+            return value
+    return None
+
+
+def finishing_of(text):
+    """'... - FAH' -> 'FAH'. None when the row does not say."""
+    s = _suffix(text or "")
+    for pattern, value in _FINISHING:
+        if pattern.search(s):
+            return value
+    return None
+
+
 def split_description(text):
     """'ALEX STRIPED CREW COTTON - X/S - 000 ONLY' -> (name, size).
 

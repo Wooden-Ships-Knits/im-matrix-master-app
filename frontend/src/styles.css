@@ -526,3 +526,7 @@ select.input {
   .wt-head { display: none; }
   .wt-row { grid-template-columns: 52px minmax(0, 1fr); row-gap: 6px; }
 }
+
+/* Channel + finishing, beside the Sold through checkboxes */
+.chan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+@media (max-width: 560px) { .chan-row { grid-template-columns: 1fr; } }

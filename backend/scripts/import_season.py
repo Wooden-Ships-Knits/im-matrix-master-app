@@ -19,8 +19,8 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sheet import (Sheet, Ambiguous, minutes_from, rate_cells,  # noqa: E402
-                   split_description)
+from sheet import (Sheet, Ambiguous, channel_of, finishing_of,  # noqa: E402
+                   minutes_from, rate_cells, split_description)
 
 ROOT = Path(__file__).resolve().parents[2]
 SEASONS = ["S25", "F25", "S26", "F26", "S27"]
@@ -152,7 +152,18 @@ def collect(sh, season):
             "name": name, "season": season, "status": "active",
             "sizes": [], "colorways": [], "operations": [],
             "_sizes_seen": set(), "_colors_seen": set(), "_ops": {},
+            "_channel": collections.Counter(), "_finishing": collections.Counter(),
         })
+
+        # Channel and finishing come out of the DESCRIPTION suffix, counted
+        # across the style's rows rather than taken from the first one.
+        desc = sh.value(cells, "DESCRIPTION") or ""
+        ch = channel_of(desc)
+        if ch:
+            s["_channel"][ch] += 1
+        fin = finishing_of(desc)
+        if fin:
+            s["_finishing"][fin] += 1
 
         for key, header in TEXT_FIELDS:          # first non-empty wins
             if not s.get(key):
@@ -218,6 +229,19 @@ def collect(sh, season):
     for s in styles.values():
         s["operations"] = [{"code": c, "minutes": m}
                            for c, (m, _src) in s.pop("_ops").items()]
+
+        # A style whose rows disagree sells on both — the split is by
+        # colourway, and the style-level field cannot say more than that.
+        ch = s.pop("_channel")
+        if ch:
+            s["whs_channel"] = "BOTH" if len(ch) > 1 else next(iter(ch))
+            s["sell_sy"] = s["whs_channel"] != "000 ONLY"
+            s["sell_000"] = s["whs_channel"] != "SY ONLY"
+        # Same reasoning as whs_channel: when the sheet says both, say both.
+        fin = s.pop("_finishing")
+        if fin:
+            s["finishing_location"] = "BOTH" if len(fin) > 1 else next(iter(fin))
+
         s.pop("_sizes_seen", None)
         s.pop("_colors_seen", None)
     return styles

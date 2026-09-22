@@ -28,7 +28,7 @@ const SECTIONS = [
 const emptyForm = (season = '') => ({
   name: '', sku_code: '', status: 'active', content_code: '', style_number: '',
   gauge_code: '', material: '', admin_pct: '', knit_minutes_dev: '',
-  xs_weight_factor: 0.9,
+  xs_weight_factor: 0.9, whs_channel: '', finishing_location: '',
   season, collection: '', sub_group: '',
   sell_sy: true, sell_000: true,
   sizes: [],
@@ -203,6 +203,17 @@ export default function StyleEditor() {
     ? skuParts.join('')
     : '';
 
+  // The checkboxes and the channel say the same thing, so one edit writes
+  // both. Otherwise a style could claim SY ONLY with 000 ticked.
+  const setChannel = (sy, thousand) =>
+    update({
+      sell_sy: sy,
+      sell_000: thousand,
+      whs_channel: sy && thousand ? 'BOTH'
+        : sy ? 'SY ONLY'
+          : thousand ? '000 ONLY' : '',
+    });
+
   const sectionProps = { form, update, meta, costing };
   const Body = {
     bom: BomSection, yarn: YarnSection, operations: OperationsSection,
@@ -357,8 +368,37 @@ export default function StyleEditor() {
                   <div>
                     <div className="group-label">Sold through</div>
                     <div className="checks-row">
-                      <CheckBox label="SY" checked={form.sell_sy} onChange={field('sell_sy')} />
-                      <CheckBox label="000" checked={form.sell_000} onChange={field('sell_000')} />
+                      <CheckBox label="SY" checked={form.sell_sy}
+                        onChange={(v) => setChannel(v, form.sell_000)} />
+                      <CheckBox label="000" checked={form.sell_000}
+                        onChange={(v) => setChannel(form.sell_sy, v)} />
+                    </div>
+                    <div className="chan-row">
+                      <Field label="Channel" hint="As the IM writes it">
+                        <select className="input" value={form.whs_channel || ''}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            update({
+                              whs_channel: v,
+                              sell_sy: v !== '000 ONLY',
+                              sell_000: v !== 'SY ONLY',
+                            });
+                          }}>
+                          <option value="">Not set</option>
+                          <option value="SY ONLY">SY ONLY</option>
+                          <option value="000 ONLY">000 ONLY</option>
+                          <option value="BOTH">BOTH</option>
+                        </select>
+                      </Field>
+                      <Field label="Finishing" hint="At factory or taken home">
+                        <select className="input" value={form.finishing_location || ''}
+                          onChange={(e) => update({ finishing_location: e.target.value })}>
+                          <option value="">Not set</option>
+                          <option value="FAF">FAF — at factory</option>
+                          <option value="FAH">FAH — take home</option>
+                          <option value="BOTH">BOTH</option>
+                        </select>
+                      </Field>
                     </div>
                   </div>
 
