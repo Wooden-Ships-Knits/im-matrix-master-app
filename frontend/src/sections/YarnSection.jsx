@@ -113,7 +113,7 @@ export default function YarnSection({ form, update, meta }) {
                   ) : (
                     <span className="wt-derived">
                       {x.weight_kg === '' || x.weight_kg == null
-                        ? '\u2014' : Number(x.weight_kg).toFixed(5)}
+                        ? '\u2014' : Number(x.weight_kg).toFixed(3)}
                     </span>
                   )}
                   <span className="wt-from">
