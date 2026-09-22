@@ -542,7 +542,12 @@ select.input {
    matched from the yarn name, so they are an aid to scanning and not a colour
    reference — an unmatched name gets a hatched chip rather than a guess. */
 .cw-pick { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-.cw-pick select.input { font-weight: 600; }
+.cw-pick select.input {
+  /* A touch smaller than a form field: this one picks what to look at, it is
+     not something being filled in. */
+  font-weight: 600; font-size: 0.88rem;
+  min-height: 38px; padding: 6px 30px 6px 11px;
+}
 .cw-yarns { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .cw-yarns li { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .cw-dot {
