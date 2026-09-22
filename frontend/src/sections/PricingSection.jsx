@@ -12,24 +12,33 @@ const money = (v) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 export default function PricingSection({ form, update, costing = [] }) {
   const field = (k) => (v) => update({ [k]: v });
 
+  // A style that is not sold on 000 has no wholesale line price. Locking the
+  // box rather than hiding it keeps the figure visible if the style is
+  // switched back, and stops a stale price being read as current.
+  const sellsWholesale = !!form.sell_000;
+
   return (
     <>
       <div className="form-grid">
-        <Field label="Wholesale (WHLS)" hint="Everything below is costed against this">
-          <PriceInput value={form.wholesale_price} onChange={field('wholesale_price')} />
+        <Field label="Wholesale (WHLS)"
+          hint={sellsWholesale
+            ? 'Everything below is costed against this'
+            : 'Not sold on 000 \u2014 tick it to set a wholesale price'}>
+          <PriceInput value={form.wholesale_price} disabled={!sellsWholesale}
+            onChange={field('wholesale_price')} />
         </Field>
         <Field label="Retail" hint="Shown in the Browse table">
           <PriceInput value={form.retail_price} onChange={field('retail_price')} />
         </Field>
-        <Field label="SY Price">
+        {/* <Field label="SY Price">
           <PriceInput value={form.sy_price} onChange={field('sy_price')} />
-        </Field>
-        <Field label="SY Sale">
+        </Field> */}
+        <Field label="Sale Price">
           <PriceInput value={form.sy_sale_price} onChange={field('sy_sale_price')} />
         </Field>
-        <Field label="000 Price">
+        {/* <Field label="000 Price">
           <PriceInput value={form.price_000} onChange={field('price_000')} />
-        </Field>
+        </Field> */}
         <Field label="Admin %" hint="Multiplies the season's admin base">
           <PriceInput value={form.admin_pct} onChange={field('admin_pct')} />
         </Field>

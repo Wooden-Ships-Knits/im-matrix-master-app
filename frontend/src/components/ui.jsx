@@ -97,7 +97,7 @@ export function NumberInput({ value, onChange, decimals, ...rest }) {
 
 export function PriceInput({ value, onChange, ...rest }) {
   return (
-    <div className="price-input">
+    <div className={`price-input${rest.disabled ? ' is-disabled' : ''}`}>
       <span className="currency">$</span>
       <input className="input" type="number" inputMode="decimal" step="any" min="0"
         value={value ?? ''} onChange={(e) => onChange(e.target.value)} {...rest} />
