@@ -12,10 +12,14 @@ const money = (v) => (v == null ? '—' : `$${Number(v).toFixed(2)}`);
 export default function PricingSection({ form, update, costing = [] }) {
   const field = (k) => (v) => update({ [k]: v });
 
-  // A style that is not sold on 000 has no wholesale line price. Locking the
-  // box rather than hiding it keeps the figure visible if the style is
-  // switched back, and stops a stale price being read as current.
+  // Each price belongs to a channel: the wholesale line price to 000, retail
+  // and sale to SY. A style that is not sold on a channel has no price there,
+  // so those boxes lock. Locked rather than hidden or cleared — the figures
+  // are real, and they come straight back if the style goes on sale there
+  // again.
   const sellsWholesale = !!form.sell_000;
+  const sellsSy = !!form.sell_sy;
+  const syHint = 'Not sold on SY \u2014 tick it to set this price';
 
   return (
     <>
@@ -27,14 +31,17 @@ export default function PricingSection({ form, update, costing = [] }) {
           <PriceInput value={form.wholesale_price} disabled={!sellsWholesale}
             onChange={field('wholesale_price')} />
         </Field>
-        <Field label="Retail" hint="Shown in the Browse table">
-          <PriceInput value={form.retail_price} onChange={field('retail_price')} />
+        <Field label="Retail"
+          hint={sellsSy ? 'Shown in the Browse table' : syHint}>
+          <PriceInput value={form.retail_price} disabled={!sellsSy}
+            onChange={field('retail_price')} />
         </Field>
         {/* <Field label="SY Price">
           <PriceInput value={form.sy_price} onChange={field('sy_price')} />
         </Field> */}
-        <Field label="Sale Price">
-          <PriceInput value={form.sy_sale_price} onChange={field('sy_sale_price')} />
+        <Field label="Sale Price" hint={sellsSy ? undefined : syHint}>
+          <PriceInput value={form.sy_sale_price} disabled={!sellsSy}
+            onChange={field('sy_sale_price')} />
         </Field>
         {/* <Field label="000 Price">
           <PriceInput value={form.price_000} onChange={field('price_000')} />
