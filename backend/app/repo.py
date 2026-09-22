@@ -442,8 +442,22 @@ def meta() -> dict:
                 return col(f"SELECT DISTINCT {c} AS v FROM styles"
                            f" WHERE {c} IS NOT NULL AND {c} <> '' ORDER BY v")
 
+            # The weight rates the editor derives its columns from, so the
+            # tolerances follow the season instead of being retyped in the UI.
+            cur.execute(
+                "SELECT se.code, r.wt_tolerance_low, r.wt_tolerance_high,"
+                "       r.distribution_wt_add_kg, r.pricing_wt_factor"
+                "  FROM season_rates r JOIN seasons se ON se.id = r.season_id"
+            )
+            rates = {
+                r.pop("code"): {k: (float(v) if v is not None else None)
+                                for k, v in r.items()}
+                for r in (dict(x) for x in cur.fetchall())
+            }
+
             return {
                 "seasons": seasons,
+                "rates": rates,
                 "sizes": col("SELECT code AS v FROM sizes ORDER BY sort_order"),
                 "contentCodes": col("SELECT code AS v FROM content_codes ORDER BY v"),
                 "materials": col("SELECT name AS v FROM materials WHERE kind = 'yarn'"

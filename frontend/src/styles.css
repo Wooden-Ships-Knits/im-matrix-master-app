@@ -503,7 +503,8 @@ select.input {
    rather than empty boxes waiting for input. */
 .wt-grid { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .wt-head, .wt-row {
-  display: grid; grid-template-columns: 64px minmax(0, 1fr) 104px;
+  display: grid;
+  grid-template-columns: 58px minmax(96px, 1.2fr) repeat(4, minmax(72px, 1fr)) 100px;
   gap: 10px; align-items: center; padding: 8px 12px;
 }
 .wt-head {
@@ -514,6 +515,9 @@ select.input {
 .wt-size { font-weight: 700; }
 .wt-derived {
   font-variant-numeric: tabular-nums; color: var(--primary); font-weight: 600;
+}
+.wt-calc {
+  font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.86rem;
 }
 .wt-from { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .wt-from em { font-style: normal; color: var(--success); font-weight: 700; }
@@ -528,10 +532,10 @@ select.input {
 .wt-toggle button.on { background: var(--green-deep); color: #fff; font-weight: 700; }
 .wt-toggle button:focus-visible { outline: 0; box-shadow: var(--focus); }
 .wt-flag { color: var(--tan); }
-@media (max-width: 560px) {
-  .wt-head { display: none; }
-  .wt-row { grid-template-columns: 52px minmax(0, 1fr); row-gap: 6px; }
-}
+/* Seven columns will not fit a phone, and none of them is optional, so the
+   grid scrolls sideways inside its own box rather than dropping any. */
+.wt-grid { overflow-x: auto; }
+.wt-head, .wt-row { min-width: 700px; }
 
 /* Channel + finishing, beside the Sold through checkboxes */
 .chan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }

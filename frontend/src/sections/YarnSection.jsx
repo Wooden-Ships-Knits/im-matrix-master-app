@@ -8,6 +8,7 @@ import { roundFixed } from '../format.js';
 const SIZE_ORDER = ['X/S', 'S/M', 'M/L', 'X/L'];
 const GRADE = { 'S/M': 1, 'M/L': 1.1, 'X/L': 1.21 };
 
+
 const gradeOf = (size, xsFactor) => (size === 'X/S' ? Number(xsFactor) : GRADE[size]);
 
 /** Knit construction details and the finished weight of each size. */
@@ -18,6 +19,26 @@ export default function YarnSection({ form, update, meta }) {
   const sm = form.sizes.find((x) => x.size === 'S/M');
   const smWeight = sm && sm.weight_kg !== '' && sm.weight_kg != null
     ? Number(sm.weight_kg) : null;
+
+  // Tolerances and distribution weights come from the season's rates — the
+  // same row the costing view reads. No defaults: a season with no rates
+  // seeded shows nothing here, rather than numbers borrowed from S27 that
+  // may not be that season's.
+  const rates = meta?.rates?.[form.season] || null;
+
+  /** Everything the sheet derives from one finished weight. */
+  const derived = (wt) => {
+    if (!rates) return null;
+    if (wt === '' || wt == null || Number.isNaN(Number(wt))) return null;
+    const w = Number(wt);
+    const dist = w + rates.distribution_wt_add_kg;
+    return {
+      low: w * rates.wt_tolerance_low,
+      high: w * rates.wt_tolerance_high,
+      dist,
+      pricing: dist * rates.pricing_wt_factor,
+    };
+  };
 
   const ordered = [...form.sizes].sort(
     (a, b) => SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size),
@@ -95,11 +116,15 @@ export default function YarnSection({ form, update, meta }) {
         <>
           <div className="wt-grid">
             <div className="wt-head">
-              <span>Size</span><span>Weight (kg)</span><span>From</span>
+              <span>Size</span><span>Weight (kg)</span>
+              <span>Low tol.</span><span>High tol.</span>
+              <span>Distribution</span><span>For pricing</span>
+              <span>From</span>
             </div>
             {ordered.map((x) => {
               const isSm = x.size === 'S/M';
               const k = gradeOf(x.size, xsFactor);
+              const d = derived(x.weight_kg);
               return (
                 <div className="wt-row" key={x.size}>
                   <span className="wt-size">{x.size}</span>
@@ -112,6 +137,10 @@ export default function YarnSection({ form, update, meta }) {
                         ? '\u2014' : roundFixed(x.weight_kg, 3)}
                     </span>
                   )}
+                  <span className="wt-calc">{d ? roundFixed(d.low, 3) : '—'}</span>
+                  <span className="wt-calc">{d ? roundFixed(d.high, 3) : '—'}</span>
+                  <span className="wt-calc">{d ? roundFixed(d.dist, 3) : '—'}</span>
+                  <span className="wt-calc">{d ? roundFixed(d.pricing, 3) : '—'}</span>
                   <span className="wt-from">
                     {isSm ? <em>measured</em> : x.size === 'X/S' ? (
                       <span className="wt-toggle" role="group" aria-label="X/S factor">
@@ -133,6 +162,16 @@ export default function YarnSection({ form, update, meta }) {
           <p className="calc-note">
             Type S/M only. M/L and X/L follow it at ×1.1 and ×1.21, and X/S at
             whichever factor this style uses.
+            {rates ? (
+              <> Tolerances are ×{rates.wt_tolerance_low} and ×{rates.wt_tolerance_high},
+                distribution adds {rates.distribution_wt_add_kg} kg, and the pricing
+                weight is that ×{rates.pricing_wt_factor} — from {form.season}'s rates.</>
+            ) : (
+              <> <span className="wt-flag">
+                {form.season || 'This season'} has no rates seeded, so the tolerance and
+                distribution columns are blank.
+              </span></>
+            )}
             {offRatio && (
               <> <span className="wt-flag">
                 A stored weight does not match these ratios — it was adjusted by hand.
