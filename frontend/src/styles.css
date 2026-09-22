@@ -503,7 +503,7 @@ select.input {
    rather than empty boxes waiting for input. */
 .wt-grid { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .wt-head, .wt-row {
-  display: grid; grid-template-columns: 64px minmax(0, 1fr) 104px minmax(0, 1fr);
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) 104px;
   gap: 10px; align-items: center; padding: 8px 12px;
 }
 .wt-head {
@@ -566,3 +566,12 @@ select.input {
   margin-left: auto; font-size: .76rem; color: var(--muted);
   font-variant-numeric: tabular-nums; flex: 0 0 auto;
 }
+
+/* Pieces per box, one box per size, side by side. */
+.pcs-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.pcs-cell { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pcs-size {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted);
+}
+@media (max-width: 560px) { .pcs-row { grid-template-columns: repeat(2, 1fr); } }

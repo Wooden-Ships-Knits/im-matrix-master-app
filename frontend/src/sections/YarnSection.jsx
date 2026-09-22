@@ -38,11 +38,6 @@ export default function YarnSection({ form, update, meta }) {
       }),
     });
 
-  const setPcs = (size) => (v) =>
-    update({
-      sizes: form.sizes.map((x) => (x.size === size ? { ...x, pcs_per_box: v } : x)),
-    });
-
   // A stored weight that does not follow the ratios is real — a hand
   // adjustment — so it is flagged rather than overwritten.
   const offRatio = smWeight != null && ordered.some((x) => {
@@ -100,7 +95,7 @@ export default function YarnSection({ form, update, meta }) {
         <>
           <div className="wt-grid">
             <div className="wt-head">
-              <span>Size</span><span>Weight (kg)</span><span>From</span><span>Pcs / box</span>
+              <span>Size</span><span>Weight (kg)</span><span>From</span>
             </div>
             {ordered.map((x) => {
               const isSm = x.size === 'S/M';
@@ -131,9 +126,6 @@ export default function YarnSection({ form, update, meta }) {
                       </span>
                     ) : `\u00d7${k}`}
                   </span>
-                  {/* Pcs per box differs by size — 19 / 17 / 15 / 13 is typical */}
-                  <NumberInput value={x.pcs_per_box} min="0" onChange={setPcs(x.size)}
-                    placeholder="pcs/box" />
                 </div>
               );
             })}

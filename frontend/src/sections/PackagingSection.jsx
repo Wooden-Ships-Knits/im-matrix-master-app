@@ -5,6 +5,18 @@ export default function PackagingSection({ form, update, meta }) {
   const field = (k) => (v) => update({ [k]: v });
   const opts = meta?.options || {};
 
+  // Pieces per box differs by size — a bigger garment means fewer in the same
+  // carton — and it feeds the volumetric freight cost, so it belongs with the
+  // box rather than with the knit details. Ordered by the sizes table.
+  const order = meta?.sizes || [];
+  const sizes = [...form.sizes].sort(
+    (a, b) => order.indexOf(a.size) - order.indexOf(b.size),
+  );
+  const setPcs = (size) => (v) =>
+    update({
+      sizes: form.sizes.map((x) => (x.size === size ? { ...x, pcs_per_box: v } : x)),
+    });
+
   return (
     <div>
       <div className="form-grid">
@@ -41,10 +53,25 @@ export default function PackagingSection({ form, update, meta }) {
         <Field label="Height (cm)">
           <NumberInput value={form.box_height_cm} min="0" onChange={field('box_height_cm')} />
         </Field>
-        <Field label="Pieces per box">
-          <NumberInput value={form.pcs_per_box} min="0" onChange={field('pcs_per_box')} />
-        </Field>
       </div>
+
+      <div className="group-label" style={{ marginTop: 26 }}>Pieces per box</div>
+      {sizes.length === 0 ? (
+        <p className="muted" style={{ margin: 0 }}>
+          Tick the sizes this style comes in to enter pieces per box.
+        </p>
+      ) : (
+        <div className="pcs-row">
+          {sizes.map((x) => (
+            <label className="pcs-cell" key={x.size}>
+              <span className="pcs-size">{x.size}</span>
+              <NumberInput value={x.pcs_per_box} min="0"
+                aria-label={`Pieces per box, ${x.size}`}
+                onChange={setPcs(x.size)} />
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
