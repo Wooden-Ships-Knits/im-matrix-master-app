@@ -62,13 +62,21 @@ export default function BomSection({ form, update, meta }) {
 
           <div className="bom-label">Yarns / BOM (same for every size)</div>
 
+          <div className="bom-row bom-head" aria-hidden="true">
+            <span>Yarn</span>
+            <span>Percentage</span>
+            <span>Ends</span>
+            <span />
+          </div>
+
           {cw.bom.map((ln, j) => (
             <div key={j} className="bom-row">
               <Combo value={ln.yarn} onChange={(v) => setLine(i, j, { yarn: v })}
                 options={meta?.yarns || []} placeholder="Pick a yarn or type a new one" />
               <NumberInput value={ln.percent} min="0" max="100" decimals={1}
+                aria-label="Percentage"
                 onChange={(v) => setLine(i, j, { percent: v })} placeholder="%" />
-              <NumberInput value={ln.ends} min="0"
+              <NumberInput value={ln.ends} min="0" aria-label="Ends"
                 onChange={(v) => setLine(i, j, { ends: v })} placeholder="Ends" />
               <button type="button" className="icon-btn danger" title="Remove yarn line"
                 aria-label="Remove yarn line" onClick={() => removeLine(i, j)}>
