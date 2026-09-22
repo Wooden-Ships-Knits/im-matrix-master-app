@@ -440,3 +440,20 @@ select.input {
 /* weight + pcs per box, side by side in one size row */
 .size-row { display: flex; gap: 8px; }
 .size-row > * { flex: 1 1 0; min-width: 0; }
+
+/* ---- operation minutes (drives the labour cost) ---- */
+.ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px 20px; }
+.ops-row { display: flex; align-items: center; gap: 12px; }
+.ops-name { flex: 1 1 auto; font-size: 0.94rem; display: flex; align-items: center; gap: 8px; }
+.ops-row .input, .ops-row input { width: 108px; flex: 0 0 auto; }
+.ops-flag {
+  font-size: 0.66rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--tan); background: var(--inset); border: 1px solid var(--border);
+  padding: 1px 6px; border-radius: 5px;
+}
+.ops-total {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);
+  font-variant-numeric: tabular-nums; color: var(--muted);
+}
+.ops-total b { color: var(--text); font-size: 1.04rem; }

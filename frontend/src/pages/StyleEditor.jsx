@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
-  Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler,
+  Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer,
 } from 'lucide-react';
 import { api } from '../api.js';
 import {
@@ -13,10 +13,12 @@ import PricingSection from '../sections/PricingSection.jsx';
 import PackagingSection from '../sections/PackagingSection.jsx';
 import ShippingSection from '../sections/ShippingSection.jsx';
 import MeasurementsSection from '../sections/MeasurementsSection.jsx';
+import OperationsSection from '../sections/OperationsSection.jsx';
 
 const SECTIONS = [
   { key: 'bom', label: 'BOM', icon: Box },
   { key: 'yarn', label: 'Yarn', icon: Shirt },
+  { key: 'operations', label: 'Operations', icon: Timer },
   { key: 'pricing', label: 'Pricing', icon: BadgeDollarSign },
   { key: 'packaging', label: 'Packaging', icon: PackageOpen },
   { key: 'shipping', label: 'Shipping', icon: Truck },
@@ -30,6 +32,7 @@ const emptyForm = (season = '') => ({
   sell_sy: true, sell_000: true,
   sizes: [],
   colorways: [],
+  operations: [],
   measurements: [],
   construction: '', composition_care: '', color_sequence: '', gauge: '',
   tension: '', total_ends: '', logo_label: '', details: '',
@@ -61,6 +64,10 @@ function toForm(s) {
     bom: (cw.bom || []).map((b) => ({
       yarn: b.yarn ?? '', percent: b.percent ?? '', ends: b.ends ?? '', note: b.note ?? '',
     })),
+  }));
+  f.operations = (s.operations || []).map((o) => ({
+    code: o.code, name: o.name, default_minutes: o.default_minutes,
+    minutes: o.minutes ?? '',
   }));
   f.measurements = (s.measurements || []).map((m) => ({
     pom: m.pom, size: m.size ?? '', value_cm: m.value_cm ?? '',
@@ -185,9 +192,9 @@ export default function StyleEditor() {
 
   const sectionProps = { form, update, meta, costing };
   const Body = {
-    bom: BomSection, yarn: YarnSection, pricing: PricingSection,
-    packaging: PackagingSection, shipping: ShippingSection,
-    measurements: MeasurementsSection,
+    bom: BomSection, yarn: YarnSection, operations: OperationsSection,
+    pricing: PricingSection, packaging: PackagingSection,
+    shipping: ShippingSection, measurements: MeasurementsSection,
   }[section];
 
   const imgSrc = previewUrl || serverImage;

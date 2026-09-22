@@ -184,6 +184,23 @@ def load_style(style_id: int) -> dict | None:
                 cw["bom"] = [dict(r) for r in cur.fetchall()]
             out["colorways"] = colorways
 
+            # Every operation, with the minutes actually used for this style.
+            # `minutes` is what the editor shows; `default_minutes` is the
+            # season standard it can be compared against.
+            cur.execute(
+                """
+                SELECT o.code, o.name, o.default_minutes, o.applies_by_default,
+                       so.minutes AS override,
+                       COALESCE(so.minutes,
+                                CASE WHEN o.applies_by_default
+                                     THEN o.default_minutes END) AS minutes
+                FROM operations o
+                LEFT JOIN style_operations so
+                       ON so.style_id = %s AND so.operation_id = o.id
+                ORDER BY o.sort_order, o.code
+                """, (style_id,))
+            out["operations"] = [dict(r) for r in cur.fetchall()]
+
             cur.execute(
                 """
                 SELECT m.point AS pom, z.code AS size, m.value_cm
@@ -350,6 +367,29 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                         (dst if dst != src else None,
                          cw.get("subbed_on") or None,
                          _clean(cw.get("sub_reason")), src))
+
+            # Operations: a row is stored only where this style differs from
+            # the season standard, or uses an operation that is not standard.
+            # Blank means "use the standard"; 0 means "not used on this style".
+            if "operations" in payload:
+                cur.execute(
+                    "DELETE FROM style_operations WHERE style_id = %s", (style_id,))
+                cur.execute("SELECT id, code, default_minutes, applies_by_default"
+                            " FROM operations")
+                ops = {r["code"]: r for r in cur.fetchall()}
+                for row in payload.get("operations") or []:
+                    op = ops.get((row.get("code") or "").strip())
+                    if not op:
+                        continue
+                    mins = _num(row.get("minutes"))
+                    if mins is None:
+                        continue
+                    standard = op["default_minutes"] if op["applies_by_default"] else None
+                    if standard is not None and mins == standard:
+                        continue          # same as the standard — nothing to store
+                    cur.execute(
+                        "INSERT INTO style_operations (style_id, operation_id, minutes)"
+                        " VALUES (%s,%s,%s)", (style_id, op["id"], mins))
 
             for m in payload.get("measurements") or []:
                 point = _clean(m.get("pom"))
