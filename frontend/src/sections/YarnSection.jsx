@@ -124,7 +124,7 @@ export default function YarnSection({ form, update, meta }) {
                             className={xsFactor === f ? 'on' : ''}
                             aria-pressed={xsFactor === f}
                             onClick={() => regrade(sm ? sm.weight_kg : '', f)}>
-                            \u00d7{f}
+                            ×{f}
                           </button>
                         ))}
                       </span>
@@ -138,11 +138,11 @@ export default function YarnSection({ form, update, meta }) {
             })}
           </div>
           <p className="calc-note">
-            Type S/M only. M/L and X/L follow it at \u00d71.1 and \u00d71.21, and X/S at
+            Type S/M only. M/L and X/L follow it at ×1.1 and ×1.21, and X/S at
             whichever factor this style uses.
             {offRatio && (
               <> <span className="wt-flag">
-                A stored weight does not match these ratios \u2014 it was adjusted by hand.
+                A stored weight does not match these ratios — it was adjusted by hand.
                 Editing S/M will replace it.
               </span></>
             )}

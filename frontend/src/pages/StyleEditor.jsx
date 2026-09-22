@@ -335,7 +335,7 @@ export default function StyleEditor() {
                         ? <code>{form.sku_code || derivedSku}</code>
                         : <span className="muted">Pick a season, content, gauge and style number</span>}
                       {form.sku_code && derivedSku && form.sku_code !== derivedSku
-                        && <span className="sku-flag">overridden \u2014 the parts make {derivedSku}</span>}
+                        && <span className="sku-flag">overridden — the parts make {derivedSku}</span>}
                     </div>
                     {/* <Field label="Override" hint="Only when the code does not follow the parts">
                       <TextInput value={form.sku_code} onChange={field('sku_code')}
