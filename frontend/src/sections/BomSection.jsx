@@ -66,7 +66,7 @@ export default function BomSection({ form, update, meta }) {
             <div key={j} className="bom-row">
               <Combo value={ln.yarn} onChange={(v) => setLine(i, j, { yarn: v })}
                 options={meta?.yarns || []} placeholder="Pick a yarn or type a new one" />
-              <NumberInput value={ln.percent} min="0" max="100"
+              <NumberInput value={ln.percent} min="0" max="100" decimals={1}
                 onChange={(v) => setLine(i, j, { percent: v })} placeholder="%" />
               <NumberInput value={ln.ends} min="0"
                 onChange={(v) => setLine(i, j, { ends: v })} placeholder="Ends" />
@@ -85,7 +85,7 @@ export default function BomSection({ form, update, meta }) {
               replaced it — editing the tag in place is how the history is
               lost today (identity.md §6). */}
           <div className="sub-row">
-            <Field label="Sub to">
+            {/* <Field label="Sub to">
               <select className="input" value={cw.sub_to || ''}
                 onChange={(e) => setColorway(i, { sub_to: e.target.value })}>
                 <option value="">Not substituted</option>
@@ -95,7 +95,7 @@ export default function BomSection({ form, update, meta }) {
                     <option key={o.name} value={o.name}>{o.name}</option>
                   ))}
               </select>
-            </Field>
+            </Field> */}
             {cw.sub_to && (
               <Field label="Reason">
                 <input className="input" value={cw.sub_reason || ''}

@@ -72,10 +72,25 @@ export function TextInput({ value, onChange, ...rest }) {
   );
 }
 
-export function NumberInput({ value, onChange, ...rest }) {
+export function NumberInput({ value, onChange, decimals, ...rest }) {
+  const [editing, setEditing] = useState(false);
+
+  // `decimals` rounds what is shown, never what is stored. A yarn percentage
+  // is held to six decimals because the sheet keeps it as a fraction
+  // (0.97933884 -> 97.933884%) and the percentages have to total 100, so
+  // rounding the value itself would break the BOM. Focusing gives the full
+  // number back to edit.
+  const round = decimals != null && !editing
+    && value !== '' && value != null && !Number.isNaN(Number(value));
+  const shown = round ? Number(value).toFixed(decimals) : (value ?? '');
+
   return (
     <input className="input" type="number" inputMode="decimal" step="any"
-      value={value ?? ''} onChange={(e) => onChange(e.target.value)} {...rest} />
+      {...rest}
+      value={shown}
+      onFocus={() => setEditing(true)}
+      onBlur={() => setEditing(false)}
+      onChange={(e) => onChange(e.target.value)} />
   );
 }
 
