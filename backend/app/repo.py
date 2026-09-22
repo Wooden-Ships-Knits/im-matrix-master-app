@@ -25,6 +25,8 @@ FLAT = [
     "duty_category", "hang_tag", "special_instructions", "notes", "photo_url",
     # cost inputs: admin % and the knit minutes the labour cost is built from
     "admin_pct", "knit_minutes_dev",
+    # Which X/S grading factor this style uses, 0.9 or 0.92 (migration 0005).
+    "xs_weight_factor",
     "whls_line_price_usd", "whls_retail_price_usd", "sy_retail_price_usd",
     "final_sale_price_usd", "price_000", "final_sample_price_usd",
 ]
@@ -427,7 +429,11 @@ def meta() -> dict:
                 cur.execute(sql)
                 return [r["v"] for r in cur.fetchall()]
 
-            cur.execute("SELECT code, name FROM seasons ORDER BY season_number DESC")
+            # cat_code / season_number / style_letter are the fixed parts of
+            # the style code — the K, the 58 and the W in K58C3W795 — so the
+            # editor can show it dissected the way the sheet writes it.
+            cur.execute("SELECT code, name, cat_code, season_number, style_letter"
+                        " FROM seasons ORDER BY season_number DESC")
             seasons = [dict(r) for r in cur.fetchall()]
 
             def distinct(c):

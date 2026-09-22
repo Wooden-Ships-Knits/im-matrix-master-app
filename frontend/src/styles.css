@@ -457,3 +457,70 @@ select.input {
   font-variant-numeric: tabular-nums; color: var(--muted);
 }
 .ops-total b { color: var(--text); font-size: 1.04rem; }
+
+/* ================= SKU code, dissected =================
+   The sheet writes the style code as one string, K58C3W709, but it is really
+   six fields run together (schema.md §2.3). Showing the parts is what makes it
+   enterable: three come from the season and are fixed, three are typed. */
+.sku-parts {
+  display: flex; align-items: stretch; gap: 6px;
+  padding: 8px; background: var(--inset);
+  border: 1px solid var(--border); border-radius: var(--radius);
+}
+.sku-part { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 0 0 auto; }
+.sku-part > .input, .sku-part > * > .input { text-align: center; padding-inline: 6px; }
+.sku-part:not(.fixed):not(.wide) { width: 62px; }
+.sku-part.wide { flex: 1 1 auto; min-width: 76px; }
+.sku-val {
+  display: flex; align-items: center; justify-content: center;
+  height: 40px; min-width: 42px; padding: 0 10px;
+  background: var(--tile); border-radius: 8px;
+  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary);
+}
+.sku-cap {
+  font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--muted); text-align: center;
+}
+.sku-result { margin: 10px 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.sku-result code {
+  font-size: 1.05rem; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--green-deep);
+}
+.sku-flag { font-size: 0.78rem; color: var(--tan); }
+@media (max-width: 560px) {
+  .sku-parts { flex-wrap: wrap; }
+  .sku-part.wide { flex-basis: 100%; }
+}
+
+/* ================= Weight grading =================
+   S/M is typed; the other sizes are graded off it, so they read as results
+   rather than empty boxes waiting for input. */
+.wt-grid { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.wt-head, .wt-row {
+  display: grid; grid-template-columns: 64px minmax(0, 1fr) 104px minmax(0, 1fr);
+  gap: 10px; align-items: center; padding: 8px 12px;
+}
+.wt-head {
+  background: var(--inset); font-size: 0.72rem; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted);
+}
+.wt-row + .wt-row, .wt-head + .wt-row { border-top: 1px solid var(--border); }
+.wt-size { font-weight: 700; }
+.wt-derived {
+  font-variant-numeric: tabular-nums; color: var(--primary); font-weight: 600;
+}
+.wt-from { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.wt-from em { font-style: normal; color: var(--success); font-weight: 700; }
+.wt-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.wt-toggle button {
+  border: 0; background: var(--card); color: var(--muted);
+  font: inherit; font-size: 0.76rem; padding: 4px 7px; cursor: pointer;
+}
+.wt-toggle button + button { border-left: 1px solid var(--border); }
+.wt-toggle button.on { background: var(--green-deep); color: #fff; font-weight: 700; }
+.wt-toggle button:focus-visible { outline: 0; box-shadow: var(--focus); }
+.wt-flag { color: var(--tan); }
+@media (max-width: 560px) {
+  .wt-head { display: none; }
+  .wt-row { grid-template-columns: 52px minmax(0, 1fr); row-gap: 6px; }
+}

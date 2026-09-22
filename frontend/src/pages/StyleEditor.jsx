@@ -28,20 +28,21 @@ const SECTIONS = [
 const emptyForm = (season = '') => ({
   name: '', sku_code: '', status: 'active', content_code: '', style_number: '',
   gauge_code: '', material: '', admin_pct: '', knit_minutes_dev: '',
+  xs_weight_factor: 0.9,
   season, collection: '', sub_group: '',
   sell_sy: true, sell_000: true,
   sizes: [],
   colorways: [],
   operations: [],
   measurements: [],
-  construction: '', composition_care: '', color_sequence: '', gauge: '',
-  tension: '', total_ends: '', logo_label: '', details: '',
+  construction: 'MACHINE KNIT', composition_care: '', color_sequence: '', gauge: '',
+  tension: 'LIHAT POLA', total_ends: '', logo_label: '', details: '',
   wholesale_price: '', retail_price: '', sy_price: '', sy_sale_price: '',
   price_000: '', sample_price: '',
-  bagging_method: '', polybag_sticker: '', packing_method: '', packing_in_box: '',
-  box_labeling: '', box_length_cm: '', box_depth_cm: '', box_height_cm: '', pcs_per_box: '',
-  ship_via: '', hs_code: '', duty_category: '', hang_tag: '',
-  special_instructions: '', notes: '',
+  bagging_method: 'MIX BULK PACKING', polybag_sticker: 'PCS PER BAG STICKER ONLY', packing_method: 'LGHT VAC PACK', packing_in_box: 'FLAT',
+  box_labeling: 'BARCODED SHIPPING LABEL', box_length_cm: '', box_depth_cm: '', box_height_cm: '', pcs_per_box: '',
+  ship_via: 'SEA OR AIR OK', hs_code: '', duty_category: '', hang_tag: '',
+  special_instructions: 'AS USUAL. NOTHING SPECIAL', notes: '',
 });
 
 /** Map a style returned by the API into editable form state. */
@@ -190,6 +191,18 @@ export default function StyleEditor() {
     else navigate('/browse');
   }
 
+  // The style code is assembled, not typed: K58C3W709 is category, season
+  // number, content, gauge, line letter, style number (schema.md §2.3). Three
+  // of the six come from the season, so they are shown but not editable.
+  const seasonRow = (meta?.seasons || []).find((s) => s.code === form.season);
+  const skuParts = [
+    seasonRow?.cat_code, seasonRow?.season_number, form.content_code,
+    form.gauge_code, seasonRow?.style_letter, form.style_number,
+  ];
+  const derivedSku = skuParts.every((p) => p !== '' && p != null)
+    ? skuParts.join('')
+    : '';
+
   const sectionProps = { form, update, meta, costing };
   const Body = {
     bom: BomSection, yarn: YarnSection, operations: OperationsSection,
@@ -228,21 +241,21 @@ export default function StyleEditor() {
             <label>Collection</label>
             <Combo value={form.collection} onChange={field('collection')}
               options={meta?.collections || []} placeholder="Pick or type new" />
-            <label>Sub group</label>
+            {/* <label>Sub group</label>
             <Combo value={form.sub_group} onChange={field('sub_group')}
-              options={meta?.subGroups || []} placeholder="Pick or type new" />
+              options={meta?.subGroups || []} placeholder="Pick or type new" /> */}
             {/* Content decides the duty category, and with it every duty and
                 landed figure on the Pricing screen. */}
-            <label>Content</label>
+            {/* <label>Content</label>
             <Combo value={form.content_code} onChange={field('content_code')}
               options={meta?.contentCodes || []} placeholder="C, Y, CPE…" />
             <label>Style #</label>
             <TextInput value={form.style_number} onChange={field('style_number')}
-              placeholder="709" />
+              placeholder="709" /> */}
             {/* GAUCE (col D) — the style-code digit, not the knit detail */}
-            <label>Gauge code</label>
+            {/* <label>Gauge code</label>
             <TextInput value={form.gauge_code} onChange={field('gauge_code')}
-              placeholder="1" />
+              placeholder="1" /> */}
           </div>
         </div>
       </header>
@@ -286,12 +299,51 @@ export default function StyleEditor() {
                     <Combo value={primaryColor} onChange={setPrimaryColor}
                       options={meta?.colorNames || []} placeholder="e.g. BEAUJOLAIS" />
                   </Field>
-                  <Field label="SKU-code">
-                    <TextInput value={form.sku_code} onChange={field('sku_code')}
-                      placeholder="e.g. K58C3W795" />
-                  </Field>
+                  <div className="sku-block">
+                    <div className="group-label">SKU code</div>
+                    <div className="sku-parts">
+                      <div className="sku-part fixed">
+                        <span className="sku-val">{seasonRow?.cat_code || '\u2014'}</span>
+                        <span className="sku-cap">Cat</span>
+                      </div>
+                      <div className="sku-part fixed">
+                        <span className="sku-val">{seasonRow?.season_number ?? '\u2014'}</span>
+                        <span className="sku-cap">Season</span>
+                      </div>
+                      <div className="sku-part">
+                        <Combo value={form.content_code} onChange={field('content_code')}
+                          options={meta?.contentCodes || []} placeholder="C" />
+                        <span className="sku-cap">Content</span>
+                      </div>
+                      <div className="sku-part">
+                        <TextInput value={form.gauge_code} onChange={field('gauge_code')}
+                          placeholder="3" />
+                        <span className="sku-cap">Gauge</span>
+                      </div>
+                      <div className="sku-part fixed">
+                        <span className="sku-val">{seasonRow?.style_letter || '\u2014'}</span>
+                        <span className="sku-cap">Line</span>
+                      </div>
+                      <div className="sku-part wide">
+                        <TextInput value={form.style_number} onChange={field('style_number')}
+                          placeholder="795" />
+                        <span className="sku-cap">Style #</span>
+                      </div>
+                    </div>
+                    <div className="sku-result">
+                      {derivedSku
+                        ? <code>{form.sku_code || derivedSku}</code>
+                        : <span className="muted">Pick a season, content, gauge and style number</span>}
+                      {form.sku_code && derivedSku && form.sku_code !== derivedSku
+                        && <span className="sku-flag">overridden \u2014 the parts make {derivedSku}</span>}
+                    </div>
+                    {/* <Field label="Override" hint="Only when the code does not follow the parts">
+                      <TextInput value={form.sku_code} onChange={field('sku_code')}
+                        placeholder={derivedSku || 'e.g. K58C3W795'} />
+                    </Field> */}
+                  </div>
 
-                  <div>
+                  {/* <div>
                     <div className="group-label">Sizes</div>
                     <div className="checks-row">
                       {(meta?.sizes || []).map((size) => (
@@ -300,7 +352,7 @@ export default function StyleEditor() {
                           onChange={toggleSize(size)} />
                       ))}
                     </div>
-                  </div>
+                  </div> */}
 
                   <div>
                     <div className="group-label">Sold through</div>
@@ -311,9 +363,9 @@ export default function StyleEditor() {
                   </div>
 
                   <div className="price-row">
-                    <Field label="SY Price"><PriceInput value={form.sy_price} onChange={field('sy_price')} /></Field>
-                    <Field label="SY Sale"><PriceInput value={form.sy_sale_price} onChange={field('sy_sale_price')} /></Field>
-                    <Field label="000 Price"><PriceInput value={form.price_000} onChange={field('price_000')} /></Field>
+                    {/* <Field label="SY Price"><PriceInput value={form.sy_price} onChange={field('sy_price')} /></Field> */}
+                    {/* <Field label="Sale Price"><PriceInput value={form.sy_sale_price} onChange={field('sy_sale_price')} /></Field> */}
+                    {/* <Field label="000 Price"><PriceInput value={form.price_000} onChange={field('price_000')} /></Field> */}
                   </div>
                 </div>
               </section>
