@@ -474,7 +474,7 @@ def meta() -> dict:
                     k: distinct(k) for k in (
                         "construction", "bagging_method", "polybag_sticker",
                         "packing_method", "packing_in_box", "box_labeling",
-                        "ship_via", "hang_tag",
+                        "ship_via", "hang_tag", "hs_code", "duty_category",
                     )
                 },
             }

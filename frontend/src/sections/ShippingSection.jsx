@@ -1,4 +1,4 @@
-import { Field, TextInput, Combo } from '../components/ui.jsx';
+import { Field, Combo } from '../components/ui.jsx';
 
 /** How the style ships and clears customs. */
 export default function ShippingSection({ form, update, meta }) {
@@ -12,12 +12,12 @@ export default function ShippingSection({ form, update, meta }) {
           options={opts.ship_via || []} placeholder="e.g. SEA OR AIR OK" />
       </Field>
       <Field label="HS code" hint="Harmonised tariff code">
-        <TextInput value={form.hs_code} onChange={field('hs_code')}
-          placeholder="e.g. 6110.20.2020" />
+        <Combo value={form.hs_code} onChange={field('hs_code')}
+          options={opts.hs_code || []} placeholder="e.g. 6110.20.2020" />
       </Field>
       <Field label="Duty category">
-        <TextInput value={form.duty_category} onChange={field('duty_category')}
-          placeholder="e.g. 345" />
+        <Combo value={form.duty_category} onChange={field('duty_category')}
+          options={opts.duty_category || []} placeholder="e.g. 345" />
       </Field>
       <Field label="Hang tag">
         <Combo value={form.hang_tag} onChange={field('hang_tag')}
