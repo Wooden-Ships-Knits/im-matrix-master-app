@@ -588,3 +588,16 @@ select.input {
   cursor: not-allowed;
 }
 .price-input.is-disabled .currency { color: var(--muted); opacity: 0.55; }
+
+/* Season tag in the browse list. The same style name runs in several seasons —
+   267 of them do — so the row has to say which one it is. */
+.acc-season {
+  flex: 0 0 auto;
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
+  color: var(--green-deep);
+  background: var(--inset);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 7px;
+}

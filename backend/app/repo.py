@@ -218,7 +218,9 @@ def load_style(style_id: int) -> dict | None:
 def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
     sql = """
         SELECT DISTINCT s.id, s.style_name AS name, s.status, s.photo_url AS image_path,
-               se.code AS season
+               se.code AS season, se.season_number,
+               (SELECT count(*) FROM style_colorways c2 WHERE c2.style_id = s.id)
+                   AS colorway_count
         FROM styles s
         LEFT JOIN seasons se ON se.id = s.season_id
         LEFT JOIN style_colorways cw ON cw.style_id = s.id
@@ -235,7 +237,8 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
         sql += " AND cw.ws_tag_color ILIKE %s"; args.append(f"%{color}%")
     if size:
         sql += " AND z.code = %s"; args.append(size)
-    sql += " ORDER BY se.code DESC NULLS LAST, s.style_name"
+    # Newest season first, so a repeated style's latest run leads.
+    sql += " ORDER BY se.season_number DESC NULLS LAST, s.style_name"
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, args)

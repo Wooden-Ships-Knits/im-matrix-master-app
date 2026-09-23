@@ -84,13 +84,13 @@ export default function Browse() {
               <Combo value={filters.color} onChange={set('color')} placeholder="Any colorway"
                 options={meta?.colorNames || []} allowNew />
             </Field>
-            <Field label="Size">
+            {/* <Field label="Size">
               <select className="input" value={filters.size}
                 onChange={(e) => set('size')(e.target.value)}>
                 <option value="">All sizes</option>
                 {meta?.sizes.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
-            </Field>
+            </Field> */}
             <button type="submit" className="btn btn-search">Search</button>
           </form>
         </section>
@@ -110,6 +110,7 @@ export default function Browse() {
               aria-expanded={openId === s.id}>
               <Play size={16} fill="currentColor"
                 className={`caret ${openId === s.id ? 'open' : ''}`} />
+              {s.season && <span className="acc-season">{s.season}</span>}
               <span className="acc-name">{s.name}</span>
               <span className="acc-count">({s.colorway_count} colorway{s.colorway_count === 1 ? '' : 's'})</span>
               <span className="acc-actions" onClick={(e) => e.stopPropagation()}>
