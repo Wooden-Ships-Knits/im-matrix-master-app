@@ -216,16 +216,21 @@ def load_style(style_id: int) -> dict | None:
 
 
 def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
+    """The browse list: one row per style, newest season first.
+
+    The colour and size filters are EXISTS rather than joins. Joining them
+    multiplies a style by its colourways times its sizes — 1,462 styles became
+    14,479 rows — and every one of those rows then ran the colourway count
+    before DISTINCT threw the duplicates away. EXISTS filters without
+    multiplying, so the count runs once per style and DISTINCT is not needed.
+    """
     sql = """
-        SELECT DISTINCT s.id, s.style_name AS name, s.status, s.photo_url AS image_path,
+        SELECT s.id, s.style_name AS name, s.status, s.photo_url AS image_path,
                se.code AS season, se.season_number,
                (SELECT count(*) FROM style_colorways c2 WHERE c2.style_id = s.id)
                    AS colorway_count
         FROM styles s
         LEFT JOIN seasons se ON se.id = s.season_id
-        LEFT JOIN style_colorways cw ON cw.style_id = s.id
-        LEFT JOIN style_sizes ss ON ss.style_id = s.id
-        LEFT JOIN sizes z ON z.id = ss.size_id
         WHERE 1 = 1
     """
     args: list = []
@@ -234,9 +239,14 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
     if q:
         sql += " AND s.style_name ILIKE %s"; args.append(f"%{q}%")
     if color:
-        sql += " AND cw.ws_tag_color ILIKE %s"; args.append(f"%{color}%")
+        sql += (" AND EXISTS (SELECT 1 FROM style_colorways cw"
+                "              WHERE cw.style_id = s.id AND cw.ws_tag_color ILIKE %s)")
+        args.append(f"%{color}%")
     if size:
-        sql += " AND z.code = %s"; args.append(size)
+        sql += (" AND EXISTS (SELECT 1 FROM style_sizes ss"
+                "              JOIN sizes z ON z.id = ss.size_id"
+                "              WHERE ss.style_id = s.id AND z.code = %s)")
+        args.append(size)
     # Newest season first, so a repeated style's latest run leads.
     sql += " ORDER BY se.season_number DESC NULLS LAST, s.style_name"
     with pool.connection() as conn:
