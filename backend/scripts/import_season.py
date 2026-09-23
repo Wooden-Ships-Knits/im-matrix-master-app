@@ -55,6 +55,10 @@ TEXT_FIELDS = (
 NUM_FIELDS = (
     ("admin_pct", ("ADMIN %",)),
     ("knit_minutes_dev", ("MINUTES PER PC PER MACHINE IN DEV",)),
+    # LT_P in the Salesforce map. The sheet keeps two minute columns
+    # side by side: what the sample took in development, and what the
+    # production line takes.
+    ("knit_minutes_prod", ("MINUTES PER PC PER MACHINE IN PROD LINE",)),
     ("box_length_cm", ("BOX LENGTH",)), ("box_depth_cm", ("BOX DEPTH",)),
     ("box_height_cm", ("BOX HEIGHT",)),
     # F25 has no plain WHLS LINE PRICE, only USA and CANADA variants.

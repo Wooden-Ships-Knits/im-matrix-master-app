@@ -24,7 +24,7 @@ FLAT = [
     "box_depth_cm", "box_height_cm", "pcs_per_box", "ship_via", "hs_code",
     "duty_category", "hang_tag", "special_instructions", "notes", "photo_url",
     # cost inputs: admin % and the knit minutes the labour cost is built from
-    "admin_pct", "knit_minutes_dev",
+    "admin_pct", "knit_minutes_dev", "knit_minutes_prod",
     # Which X/S grading factor this style uses, 0.9 or 0.92 (migration 0005).
     "xs_weight_factor",
     # Channel and finishing, read from the DESCRIPTION suffix (migration 0006).
