@@ -121,6 +121,22 @@ def get_or_create(cur, table, column, value, extra=None, scope=None):
     return cur.fetchone()["id"]
 
 
+# Every season_rates column except its own id and the season it belongs to.
+_RATE_COLS = (
+    "exchange_rate_idr_usd, labour_rate_idr_per_hour, labour_multiplier,"
+    " special_op_rate_idr_per_hour, admin_base_idr, additional_admin_idr,"
+    " labels_tag_cost_idr, packaging_fee_idr, box_charge_idr, plastic_charge_idr,"
+    " plastic_wt_kg, wt_tolerance_low, wt_tolerance_high, pricing_wt_factor,"
+    " distribution_wt_add_kg, volumetric_divisor, kg_to_lb, container_20ft_cm3,"
+    " sea_c_rate_usd, sea_p_rate_usd, dhl_usd_per_kg, dhl_grassy_usd_per_kg,"
+    " fedex_canada_usd_per_kg, disbursement_pct, mpf_pct, canada_duty_pct,"
+    " customs_usd, outgoing_freight_usd, sy_only_dhl_1pc_usd, sy_only_dhl_2pc_usd,"
+    " reps_commission_factor, retail_markups, target_retail_margin,"
+    " min_retail_margin, target_sea_margin, min_order_pcs,"
+    " packing_volume_divisor_cm3"
+)
+
+
 def _season_id(cur, code):
     """Seasons are created from their code: S27 -> SPRING/27 (schema.md §4.1.1)."""
     code = _clean(code)
@@ -137,7 +153,20 @@ def _season_id(cur, code):
         "INSERT INTO seasons (season_type, year_yy) VALUES (%s, %s) RETURNING id",
         ("SPRING" if letter == "S" else "FALL", int(digits)),
     )
-    return cur.fetchone()["id"]
+    new_id = cur.fetchone()["id"]
+
+    # A new season starts on the last season's rates. They carry over in
+    # practice and are revised, not invented from nothing — and without a row
+    # here every calculated figure on the style screens is blank, which reads
+    # as broken rather than as "not set yet". Copy everything but the keys.
+    cur.execute("""
+        INSERT INTO season_rates (season_id, %s)
+        SELECT %%s, %s FROM season_rates r
+        JOIN seasons se ON se.id = r.season_id
+        ORDER BY se.season_number DESC
+        LIMIT 1
+    """ % (_RATE_COLS, _RATE_COLS), (new_id,))
+    return new_id
 
 
 # --------------------------------------------------------------------- read
