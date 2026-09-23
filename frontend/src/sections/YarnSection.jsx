@@ -1,15 +1,6 @@
 import { Field, TextInput, NumberInput, Combo } from '../components/ui.jsx';
 import { roundFixed } from '../format.js';
-
-// Only S/M is measured. The sheet grades the rest off it and says so in the
-// formulas: M/L is =S/M*1.1, and X/L is =M/L*1.1, so 1.21 of S/M. X/S is the
-// one that varies — both 0.9 and 0.92 appear, per style, in every season — so
-// the style carries its own factor.
-const SIZE_ORDER = ['X/S', 'S/M', 'M/L', 'X/L'];
-const GRADE = { 'S/M': 1, 'M/L': 1.1, 'X/L': 1.21 };
-
-
-const gradeOf = (size, xsFactor) => (size === 'X/S' ? Number(xsFactor) : GRADE[size]);
+import { gradeOf, offRatio, orderSizes, regradeSizes } from '../grading.js';
 
 /** Knit construction details and the finished weight of each size. */
 export default function YarnSection({ form, update, meta }) {
@@ -40,32 +31,17 @@ export default function YarnSection({ form, update, meta }) {
     };
   };
 
-  const ordered = [...form.sizes].sort(
-    (a, b) => SIZE_ORDER.indexOf(a.size) - SIZE_ORDER.indexOf(b.size),
-  );
+  const ordered = orderSizes(form.sizes, meta?.sizes);
 
-  /** Re-grade every size off S/M. Only ever called from an edit, never on
-   *  load — some styles were adjusted by hand in the sheet and recomputing
-   *  them on open would quietly change them. */
+  // The S/M weight is entered on the Matrix screen; changing the factor here
+  // re-grades off whatever it holds.
   const regrade = (smValue, factor) =>
     update({
       xs_weight_factor: factor,
-      sizes: form.sizes.map((x) => {
-        if (x.size === 'S/M') return { ...x, weight_kg: smValue };
-        if (smValue === '' || smValue == null) return { ...x, weight_kg: '' };
-        const k = gradeOf(x.size, factor);
-        if (!k) return x;
-        return { ...x, weight_kg: Number((Number(smValue) * k).toFixed(5)) };
-      }),
+      sizes: regradeSizes(form.sizes, smValue, factor),
     });
 
-  // A stored weight that does not follow the ratios is real — a hand
-  // adjustment — so it is flagged rather than overwritten.
-  const offRatio = smWeight != null && ordered.some((x) => {
-    const k = gradeOf(x.size, xsFactor);
-    if (!k || x.size === 'S/M' || x.weight_kg === '' || x.weight_kg == null) return false;
-    return Math.abs(Number(x.weight_kg) - smWeight * k) > 0.0005;
-  });
+  const flagged = offRatio(form.sizes, xsFactor);
 
   return (
     <div>
@@ -80,13 +56,11 @@ export default function YarnSection({ form, update, meta }) {
           <Combo value={form.material} onChange={field('material')}
             options={meta?.materials || []} placeholder="e.g. COTTON ACRYLIC 60/40" />
         </Field>
-        <Field label="Construction">
-          <Combo value={form.construction} onChange={field('construction')}
-            options={meta?.options?.construction || []} placeholder="e.g. MACHINE KNIT" />
+        <Field label="Construction" hint="From Matrix">
+          <input className="input" value={form.construction || ''} readOnly tabIndex={-1} />
         </Field>
-        <Field label="Gauge">
-          <Combo value={form.gauge} onChange={field('gauge')}
-            options={meta?.options?.gauge_detail || []} placeholder="e.g. 3G + 3GP" />
+        <Field label="Gauge" hint="From Matrix">
+          <input className="input" value={form.gauge || ''} readOnly tabIndex={-1} />
         </Field>
         <Field label="Tension">
           <Combo value={form.tension} onChange={field('tension')}
@@ -133,21 +107,16 @@ export default function YarnSection({ form, update, meta }) {
               return (
                 <div className="wt-row" key={x.size}>
                   <span className="wt-size">{x.size}</span>
-                  {isSm ? (
-                    <NumberInput value={x.weight_kg} min="0" step="0.001"
-                      onChange={(v) => regrade(v, xsFactor)} placeholder="e.g. 0.240" />
-                  ) : (
-                    <span className="wt-derived">
-                      {x.weight_kg === '' || x.weight_kg == null
-                        ? '\u2014' : roundFixed(x.weight_kg, 3)}
-                    </span>
-                  )}
+                  <span className={`wt-derived${isSm ? ' measured' : ''}`}>
+                    {x.weight_kg === '' || x.weight_kg == null
+                      ? '\u2014' : roundFixed(x.weight_kg, 3)}
+                  </span>
                   <span className="wt-calc">{d ? roundFixed(d.low, 3) : '—'}</span>
                   <span className="wt-calc">{d ? roundFixed(d.high, 3) : '—'}</span>
                   <span className="wt-calc">{d ? roundFixed(d.dist, 3) : '—'}</span>
                   <span className="wt-calc">{d ? roundFixed(d.pricing, 3) : '—'}</span>
                   <span className="wt-from">
-                    {isSm ? <em>measured</em> : x.size === 'X/S' ? (
+                    {isSm ? <em>from Matrix</em> : x.size === 'X/S' ? (
                       <span className="wt-toggle" role="group" aria-label="X/S factor">
                         {[0.9, 0.92].map((f) => (
                           <button type="button" key={f}
@@ -165,7 +134,7 @@ export default function YarnSection({ form, update, meta }) {
             })}
           </div>
           <p className="calc-note">
-            Type S/M only. M/L and X/L follow it at ×1.1 and ×1.21, and X/S at
+            S/M is entered on the Matrix screen. M/L and X/L follow it at ×1.1 and ×1.21, and X/S at
             whichever factor this style uses.
             {rates ? (
               <> Tolerances are ×{rates.wt_tolerance_low} and ×{rates.wt_tolerance_high},
@@ -177,7 +146,7 @@ export default function YarnSection({ form, update, meta }) {
                 distribution columns are blank.
               </span></>
             )}
-            {offRatio && (
+            {flagged && (
               <> <span className="wt-flag">
                 A stored weight does not match these ratios — it was adjusted by hand.
                 Editing S/M will replace it.

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Field, NumberInput, Combo } from '../components/ui.jsx';
-import { roundFixed } from '../format.js';
+import { regradeSizes } from '../grading.js';
 
 // Every style is measured across and down, and only those two. The grid is
 // fixed rather than a list anyone extends.
@@ -33,7 +33,12 @@ export default function MeasurementsSection({ form, update, meta }) {
   const field = (k) => (v) => update({ [k]: v });
   const opts = meta?.options || {};
 
-  const smWeight = form.sizes.find((x) => x.size === 'S/M')?.weight_kg;
+  const sm = form.sizes.find((x) => x.size === 'S/M');
+  const smWeight = sm?.weight_kg;
+
+  // S/M drives every other size, so typing it here re-grades the rest.
+  const setSmWeight = (v) =>
+    update({ sizes: regradeSizes(form.sizes, v, Number(form.xs_weight_factor) || 0.9) });
 
   // One row per point of measure, carrying whatever is stored for it.
   const rows = useMemo(() => {
@@ -95,16 +100,17 @@ export default function MeasurementsSection({ form, update, meta }) {
 
       <div className="group-label" style={{ marginTop: 30 }}>What this style is</div>
       <div className="form-grid">
-        {/* Kept on the Yarn screen, shown here so the description is whole. */}
-        <Field label="GG (machine)" hint="From Yarn">
-          <input className="input" value={form.gauge || ''} readOnly tabIndex={-1} />
+        <Field label="GG (machine)" hint="Shown on the Yarn screen too">
+          <Combo value={form.gauge} onChange={field('gauge')}
+            options={opts.gauge_detail || []} placeholder="e.g. 3G + 3GP" />
         </Field>
-        <Field label="Construction" hint="From Yarn">
-          <input className="input" value={form.construction || ''} readOnly tabIndex={-1} />
+        <Field label="Construction" hint="Shown on the Yarn screen too">
+          <Combo value={form.construction} onChange={field('construction')}
+            options={opts.construction || []} placeholder="e.g. MACHINE KNIT" />
         </Field>
-        <Field label="Weight S/M (kg)" hint="From Yarn">
-          <input className="input" readOnly tabIndex={-1}
-            value={smWeight === '' || smWeight == null ? '' : roundFixed(smWeight, 3)} />
+        <Field label="Weight S/M (kg)" hint="The other sizes are graded from this">
+          <NumberInput value={smWeight ?? ''} min="0" step="0.001" decimals={3}
+            disabled={!sm} onChange={setSmWeight} placeholder="e.g. 0.240" />
         </Field>
 
         {ATTRIBUTES.map(([key, label]) => (
