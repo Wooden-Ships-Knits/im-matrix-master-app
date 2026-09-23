@@ -44,6 +44,9 @@ export const api = {
     return request(`/api/styles/matrix?${qs}`);
   },
 
+  // One row per garment: the seasons it ran in, under whatever names.
+  lookup: (q) => request(`/api/styles/lookup?q=${encodeURIComponent(q || '')}`),
+
   // Reports: prepared, submitted, then approved or sent back.
   listReports: (status) =>
     request(`/api/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`),

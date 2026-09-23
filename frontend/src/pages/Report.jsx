@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, TextInput, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
+import MasterFileLookup from '../sections/MasterFileLookup.jsx';
 
 const STATUSES = ['draft', 'submitted', 'approved', 'rejected'];
 const KINDS = ['style list', 'pricing', 'costing', 'packaging', 'salesforce upload'];
@@ -23,6 +24,7 @@ export default function Report() {
   const [rows, setRows] = useState(null);
   const [filter, setFilter] = useState('');
   const [toDelete, setToDelete] = useState(null);
+  const [tab, setTab] = useState('matrix');
   const [form, setForm] = useState({
     title: '', kind: 'style list', season: '', collection: '', prepared_by: '', note: '',
   });
@@ -96,8 +98,19 @@ export default function Report() {
 
       <main className="page">
         <section className="card card-pad">
-          <h2 className="card-title">New report</h2>
-          <form className="form-grid" onSubmit={create} style={{ marginTop: 14 }}>
+          <div className="rep-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === 'matrix'}
+              className={`card-title tab${tab === 'matrix' ? ' on' : ''}`}
+              onClick={() => setTab('matrix')}>Matrix Master</button>
+            <button type="button" role="tab" aria-selected={tab === 'lookup'}
+              className={`card-title tab${tab === 'lookup' ? ' on' : ''}`}
+              onClick={() => setTab('lookup')}>Master File Lookup</button>
+          </div>
+
+          {tab === 'lookup' && <MasterFileLookup />}
+
+          <form className="form-grid" hidden={tab !== 'matrix'}
+            onSubmit={create} style={{ marginTop: 14 }}>
             <Field label="Title">
               <TextInput value={form.title} onChange={set('title')}
                 placeholder="e.g. S27 pricing review" />
@@ -124,6 +137,7 @@ export default function Report() {
               <button type="submit" className="btn btn-save">Create</button>
             </div>
           </form>
+          
         </section>
 
         <div className="rep-filters">

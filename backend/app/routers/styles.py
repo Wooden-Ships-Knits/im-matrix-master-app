@@ -47,6 +47,15 @@ def export_csv(
     )
 
 
+@router.get("/lookup")
+def lookup(q: str | None = Query(None), limit: int = Query(40, le=200)):
+    """One row per garment: the seasons it ran in and the names it used.
+
+    Declared before /{style_id} for the same reason as /matrix.
+    """
+    return repo.lookup_products(q=q, limit=limit)
+
+
 @router.get("/matrix")
 def matrix(
     season: str | None = Query(None),

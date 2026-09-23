@@ -607,6 +607,48 @@ def set_photo(style_id: int, path: str) -> None:
 
 
 # --------------------------------------------------------------------- meta
+def lookup_products(q=None, limit: int = 40) -> list[dict]:
+    """Find a garment and show every season it ran in, under any name.
+
+    What the Master File Lookup workbook pivots by hand: one row per product,
+    the seasons it appeared in, and the names it went by. The names differ —
+    that is the point — so the search looks at every name a product has been
+    known by, not only its current one.
+    """
+    sql = """
+        WITH hit AS (
+            SELECT DISTINCT s.product_id
+            FROM styles s
+            WHERE s.product_id IS NOT NULL
+              AND (%s::text IS NULL OR s.style_name ILIKE %s)
+            UNION
+            SELECT DISTINCT i.product_id
+            FROM product_identifiers i
+            WHERE %s::text IS NULL OR i.value ILIKE %s
+        )
+        SELECT p.id, p.display_name,
+               count(DISTINCT s.season_id) AS seasons,
+               jsonb_agg(jsonb_build_object(
+                   'style_id', s.id, 'season', se.code,
+                   'season_number', se.season_number, 'name', s.style_name,
+                   'colorways', (SELECT count(*) FROM style_colorways cw
+                                  WHERE cw.style_id = s.id)
+               ) ORDER BY se.season_number DESC) AS runs
+        FROM hit
+        JOIN products p ON p.id = hit.product_id
+        JOIN styles s   ON s.product_id = p.id
+        LEFT JOIN seasons se ON se.id = s.season_id
+        GROUP BY p.id, p.display_name
+        ORDER BY count(DISTINCT s.season_id) DESC, p.display_name
+        LIMIT %s
+    """
+    like = f"%{q}%" if q else None
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, (q, like, q, like, limit))
+            return [dict(r) for r in cur.fetchall()]
+
+
 def matrix_rows(season=None, collection=None, q=None) -> list[dict]:
     """One row per style, with what a printed review sheet shows.
 
