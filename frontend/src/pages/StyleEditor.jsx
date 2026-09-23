@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer,
+  ClipboardList,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { roundFixed } from '../format.js';
@@ -279,6 +280,7 @@ export default function StyleEditor() {
         <div className="band-row">
           <Link to="/" className="logo">IM Master</Link>
           <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
+          <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
 
           <button type="button" className="btn btn-save" disabled={saving || loading}
             onClick={() => save(false)}>

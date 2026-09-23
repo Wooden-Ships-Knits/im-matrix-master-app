@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CirclePlus, Play, Pencil, Trash2, Download } from 'lucide-react';
+import { CirclePlus, Play, Pencil, Trash2, Download, ClipboardList } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
 
@@ -64,6 +64,7 @@ export default function Browse() {
         <div className="band-row">
           <Link to="/" className="logo">IM Master</Link>
           <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
+          <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
         </div>
       </header>
 
