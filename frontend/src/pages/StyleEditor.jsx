@@ -17,13 +17,14 @@ import MeasurementsSection from '../sections/MeasurementsSection.jsx';
 import OperationsSection from '../sections/OperationsSection.jsx';
 
 const SECTIONS = [
+  { key: 'measurements', label: 'Matrix', icon: Ruler },
   { key: 'bom', label: 'BOM', icon: Box },
   { key: 'yarn', label: 'Yarn', icon: Shirt },
   { key: 'operations', label: 'Operations', icon: Timer },
   { key: 'pricing', label: 'Pricing', icon: BadgeDollarSign },
   { key: 'packaging', label: 'Packaging', icon: PackageOpen },
   { key: 'shipping', label: 'Shipping', icon: Truck },
-  { key: 'measurements', label: 'Matrix', icon: Ruler },
+  
 ];
 
 // Yarn colours are named, never given a value: "YCA BREAKER WHITE - 658" says
@@ -67,7 +68,9 @@ const emptyForm = (season = '') => ({
   similar_style_past: '', distressed: '', sleeve_category: '',
   sleeve_length: '', length_category: '', yarn_type: '', ply: '',
   season, collection: '', sub_group: '',
-  sell_sy: true, sell_000: true,
+  // Unticked until someone says where it sells. Both prices stay locked
+  // until then, which is the point: a style with no channel has no price.
+  sell_sy: false, sell_000: false,
   sizes: [],
   colorways: [],
   operations: [],
