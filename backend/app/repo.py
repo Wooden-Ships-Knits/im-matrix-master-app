@@ -345,6 +345,85 @@ def export_rows(season=None, q=None, color=None, size=None) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
+def related_styles(style_id: int) -> list[dict]:
+    """The same garment in other seasons, newest first.
+
+    Styles sharing a product are one product; that is what a sales report
+    merges on (identity.md).
+    """
+    sql = """
+        SELECT s.id, s.style_name AS name, se.code AS season,
+               se.season_number, s.status
+        FROM styles me
+        JOIN styles s      ON s.product_id = me.product_id AND s.id <> me.id
+        LEFT JOIN seasons se ON se.id = s.season_id
+        WHERE me.id = %s AND me.product_id IS NOT NULL
+        ORDER BY se.season_number DESC NULLS LAST
+    """
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, (style_id,))
+            return [dict(r) for r in cur.fetchall()]
+
+
+def link_styles(style_id: int, other_id: int) -> None:
+    """Declare two styles the same garment, keeping the older product.
+
+    Everything on the newer product moves across and the empty product goes,
+    so a link never leaves two products for one garment.
+    """
+    if style_id == other_id:
+        raise ValueError("A style cannot be linked to itself")
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT s.id, s.product_id, se.season_number
+                FROM styles s LEFT JOIN seasons se ON se.id = s.season_id
+                WHERE s.id IN (%s, %s)
+            """, (style_id, other_id))
+            rows = cur.fetchall()
+            if len(rows) != 2:
+                raise LookupError("Style not found")
+            if any(r["product_id"] is None for r in rows):
+                raise ValueError("Both styles need a product first")
+            rows.sort(key=lambda r: (r["season_number"] is None, r["season_number"]))
+            keep, drop = rows[0]["product_id"], rows[1]["product_id"]
+            if keep == drop:
+                return
+            cur.execute("UPDATE styles SET product_id = %s WHERE product_id = %s",
+                        (keep, drop))
+            cur.execute("""
+                UPDATE product_identifiers SET product_id = %s
+                WHERE product_id = %s
+                  AND NOT EXISTS (
+                      SELECT 1 FROM product_identifiers x
+                      WHERE x.product_id = %s AND x.kind = product_identifiers.kind
+                        AND lower(x.value) = lower(product_identifiers.value)
+                        AND x.season_id IS NOT DISTINCT FROM product_identifiers.season_id)
+            """, (keep, drop, keep))
+            cur.execute("DELETE FROM product_identifiers WHERE product_id = %s", (drop,))
+            cur.execute("DELETE FROM products WHERE id = %s", (drop,))
+
+
+def unlink_style(style_id: int) -> None:
+    """Split a style back out onto a product of its own."""
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT s.style_name, s.season_id FROM styles s WHERE s.id = %s
+            """, (style_id,))
+            row = cur.fetchone()
+            if not row:
+                raise LookupError("Style not found")
+            cur.execute("""
+                INSERT INTO products (display_name, first_season_id)
+                VALUES (%s, %s) RETURNING id
+            """, (row["style_name"], row["season_id"]))
+            new_id = cur.fetchone()["id"]
+            cur.execute("UPDATE styles SET product_id = %s WHERE id = %s",
+                        (new_id, style_id))
+
+
 # -------------------------------------------------------------------- write
 def save_style(payload: dict, style_id: int | None = None) -> int:
     """Create or replace a style and all its children, in one transaction."""

@@ -23,6 +23,14 @@ export const api = {
   },
   getStyle: (id) => request(`/api/styles/${id}`),
   costing: (id) => request(`/api/styles/${id}/costing`),
+
+  // The same garment in other seasons, and the links that say so.
+  related: (id) => request(`/api/styles/${id}/related`),
+  linkStyle: (id, styleId) =>
+    request(`/api/styles/${id}/link`, {
+      method: 'POST', body: JSON.stringify({ style_id: styleId }),
+    }),
+  unlinkStyle: (id) => request(`/api/styles/${id}/unlink`, { method: 'POST' }),
   createStyle: (data) =>
     request('/api/styles', { method: 'POST', body: JSON.stringify(data) }),
   updateStyle: (id, data) =>

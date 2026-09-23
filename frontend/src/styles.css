@@ -615,3 +615,24 @@ select.input {
 
 /* A field shown for context, edited somewhere else. */
 .input[readonly] { background: var(--inset); color: var(--muted); cursor: default; }
+
+/* ================= Past seasons =================
+   The same garment under whatever name it had that season. */
+.past { margin-top: 4px; }
+.past-empty { margin: 0 0 10px; font-size: 0.85rem; }
+.past-row, .past-hit {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 9px; padding: 7px 10px; margin-bottom: 6px;
+  text-align: left; cursor: pointer; font: inherit; color: var(--text);
+}
+.past-row:hover, .past-hit:hover { border-color: var(--success); background: var(--inset); }
+.past-row:focus-visible, .past-hit:focus-visible { outline: 0; box-shadow: var(--focus); }
+.past-name {
+  font-size: 0.85rem; font-weight: 600; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.past-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.past-search { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.btn-chip.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+.btn-chip { display: inline-flex; align-items: center; gap: 6px; }

@@ -55,6 +55,37 @@ def get_style(style_id: int):
     return style
 
 
+@router.get("/{style_id}/related")
+def related(style_id: int):
+    """The same garment in other seasons."""
+    return repo.related_styles(style_id)
+
+
+@router.post("/{style_id}/link")
+def link(style_id: int, payload: dict = Body(...)):
+    """Declare this style and another the same garment."""
+    other = payload.get("style_id")
+    if not other:
+        raise HTTPException(status_code=400, detail="style_id is required")
+    try:
+        repo.link_styles(style_id, int(other))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return repo.related_styles(style_id)
+
+
+@router.post("/{style_id}/unlink")
+def unlink(style_id: int):
+    """Split this style out onto a product of its own."""
+    try:
+        repo.unlink_style(style_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return repo.related_styles(style_id)
+
+
 @router.post("", status_code=201)
 def create_style(payload: dict = Body(...)):
     try:

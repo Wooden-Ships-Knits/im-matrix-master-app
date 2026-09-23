@@ -15,6 +15,7 @@ import PackagingSection from '../sections/PackagingSection.jsx';
 import ShippingSection from '../sections/ShippingSection.jsx';
 import MeasurementsSection from '../sections/MeasurementsSection.jsx';
 import OperationsSection from '../sections/OperationsSection.jsx';
+import PastSeasons from '../sections/PastSeasons.jsx';
 
 const SECTIONS = [
   { key: 'measurements', label: 'Matrix', icon: Ruler },
@@ -478,6 +479,10 @@ export default function StyleEditor() {
                       </Field>
                     </div>
                   </div>
+
+                  <PastSeasons styleId={id ? Number(id) : null} styleName={form.name}
+                    onToast={showToast}
+                    onOpen={(other) => navigate(`/edit/${other}`)} />
 
                   <div className="price-row">
                     {/* <Field label="SY Price"><PriceInput value={form.sy_price} onChange={field('sy_price')} /></Field> */}
