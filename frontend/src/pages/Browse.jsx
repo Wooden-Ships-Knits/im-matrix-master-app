@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CirclePlus, Play, Pencil, Trash2 } from 'lucide-react';
+import { CirclePlus, Play, Pencil, Trash2, Download } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
 
@@ -14,6 +14,8 @@ export default function Browse() {
   const [meta, setMeta] = useState(null);
   const [filters, setFilters] = useState({ season: '', q: '', color: '', size: '' });
   const [results, setResults] = useState(null);
+  // the filters that produced what is on screen, which is what exports
+  const [applied, setApplied] = useState({ season: '', q: '', color: '', size: '' });
   const [openId, setOpenId] = useState(null);
   const [details, setDetails] = useState({});   // id -> full style
   const [toDelete, setToDelete] = useState(null);
@@ -25,6 +27,7 @@ export default function Browse() {
     setResults(null);
     try {
       setResults(await api.listStyles(f));
+      setApplied(f);
       setOpenId(null);
     } catch (err) {
       showToast(err.message, 'error');
@@ -101,7 +104,15 @@ export default function Browse() {
           <p className="result-count">No styles match — try clearing a filter, or add a new style.</p>
         )}
         {results?.length > 0 && (
-          <p className="result-count">{results.length} style{results.length === 1 ? '' : 's'} found</p>
+          <div className="result-bar">
+            <p className="result-count">{results.length} style{results.length === 1 ? '' : 's'} found</p>
+            <a className="btn-chip export"
+              href={`/api/styles/export.csv?${new URLSearchParams(
+                Object.entries(applied).filter(([, v]) => v)).toString()}`}
+              title="One row per style, size and colourway, matching these filters">
+              <Download size={16} /> Export CSV
+            </a>
+          </div>
         )}
 
         {results?.map((s) => (

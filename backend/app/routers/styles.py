@@ -1,5 +1,10 @@
 """Style CRUD — the endpoints the React client already calls (api.js)."""
+import csv
+import io
+from datetime import date
+
 from fastapi import APIRouter, Body, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from .. import repo
 
@@ -14,6 +19,32 @@ def list_styles(
     size: str | None = Query(None),
 ):
     return repo.list_styles(season=season, q=q, color=color, size=size)
+
+
+@router.get("/export.csv")
+def export_csv(
+    season: str | None = Query(None),
+    q: str | None = Query(None),
+    color: str | None = Query(None),
+    size: str | None = Query(None),
+):
+    """The filtered list as a CSV, one row per style x size x colourway.
+
+    Declared before /{style_id} so the router does not read "export.csv" as an
+    id and answer 422.
+    """
+    rows = repo.export_rows(season=season, q=q, color=color, size=size)
+    buf = io.StringIO()
+    if rows:
+        writer = csv.DictWriter(buf, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    name = f"im-{(season or 'all').lower()}-{date.today().isoformat()}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @router.get("/{style_id}")

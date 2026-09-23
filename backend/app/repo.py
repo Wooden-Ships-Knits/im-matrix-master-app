@@ -255,6 +255,53 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
+def export_rows(season=None, q=None, color=None, size=None) -> list[dict]:
+    """One row per style x size x colourway, the way the IM itself reads.
+
+    Same filters as the browse list, so what downloads is what is on screen.
+    Calculated figures come from v_sku_costing rather than being recomputed
+    here — there is one costing chain and this is not a second one.
+    """
+    sql = """
+        SELECT se.code AS season, s.style_name AS style, v.style_code AS sku,
+               z.code AS size, cw.ws_tag_color AS colorway,
+               col.name AS collection, s.whs_channel, s.finishing_location,
+               cc.code AS content, s.gauge AS gauge_code, s.style_number,
+               ss.finished_wt_kg, ss.pcs_per_box,
+               s.whls_line_price_usd, s.whls_retail_price_usd,
+               s.final_sale_price_usd, s.final_sample_price_usd,
+               s.hs_code, s.duty_category, s.ship_via, s.packing_method,
+               v.total_all_costs_usd, v.duty_to_usa,
+               v.dhl_volumetric_usd, v.landed_dhl_volumetric_usd
+        FROM styles s
+        JOIN seasons se            ON se.id = s.season_id
+        JOIN style_sizes ss        ON ss.style_id = s.id
+        JOIN sizes z               ON z.id = ss.size_id
+        JOIN style_colorways cw    ON cw.style_id = s.id
+        LEFT JOIN collections col  ON col.id = s.collection_id
+        LEFT JOIN content_codes cc ON cc.id = s.content_code_id
+        LEFT JOIN v_sku_costing v  ON v.style_id = s.id
+                                  AND v.size_id = z.id
+                                  AND v.colorway_id = cw.id
+        WHERE 1 = 1
+    """
+    args: list = []
+    if season:
+        sql += " AND se.code = %s"; args.append(season)
+    if q:
+        sql += " AND s.style_name ILIKE %s"; args.append(f"%{q}%")
+    if color:
+        sql += " AND cw.ws_tag_color ILIKE %s"; args.append(f"%{color}%")
+    if size:
+        sql += " AND z.code = %s"; args.append(size)
+    sql += (" ORDER BY se.season_number DESC, s.style_name,"
+            " cw.sort_order, z.sort_order")
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, args)
+            return [dict(r) for r in cur.fetchall()]
+
+
 # -------------------------------------------------------------------- write
 def save_style(payload: dict, style_id: int | None = None) -> int:
     """Create or replace a style and all its children, in one transaction."""
