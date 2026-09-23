@@ -397,8 +397,8 @@ export default function StyleEditor() {
                         <span className="sku-cap">Content</span>
                       </div>
                       <div className="sku-part">
-                        <TextInput value={form.gauge_code} onChange={field('gauge_code')}
-                          placeholder="3" />
+                        <Combo value={form.gauge_code} onChange={field('gauge_code')}
+                          options={meta?.options?.gauge || []} placeholder="3" />
                         <span className="sku-cap">Gauge</span>
                       </div>
                       <div className="sku-part fixed">

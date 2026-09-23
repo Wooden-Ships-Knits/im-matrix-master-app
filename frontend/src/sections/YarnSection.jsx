@@ -85,19 +85,24 @@ export default function YarnSection({ form, update, meta }) {
             options={meta?.options?.construction || []} placeholder="e.g. MACHINE KNIT" />
         </Field>
         <Field label="Gauge">
-          <TextInput value={form.gauge} onChange={field('gauge')} placeholder="e.g. 3G + 3GP" />
+          <Combo value={form.gauge} onChange={field('gauge')}
+            options={meta?.options?.gauge_detail || []} placeholder="e.g. 3G + 3GP" />
         </Field>
         <Field label="Tension">
-          <TextInput value={form.tension} onChange={field('tension')} placeholder="e.g. LIHAT POLA" />
+          <Combo value={form.tension} onChange={field('tension')}
+            options={meta?.options?.tension || []} placeholder="e.g. LIHAT POLA" />
         </Field>
         <Field label="Total ends">
-          <TextInput value={form.total_ends} onChange={field('total_ends')} placeholder="e.g. 2" />
+          <Combo value={form.total_ends} onChange={field('total_ends')}
+            options={meta?.options?.total_ends || []} placeholder="e.g. 2" />
         </Field>
         <Field label="Composition & care label" hint="Text printed on the care label">
-          <TextInput value={form.composition_care} onChange={field('composition_care')} />
+          <Combo value={form.composition_care} onChange={field('composition_care')}
+            options={meta?.options?.composition_care || []} />
         </Field>
         <Field label="Color sequence" hint="Which colour goes where, e.g. C1/BODY C2/STRIPE">
-          <TextInput value={form.color_sequence} onChange={field('color_sequence')} />
+          <Combo value={form.color_sequence} onChange={field('color_sequence')}
+            options={meta?.options?.color_sequence || []} />
         </Field>
         <Field label="Logo label">
           <TextInput value={form.logo_label} onChange={field('logo_label')} />

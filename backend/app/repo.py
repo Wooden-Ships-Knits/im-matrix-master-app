@@ -475,6 +475,10 @@ def meta() -> dict:
                         "construction", "bagging_method", "polybag_sticker",
                         "packing_method", "packing_in_box", "box_labeling",
                         "ship_via", "hang_tag", "hs_code", "duty_category",
+                        # knit details: gauge_detail is the form's "gauge",
+                        # gauge is the style-code digit (ALIAS above)
+                        "gauge_detail", "gauge", "tension", "total_ends",
+                        "composition_care", "color_sequence",
                     )
                 },
             }
