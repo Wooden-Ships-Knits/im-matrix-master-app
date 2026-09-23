@@ -24,7 +24,7 @@ export default function Report() {
   const [filter, setFilter] = useState('');
   const [toDelete, setToDelete] = useState(null);
   const [form, setForm] = useState({
-    title: '', kind: 'style list', season: '', prepared_by: '', note: '',
+    title: '', kind: 'style list', season: '', collection: '', prepared_by: '', note: '',
   });
   const showToast = useToast();
 
@@ -42,8 +42,11 @@ export default function Report() {
     e.preventDefault();
     if (!form.title.trim()) { showToast('Give the report a title', 'error'); return; }
     try {
-      await api.createReport({ ...form, filters: { season: form.season } });
-      setForm({ title: '', kind: form.kind, season: form.season, prepared_by: form.prepared_by, note: '' });
+      await api.createReport({
+        ...form,
+        filters: { season: form.season, collection: form.collection },
+      });
+      setForm({ ...form, title: '', note: '' });
       showToast('Report created');
       load();
     } catch (err) { showToast(err.message, 'error'); }
@@ -106,6 +109,10 @@ export default function Report() {
               <Combo value={form.season} onChange={set('season')}
                 options={meta?.seasons.map((s) => s.code) || []} placeholder="e.g. S27" />
             </Field>
+            <Field label="Collection" hint="Blank means every collection">
+              <Combo value={form.collection} onChange={set('collection')}
+                options={meta?.collections || []} placeholder="e.g. ESSENTIALS" />
+            </Field>
             <Field label="Prepared by">
               <TextInput value={form.prepared_by} onChange={set('prepared_by')}
                 placeholder="Your name" />
@@ -146,8 +153,9 @@ export default function Report() {
               <span className="rep-actions">
                 <Link className="icon-btn" title="Printable review sheet"
                   aria-label={`Print ${r.title}`}
-                  to={`/print?season=${encodeURIComponent(r.filters?.season || '')}`
-                      + `&title=${encodeURIComponent(r.title)}`}>
+                  to={`/print?${new URLSearchParams(
+                    Object.entries({ ...(r.filters || {}), title: r.title })
+                      .filter(([, v]) => v))}`}>
                   <Printer size={18} />
                 </Link>
                 <a className="icon-btn" href={exportHref(r)} title="Export this report as CSV"

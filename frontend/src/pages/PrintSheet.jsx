@@ -25,13 +25,26 @@ const seasonTitle = (code) => (code
  * ran in an earlier season, which the product link answers.
  */
 export default function PrintSheet() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const season = params.get('season') || '';
   const collection = params.get('collection') || '';
   const title = params.get('title') || '';
   const [rows, setRows] = useState(null);
+  const [meta, setMeta] = useState(null);
+
+  // The pickers live in the toolbar, which is hidden when printing, so the
+  // selection is in the URL and the sheet itself carries no controls.
+  const choose = (key) => (e) => {
+    const next = new URLSearchParams(params);
+    if (e.target.value) next.set(key, e.target.value);
+    else next.delete(key);
+    setParams(next, { replace: true });
+  };
+
+  useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
 
   useEffect(() => {
+    setRows(null);
     api.matrix({ season, collection })
       .then(setRows)
       .catch(() => setRows([]));
@@ -66,9 +79,25 @@ export default function PrintSheet() {
     <div className="sheet-root">
       <div className="sheet-bar">
         <Link to="/report" className="btn-chip ghost"><ArrowLeft size={15} /> Back</Link>
+        <select className="input sheet-pick" value={season} onChange={choose('season')}
+          aria-label="Season">
+          <option value="">All seasons</option>
+          {(meta?.seasons || []).map((s) => (
+            <option key={s.code} value={s.code}>{s.code}</option>
+          ))}
+        </select>
+
+        <select className="input sheet-pick wide" value={collection}
+          onChange={choose('collection')} aria-label="Collection">
+          <option value="">All collections</option>
+          {(meta?.collections || []).map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+
         <span className="sheet-bar-title">
-          {title || `${seasonTitle(season)}${collection ? ` — ${collection}` : ''}`}
-          {rows && <> · {rows.length} styles · {pages.length} page{pages.length === 1 ? '' : 's'}</>}
+          {title && <strong>{title} · </strong>}
+          {rows && <>{rows.length} styles · {pages.length} page{pages.length === 1 ? '' : 's'}</>}
         </span>
         <button type="button" className="btn btn-save" onClick={() => window.print()}>
           <Printer size={16} /> Print
