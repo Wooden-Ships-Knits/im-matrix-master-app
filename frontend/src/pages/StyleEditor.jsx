@@ -23,7 +23,7 @@ const SECTIONS = [
   { key: 'pricing', label: 'Pricing', icon: BadgeDollarSign },
   { key: 'packaging', label: 'Packaging', icon: PackageOpen },
   { key: 'shipping', label: 'Shipping', icon: Truck },
-  { key: 'measurements', label: 'Measurements', icon: Ruler },
+  { key: 'measurements', label: 'Matrix', icon: Ruler },
 ];
 
 // Yarn colours are named, never given a value: "YCA BREAKER WHITE - 658" says
@@ -62,6 +62,10 @@ const emptyForm = (season = '') => ({
   name: '', sku_code: '', status: 'active', content_code: '', style_number: '',
   gauge_code: '', material: '', admin_pct: '', knit_minutes_dev: '',
   xs_weight_factor: 0.9, whs_channel: '', finishing_location: '',
+  // what the garment is — collected on the Matrix screen
+  based_body: '', print_placement: '', bottom_type: '', bottom_rib: '',
+  similar_style_past: '', distressed: '', sleeve_category: '',
+  sleeve_length: '', length_category: '', yarn_type: '', ply: '',
   season, collection: '', sub_group: '',
   sell_sy: true, sell_000: true,
   sizes: [],

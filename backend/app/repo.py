@@ -23,6 +23,10 @@ FLAT = [
     "packing_method", "packing_in_box", "box_labeling", "box_length_cm",
     "box_depth_cm", "box_height_cm", "pcs_per_box", "ship_via", "hs_code",
     "duty_category", "hang_tag", "special_instructions", "notes", "photo_url",
+    # what the garment is, collected on the Matrix screen (migration 0008)
+    "based_body", "print_placement", "bottom_type", "bottom_rib",
+    "similar_style_past", "distressed", "sleeve_category", "sleeve_length",
+    "length_category", "yarn_type", "ply",
     # cost inputs: admin % and the knit minutes the labour cost is built from
     "admin_pct", "knit_minutes_dev", "knit_minutes_prod",
     # Which X/S grading factor this style uses, 0.9 or 0.92 (migration 0005).
@@ -535,6 +539,11 @@ def meta() -> dict:
                 "collections": col("SELECT DISTINCT name AS v FROM collections ORDER BY v"),
                 "subGroups": distinct("sub_group"),
                 "yarns": col("SELECT DISTINCT name AS v FROM yarn_colors ORDER BY v"),
+                # YCA, YST, YAC, YTX, YP — the code every yarn colour name
+                # starts with, which is the vocabulary for `yarn_type`.
+                "yarnTypes": col(
+                    "SELECT DISTINCT split_part(name, ' ', 1) AS v FROM yarn_colors"
+                    " WHERE name ~ '^Y[A-Z]+ ' ORDER BY v"),
                 "colorNames": col("SELECT DISTINCT ws_tag_color AS v FROM style_colorways"
                                   " ORDER BY v"),
                 "options": {
@@ -546,6 +555,10 @@ def meta() -> dict:
                         # gauge is the style-code digit (ALIAS above)
                         "gauge_detail", "gauge", "tension", "total_ends",
                         "composition_care", "color_sequence",
+                        "based_body", "print_placement", "bottom_type",
+                        "bottom_rib", "similar_style_past", "distressed",
+                        "sleeve_category", "sleeve_length", "length_category",
+                        "yarn_type",
                     )
                 },
             }

@@ -612,3 +612,6 @@ select.input {
   margin-left: auto; display: inline-flex; align-items: center; gap: 7px;
   text-decoration: none;
 }
+
+/* A field shown for context, edited somewhere else. */
+.input[readonly] { background: var(--inset); color: var(--muted); cursor: default; }
