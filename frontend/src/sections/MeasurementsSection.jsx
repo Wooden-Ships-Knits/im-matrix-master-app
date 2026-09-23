@@ -1,17 +1,10 @@
-import { useMemo, useState } from 'react';
-import { X } from 'lucide-react';
+import { useMemo } from 'react';
 import { Field, NumberInput, Combo } from '../components/ui.jsx';
 import { roundFixed } from '../format.js';
 
-// Every style is measured across and down; anything else is style-specific.
-// These two are offered from the start so the common case needs no typing.
-const DEFAULT_POMS = ['Lebar / Width', 'Tinggi / Length'];
-
-const POM_SUGGESTIONS = [
-  'Lebar / Width', 'Tinggi / Length', 'Chest width', 'Body length',
-  'Sleeve length', 'Shoulder width', 'Armhole depth', 'Cuff width',
-  'Bottom width', 'Neck width', 'Neck depth',
-];
+// Every style is measured across and down, and only those two. The grid is
+// fixed rather than a list anyone extends.
+const POMS = ['Lebar / Width', 'Tinggi / Length'];
 
 // Collected here, stored on the style. Free text with suggestions rather than
 // fixed lists — the workbooks never state the vocabulary, so it learns it.
@@ -30,31 +23,26 @@ const ATTRIBUTES = [
 /**
  * The Matrix: point-of-measure grid per size, and what the garment is.
  *
- * Measurements are stored flat as { pom, size, value_cm }. The attributes
- * below them live on the style. Three are shown but not editable here —
+ * The two points of measure are fixed. Measurements are stored flat as
+ * { pom, size, value_cm }. The attributes below them live on the style. Three are shown but not editable here —
  * they belong to the Yarn screen and are repeated so the Matrix reads as one
  * description without giving the same field two homes.
  */
 export default function MeasurementsSection({ form, update, meta }) {
-  const [newPom, setNewPom] = useState('');
   const sizes = form.sizes.map((x) => x.size);
   const field = (k) => (v) => update({ [k]: v });
   const opts = meta?.options || {};
 
   const smWeight = form.sizes.find((x) => x.size === 'S/M')?.weight_kg;
 
-  // Group the flat rows into one row per point of measure, first seen first.
+  // One row per point of measure, carrying whatever is stored for it.
   const rows = useMemo(() => {
-    const order = [];
     const map = {};
     for (const m of form.measurements) {
-      if (!map[m.pom]) { map[m.pom] = {}; order.push(m.pom); }
+      if (!map[m.pom]) map[m.pom] = {};
       if (m.size) map[m.pom][m.size] = m.value_cm;
     }
-    if (order.length === 0) {
-      return DEFAULT_POMS.map((pom) => ({ pom, values: {} }));
-    }
-    return order.map((pom) => ({ pom, values: map[pom] }));
+    return POMS.map((pom) => ({ pom, values: map[pom] || {} }));
   }, [form.measurements]);
 
   const rebuild = (rowList) => {
@@ -71,15 +59,6 @@ export default function MeasurementsSection({ form, update, meta }) {
   const setValue = (pom, size, v) =>
     rebuild(rows.map((r) => (r.pom === pom ? { ...r, values: { ...r.values, [size]: v } } : r)));
 
-  const addPom = () => {
-    const name = newPom.trim();
-    if (!name || rows.some((r) => r.pom.toLowerCase() === name.toLowerCase())) return;
-    rebuild([...rows, { pom: name, values: {} }]);
-    setNewPom('');
-  };
-
-  const removePom = (pom) => rebuild(rows.filter((r) => r.pom !== pom));
-
   return (
     <div>
       {sizes.length === 0 ? (
@@ -94,7 +73,6 @@ export default function MeasurementsSection({ form, update, meta }) {
               <tr>
                 <th style={{ width: '30%' }}>Point of measure</th>
                 {sizes.map((s) => <th key={s}>{s} (cm)</th>)}
-                <th style={{ width: 48 }} />
               </tr>
             </thead>
             <tbody>
@@ -108,30 +86,10 @@ export default function MeasurementsSection({ form, update, meta }) {
                         onChange={(v) => setValue(r.pom, s, v)} />
                     </td>
                   ))}
-                  <td>
-                    <button type="button" className="icon-btn danger" title={`Remove ${r.pom}`}
-                      aria-label={`Remove ${r.pom}`} onClick={() => removePom(r.pom)}>
-                      <X size={18} />
-                    </button>
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          <div style={{ display: 'flex', gap: 10, marginTop: 14, maxWidth: 480 }}>
-            <input className="input" list="pom-suggestions" value={newPom}
-              placeholder="e.g. Chest width"
-              onChange={(e) => setNewPom(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addPom())} />
-            <datalist id="pom-suggestions">
-              {POM_SUGGESTIONS.map((p) => <option key={p} value={p} />)}
-            </datalist>
-            <button type="button" className="btn-chip" onClick={addPom}
-              style={{ flexShrink: 0 }}>
-              + Add measurement
-            </button>
-          </div>
         </>
       )}
 
