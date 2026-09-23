@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import ping, pool
-from .routers import meta, styles, uploads
+from .routers import meta, reports, styles, uploads
 from .settings import settings
 
 log = logging.getLogger("im_master")
@@ -51,6 +51,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
 
 app.include_router(meta.router)
 app.include_router(styles.router)
+app.include_router(reports.router)
 app.include_router(uploads.router)
 
 # Photos. In production nginx proxies /uploads/ here (frontend/nginx.conf).

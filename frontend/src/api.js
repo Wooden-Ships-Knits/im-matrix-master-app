@@ -37,6 +37,22 @@ export const api = {
     request(`/api/styles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStyle: (id) => request(`/api/styles/${id}`, { method: 'DELETE' }),
 
+  // Reports: prepared, submitted, then approved or sent back.
+  listReports: (status) =>
+    request(`/api/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`),
+  createReport: (data) =>
+    request('/api/reports', { method: 'POST', body: JSON.stringify(data) }),
+  updateReport: (id, data) =>
+    request(`/api/reports/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  setReportStatus: (id, status, extra = {}) =>
+    request(`/api/reports/${id}/status`, {
+      method: 'POST', body: JSON.stringify({ status, ...extra }),
+    }),
+  deleteReport: (id) =>
+    fetch(`/api/reports/${id}`, { method: 'DELETE' }).then((r) => {
+      if (!r.ok) throw new Error(`Request failed (${r.status})`);
+    }),
+
   uploadImage: (id, file) => {
     const form = new FormData();
     form.append('image', file);

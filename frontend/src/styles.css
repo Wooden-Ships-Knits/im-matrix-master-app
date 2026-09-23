@@ -636,3 +636,26 @@ select.input {
 .past-search { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .btn-chip.ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 .btn-chip { display: inline-flex; align-items: center; gap: 6px; }
+
+/* ================= Reports =================
+   Prepared, submitted, then approved or sent back. Status leads the row so a
+   list of them can be scanned for what is waiting. */
+.rep-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 20px 0 14px; }
+.btn-chip.on { background: var(--green-deep); color: #fff; border-color: var(--green-deep); }
+.btn-chip.ok { background: var(--success); color: #fff; border-color: var(--success); }
+
+.rep { padding: 14px 16px; margin-bottom: 12px; }
+.rep-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.rep-title { font-weight: 800; font-size: 1.02rem; }
+.rep-kind { font-size: 0.78rem; color: var(--muted); }
+.rep-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.rep-status {
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; padding: 3px 8px; border-radius: 6px;
+  background: var(--tile); color: var(--primary);
+}
+.rep-status.submitted { background: #F3E7D3; color: #8A6320; }
+.rep-status.approved  { background: #E3EDE5; color: var(--green-deep); }
+.rep-status.rejected  { background: var(--danger-soft); color: var(--danger); }
+.rep-note { margin: 8px 0 0; font-size: 0.9rem; }
+.rep-trail { margin: 8px 0 0; font-size: 0.78rem; color: var(--muted); }

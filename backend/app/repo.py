@@ -12,6 +12,8 @@ from decimal import Decimal, InvalidOperation
 
 from psycopg.rows import dict_row
 
+import json
+
 from .db import pool, transaction
 
 # Columns on `styles` that the client sends and reads back unchanged.
@@ -605,6 +607,100 @@ def set_photo(style_id: int, path: str) -> None:
 
 
 # --------------------------------------------------------------------- meta
+# ------------------------------------------------------------------ reports
+# draft -> submitted -> approved | rejected. A rejected report returns to
+# draft, so the same row carries its whole history rather than being replaced.
+_FLOW = {
+    "draft": {"submitted"},
+    "submitted": {"approved", "rejected", "draft"},
+    "approved": {"draft"},
+    "rejected": {"draft"},
+}
+
+
+def list_reports(status: str | None = None) -> list[dict]:
+    sql = """
+        SELECT r.*, se.code AS season
+        FROM reports r LEFT JOIN seasons se ON se.id = r.season_id
+        WHERE (%s::text IS NULL OR r.status = %s)
+        ORDER BY r.created_at DESC
+    """
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, (status, status))
+            return [dict(r) for r in cur.fetchall()]
+
+
+def _report(cur, report_id):
+    cur.execute("""
+        SELECT r.*, se.code AS season
+        FROM reports r LEFT JOIN seasons se ON se.id = r.season_id
+        WHERE r.id = %s
+    """, (report_id,))
+    row = cur.fetchone()
+    if not row:
+        raise LookupError("Report not found")
+    return dict(row)
+
+
+def save_report(payload: dict, report_id: int | None = None) -> dict:
+    fields = ("title", "kind", "note", "prepared_by")
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            season_id = _season_id(cur, payload.get("season"))
+            values = {k: _clean(payload.get(k)) for k in fields if k in payload}
+            values["season_id"] = season_id
+            if "filters" in payload:
+                values["filters"] = json.dumps(payload.get("filters") or {})
+
+            if report_id is None:
+                cols = list(values)
+                cur.execute(
+                    f"INSERT INTO reports ({', '.join(cols)})"
+                    f" VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id",
+                    [values[c] for c in cols],
+                )
+                report_id = cur.fetchone()["id"]
+            elif values:
+                sets = ", ".join(f"{c} = %s" for c in values)
+                cur.execute(f"UPDATE reports SET {sets} WHERE id = %s",
+                            [*values.values(), report_id])
+                if cur.rowcount == 0:
+                    raise LookupError("Report not found")
+            return _report(cur, report_id)
+
+
+def set_report_status(report_id: int, status, by=None, note=None) -> dict:
+    status = _clean(status)
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            current = _report(cur, report_id)["status"]
+            if status not in _FLOW.get(current, set()):
+                raise ValueError(f"A {current} report cannot become {status}")
+            if status == "submitted":
+                cur.execute(
+                    "UPDATE reports SET status = %s, submitted_at = now(),"
+                    " decided_by = NULL, decided_at = NULL, decision_note = NULL"
+                    " WHERE id = %s", (status, report_id))
+            elif status == "draft":
+                cur.execute(
+                    "UPDATE reports SET status = 'draft', submitted_at = NULL,"
+                    " decided_by = NULL, decided_at = NULL, decision_note = NULL"
+                    " WHERE id = %s", (report_id,))
+            else:
+                cur.execute(
+                    "UPDATE reports SET status = %s, decided_by = %s,"
+                    " decision_note = %s, decided_at = now() WHERE id = %s",
+                    (status, _clean(by), _clean(note), report_id))
+            return _report(cur, report_id)
+
+
+def delete_report(report_id: int) -> None:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM reports WHERE id = %s", (report_id,))
+
+
 def meta() -> dict:
     """Every dropdown the editor needs, in one call (backend.md §5)."""
     with pool.connection() as conn:
