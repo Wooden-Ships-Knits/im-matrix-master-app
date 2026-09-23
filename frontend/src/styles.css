@@ -659,3 +659,71 @@ select.input {
 .rep-status.rejected  { background: var(--danger-soft); color: var(--danger); }
 .rep-note { margin: 8px 0 0; font-size: 0.9rem; }
 .rep-trail { margin: 8px 0 0; font-size: 0.78rem; color: var(--muted); }
+
+/* ================= Printed review sheet =================
+   A4 landscape, one section per collection, ten styles a page. On screen the
+   pages are shown as cards so the layout can be checked before printing. */
+.sheet-root { background: var(--bg); padding: 0 0 40px; }
+.sheet-bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  background: var(--band); padding: 12px 20px; border-bottom: 1px solid var(--border);
+}
+.sheet-bar-title { font-weight: 700; margin-right: auto; }
+.sheet-empty { padding: 24px; }
+
+.sheet {
+  width: 297mm; min-height: 210mm;          /* A4 landscape */
+  margin: 20px auto; padding: 12mm 12mm 10mm;
+  background: #fff; color: #1b1b1b;
+  box-shadow: var(--shadow); border: 1px solid var(--border);
+  display: flex; flex-direction: column;
+}
+.sheet-head {
+  display: flex; align-items: baseline; gap: 14px;
+  border-bottom: 2px solid #1b1b1b; padding-bottom: 6px; margin-bottom: 8mm;
+}
+.sheet-head h1 {
+  font-size: 15pt; font-weight: 800; letter-spacing: 0.04em; margin: 0;
+  margin-right: auto;
+}
+.sheet-page { font-size: 9pt; font-weight: 800; letter-spacing: 0.08em; }
+.sheet-date { font-size: 8pt; color: #555; }
+
+.sheet-grid {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 6mm 4mm; align-content: start;
+}
+.sheet-card { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sheet-photo {
+  aspect-ratio: 3 / 3.4; border: 1px solid #ccc; background: #fafafa;
+  display: flex; align-items: center; justify-content: center;
+  color: #bbb; overflow: hidden;
+}
+.sheet-photo img { width: 100%; height: 100%; object-fit: cover; }
+.sheet-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+.sheet-ply, .sheet-rep {
+  font-size: 6.5pt; font-weight: 800; letter-spacing: 0.05em;
+  padding: 1.5px 4px; border-radius: 3px; border: 1px solid #1b1b1b;
+}
+.sheet-rep.new { background: #1b1b1b; color: #fff; }
+.sheet-rep.repeat { background: #fff; color: #1b1b1b; }
+.sheet-name { font-size: 8pt; font-weight: 800; line-height: 1.2; }
+.sheet-code { font-size: 7pt; color: #666; font-variant-numeric: tabular-nums; }
+.sheet-colours { list-style: none; margin: 2px 0 0; padding: 0; }
+.sheet-colours li { font-size: 7pt; line-height: 1.35; }
+.sheet-colours li.none { color: #999; font-style: italic; }
+
+@media print {
+  /* The page box is the sheet; everything around it goes. */
+  @page { size: A4 landscape; margin: 0; }
+  .sheet-bar, .band, .home-foot { display: none !important; }
+  .sheet-root { background: #fff; padding: 0; }
+  .sheet {
+    width: auto; min-height: auto; margin: 0; box-shadow: none; border: 0;
+    padding: 10mm 10mm 8mm;
+    break-after: page;
+  }
+  .sheet:last-child { break-after: auto; }
+  .sheet-card, .sheet-photo { break-inside: avoid; }
+}

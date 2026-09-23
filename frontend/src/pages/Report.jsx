@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, CirclePlus, Download, Send, Check, Undo2, Trash2 } from 'lucide-react';
+import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, TextInput, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
 
@@ -144,6 +144,12 @@ export default function Report() {
               {r.season && <span className="acc-season">{r.season}</span>}
               <span className="rep-kind">{r.kind}</span>
               <span className="rep-actions">
+                <Link className="icon-btn" title="Printable review sheet"
+                  aria-label={`Print ${r.title}`}
+                  to={`/print?season=${encodeURIComponent(r.filters?.season || '')}`
+                      + `&title=${encodeURIComponent(r.title)}`}>
+                  <Printer size={18} />
+                </Link>
                 <a className="icon-btn" href={exportHref(r)} title="Export this report as CSV"
                   aria-label={`Export ${r.title}`}><Download size={18} /></a>
                 {r.status === 'draft' && (

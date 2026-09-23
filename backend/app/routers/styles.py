@@ -47,6 +47,19 @@ def export_csv(
     )
 
 
+@router.get("/matrix")
+def matrix(
+    season: str | None = Query(None),
+    collection: str | None = Query(None),
+    q: str | None = Query(None),
+):
+    """The styles a printed review sheet covers, grouped by collection.
+
+    Declared before /{style_id}, which would otherwise read "matrix" as an id.
+    """
+    return repo.matrix_rows(season=season, collection=collection, q=q)
+
+
 @router.get("/{style_id}")
 def get_style(style_id: int):
     style = repo.load_style(style_id)

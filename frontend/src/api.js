@@ -37,6 +37,13 @@ export const api = {
     request(`/api/styles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStyle: (id) => request(`/api/styles/${id}`, { method: 'DELETE' }),
 
+  // The printed review sheet: styles grouped by collection.
+  matrix: (filters = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(filters).filter(([, v]) => v !== '' && v != null));
+    return request(`/api/styles/matrix?${qs}`);
+  },
+
   // Reports: prepared, submitted, then approved or sent back.
   listReports: (status) =>
     request(`/api/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`),

@@ -607,6 +607,52 @@ def set_photo(style_id: int, path: str) -> None:
 
 
 # --------------------------------------------------------------------- meta
+def matrix_rows(season=None, collection=None, q=None) -> list[dict]:
+    """One row per style, with what a printed review sheet shows.
+
+    Grouped by collection because that is how the sheet is worked through, one
+    worksheet per collection.
+
+    NEW or EXACT REPEAT is not stored — it is whether this garment ran in an
+    earlier season, which the product link already answers.
+    """
+    sql = """
+        SELECT s.id, s.style_name AS name, s.ply, s.photo_url AS image_path,
+               se.code AS season, col.name AS collection,
+               s.gauge_detail, s.whs_channel,
+               concat(se.cat_code, se.season_number, cc.code, s.gauge,
+                      se.style_letter, s.style_number) AS style_code,
+               EXISTS (SELECT 1 FROM styles o
+                       WHERE o.product_id = s.product_id AND o.id <> s.id
+                         AND o.season_id <> s.season_id) AS is_repeat,
+               (SELECT se2.code FROM styles o
+                  JOIN seasons se2 ON se2.id = o.season_id
+                 WHERE o.product_id = s.product_id AND o.id <> s.id
+                   AND se2.season_number < se.season_number
+                 ORDER BY se2.season_number DESC LIMIT 1) AS last_season,
+               ARRAY(SELECT cw.ws_tag_color FROM style_colorways cw
+                      WHERE cw.style_id = s.id
+                      ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways
+        FROM styles s
+        JOIN seasons se            ON se.id = s.season_id
+        LEFT JOIN collections col   ON col.id = s.collection_id
+        LEFT JOIN content_codes cc  ON cc.id = s.content_code_id
+        WHERE s.status <> 'draft'
+    """
+    args: list = []
+    if season:
+        sql += " AND se.code = %s"; args.append(season)
+    if collection:
+        sql += " AND col.name = %s"; args.append(collection)
+    if q:
+        sql += " AND s.style_name ILIKE %s"; args.append(f"%{q}%")
+    sql += " ORDER BY col.sort_order NULLS LAST, col.name NULLS LAST, s.style_name"
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, args)
+            return [dict(r) for r in cur.fetchall()]
+
+
 # ------------------------------------------------------------------ reports
 # draft -> submitted -> approved | rejected. A rejected report returns to
 # draft, so the same row carries its whole history rather than being replaced.
