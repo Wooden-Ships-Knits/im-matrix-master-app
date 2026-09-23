@@ -240,6 +240,63 @@ def finishing_of(text):
     return None
 
 
+# Collections are rows, not a column. A banner row carries the name in
+# DESCRIPTION and a literal X in every other column, and it CLOSES the block
+# above it rather than opening the one below — im-to-sales-force does the same
+# thing with a bfill, and that is where this reading is confirmed.
+#
+# Banners come in runs: "COTTON" then "ESSENTIALS", or "SKI SNOW", "LUXE",
+# "WS COLLECTION". The last real label is the collection; the ones before it
+# name the yarn. "WS COLLECTION" is a wrapper that sits after the real name,
+# so it only counts when it is the only thing in the run.
+_WRAPPER = re.compile(r"^WS COLLECTION\b")
+
+
+def _collection_name(labels):
+    real = [l for l in labels if not _WRAPPER.match(l.upper())]
+    chosen = (real or labels)[-1]
+    # "ESSENTIALS - OK upload SF" is ESSENTIALS; the note is someone's status.
+    return chosen.split(" - ")[0].strip()
+
+
+def banner_runs(sh):
+    """[(first_row, name)] for each run of consecutive banner rows."""
+    d = sh.col("DESCRIPTION")
+    banners = []
+    for ri in sorted(sh.rows):
+        if ri <= sh.header_row:
+            continue
+        cells = sh.rows[ri]
+        if d not in cells:
+            continue
+        if sum(1 for k, v in cells.items() if v.upper() == "X" and k != d) >= 40:
+            banners.append((ri, cells[d]))
+
+    runs, cur = [], []
+    for ri, label in banners:
+        if cur and ri == cur[-1][0] + 1:
+            cur.append((ri, label))
+        else:
+            if cur:
+                runs.append(cur)
+            cur = [(ri, label)]
+    if cur:
+        runs.append(cur)
+    return [(r[0][0], _collection_name([l for _i, l in r])) for r in runs]
+
+
+def collection_at(sh):
+    """row index -> the collection that closes the block it sits in."""
+    runs = banner_runs(sh)
+    out, i = {}, 0
+    for ri, _cells in sh.data_rows():
+        while i < len(runs) and runs[i][0] < ri:
+            i += 1
+        if i < len(runs):
+            out[ri] = runs[i][1]
+    return out
+
+
 def split_description(text):
     """'ALEX STRIPED CREW COTTON - X/S - 000 ONLY' -> (name, size).
 

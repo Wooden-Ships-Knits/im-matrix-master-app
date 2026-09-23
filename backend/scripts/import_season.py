@@ -19,8 +19,8 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sheet import (Sheet, Ambiguous, channel_of, finishing_of,  # noqa: E402
-                   minutes_from, rate_cells, split_description)
+from sheet import (Sheet, Ambiguous, channel_of, collection_at,  # noqa: E402
+                   finishing_of, minutes_from, rate_cells, split_description)
 
 ROOT = Path(__file__).resolve().parents[2]
 SEASONS = ["S25", "F25", "S26", "F26", "S27"]
@@ -142,6 +142,7 @@ def collect(sh, season):
             op_cols[c] = code
     sh.load_formulas(op_cols)
     factor = labour_factor(sh)
+    collections_by_row = collection_at(sh)
 
     styles = collections.OrderedDict()
     for ri, cells in sh.data_rows():
@@ -164,6 +165,13 @@ def collect(sh, season):
         fin = finishing_of(desc)
         if fin:
             s["_finishing"][fin] += 1
+
+        # The collection is a banner row further down the sheet, closing the
+        # block this style sits in.
+        if not s.get("collection"):
+            name = collections_by_row.get(ri)
+            if name:
+                s["collection"] = name
 
         for key, header in TEXT_FIELDS:          # first non-empty wins
             if not s.get(key):

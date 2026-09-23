@@ -80,24 +80,34 @@ def _clean(v):
     return v
 
 
-def get_or_create(cur, table, column, value, extra=None):
+def get_or_create(cur, table, column, value, extra=None, scope=None):
     """Self-teaching reference lists (backend.md §4).
 
     Matched case- and whitespace-insensitively so `Merino`, `merino ` and
     `MERINO` are one row, not three.
+
+    `scope` narrows that match. Most lists are global — a yarn colour is the
+    same yarn in any season — but collections are not: S27's BEACH is a
+    different run from S25's BEACH, and without the scope the first season to
+    use a name would own it for every season after.
     """
     value = _clean(value)
     if not value:
         return None
-    cur.execute(
-        f"SELECT id FROM {table} WHERE lower(btrim({column})) = lower(btrim(%s)) LIMIT 1",
-        (value,),
-    )
+    where = f"lower(btrim({column})) = lower(btrim(%s))"
+    args = [value]
+    for k, v in (scope or {}).items():
+        if v is None:
+            where += f" AND {k} IS NULL"
+        else:
+            where += f" AND {k} = %s"
+            args.append(v)
+    cur.execute(f"SELECT id FROM {table} WHERE {where} LIMIT 1", args)
     row = cur.fetchone()
     if row:
         return row["id"]
     cols, vals = [column], [value]
-    for k, v in (extra or {}).items():
+    for k, v in {**(scope or {}), **(extra or {})}.items():
         cols.append(k)
         vals.append(v)
     ph = ", ".join(["%s"] * len(vals))
@@ -310,7 +320,7 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             season_id = _season_id(cur, payload.get("season"))
             collection_id = get_or_create(
                 cur, "collections", "name", payload.get("collection"),
-                {"season_id": season_id} if season_id else None,
+                scope={"season_id": season_id},
             ) if _clean(payload.get("collection")) else None
 
             # A key the client did not send is left alone: on insert the column
