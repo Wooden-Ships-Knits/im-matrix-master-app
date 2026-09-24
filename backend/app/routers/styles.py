@@ -61,12 +61,15 @@ def matrix(
     season: str | None = Query(None),
     collection: str | None = Query(None),
     q: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
 ):
     """The styles a printed review sheet covers, grouped by collection.
 
     Declared before /{style_id}, which would otherwise read "matrix" as an id.
     """
-    return repo.matrix_rows(season=season, collection=collection, q=q)
+    return repo.matrix_rows(season=season, collection=collection, q=q,
+                            start_date=start_date, end_date=end_date)
 
 
 @router.get("/{style_id}")

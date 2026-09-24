@@ -182,7 +182,12 @@ export default function Report() {
                 <div className="rep-submit">
                   <button type="submit" className="btn btn-save">Create</button>
                   <Link className="btn-chip"
-                    to={`/print?view=sales&collection=${encodeURIComponent(sales.collection)}`}>
+                    to={`/print?${new URLSearchParams(
+                      Object.entries({
+                        view: 'sales', collection: sales.collection,
+                        season: sales.season,
+                        start_date: sales.range.from, end_date: sales.range.to,
+                      }).filter(([, v]) => v))}`}>
                     <Printer size={15} /> Preview the sheet
                   </Link>
                 </div>

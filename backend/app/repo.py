@@ -649,7 +649,8 @@ def lookup_products(q=None, limit: int = 40) -> list[dict]:
             return [dict(r) for r in cur.fetchall()]
 
 
-def matrix_rows(season=None, collection=None, q=None) -> list[dict]:
+def matrix_rows(season=None, collection=None, q=None,
+                start_date=None, end_date=None) -> list[dict]:
     """One row per style, with what a printed review sheet shows.
 
     Grouped by collection because that is how the sheet is worked through, one
@@ -680,14 +681,27 @@ def matrix_rows(season=None, collection=None, q=None) -> list[dict]:
                ARRAY(SELECT se2.code FROM styles o
                        JOIN seasons se2 ON se2.id = o.season_id
                       WHERE o.product_id = s.product_id
-                      ORDER BY se2.season_number DESC) AS seasons_run
+                      ORDER BY se2.season_number DESC) AS seasons_run,
+               -- {colourway: {whs_000: n, sy: n}} for the period asked for.
+               -- Absent rather than zero when nothing was fetched: a blank
+               -- cell means "not known", a 0 means "sold none".
+               (SELECT jsonb_object_agg(t.colour, t.channels) FROM (
+                    SELECT cw.ws_tag_color AS colour,
+                           jsonb_object_agg(lower(sl.channel), sl.quantity) AS channels
+                      FROM style_sales sl
+                      JOIN style_colorways cw ON cw.id = sl.colorway_id
+                     WHERE sl.style_id = s.id
+                       AND (%s::date IS NULL OR sl.period_start = %s)
+                       AND (%s::date IS NULL OR sl.period_end = %s)
+                     GROUP BY cw.ws_tag_color) t) AS sales
         FROM styles s
         JOIN seasons se            ON se.id = s.season_id
         LEFT JOIN collections col   ON col.id = s.collection_id
         LEFT JOIN content_codes cc  ON cc.id = s.content_code_id
         WHERE s.status <> 'draft'
     """
-    args: list = []
+    # The four sales placeholders sit in the SELECT, so they bind first.
+    args: list = [start_date, start_date, end_date, end_date]
     if season:
         sql += " AND se.code = %s"; args.append(season)
     if collection:

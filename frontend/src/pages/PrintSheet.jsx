@@ -43,8 +43,10 @@ export default function PrintSheet() {
   const season = params.get('season') || '';
   const collection = params.get('collection') || '';
   const title = params.get('title') || '';
-  // 'sales' adds the season-by-season table to each card.
+  // 'sales' turns the colourway list into a table of sold quantities.
   const view = params.get('view') || 'matrix';
+  const startDate = params.get('start_date') || '';
+  const endDate = params.get('end_date') || '';
   const [rows, setRows] = useState(null);
   const [meta, setMeta] = useState(null);
 
@@ -62,10 +64,10 @@ export default function PrintSheet() {
 
   useEffect(() => {
     setRows(null);
-    api.matrix({ season, collection })
+    api.matrix({ season, collection, start_date: startDate, end_date: endDate })
       .then(setRows)
       .catch(() => setRows([]));
-  }, [season, collection]);
+  }, [season, collection, startDate, endDate]);
 
   // Collection first, then A4-sized pages inside it.
   const pages = useMemo(() => {
@@ -136,6 +138,9 @@ export default function PrintSheet() {
               {view === 'sales' && ' — SALES HISTORY'}
             </h1>
             <span className="sheet-page">PAGE {p.page} OF {p.of}</span>
+            {view === 'sales' && startDate && (
+              <span className="sheet-date">{startDate} to {endDate}</span>
+            )}
             <span className="sheet-date">Printed {today()}</span>
           </header>
 
