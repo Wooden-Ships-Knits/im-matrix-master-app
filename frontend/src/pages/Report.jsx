@@ -32,8 +32,12 @@ export default function Report() {
   });
   // Sales history asks for different things: one collection, and a period per
   // channel, because the two are not always pulled over the same dates.
+  // One period, not one per channel: the Sales Report service takes a single
+  // start_date/end_date and returns both sides of it. Salesforce becomes the
+  // WHS 000 column, Shopify the SY column. Keys match that service's own
+  // parameters so nothing has to be translated later.
   const [sales, setSales] = useState({
-    collection: '', whs_000: { from: '', to: '' }, sy: { from: '', to: '' },
+    collection: '', season: '', range: { from: '', to: '' },
   });
   // Seeded once from the last sales history report, so the dates come back
   // the way they were left. Stored on the report rather than in this browser,
@@ -50,8 +54,8 @@ export default function Report() {
           const f = last.filters;
           setSales({
             collection: f.collection || '',
-            whs_000: { from: f.whs_000_from || '', to: f.whs_000_to || '' },
-            sy: { from: f.sy_from || '', to: f.sy_to || '' },
+            season: f.season || '',
+            range: { from: f.start_date || '', to: f.end_date || '' },
           });
         }
         seeded.current = true;
@@ -88,11 +92,13 @@ export default function Report() {
       await api.createReport({
         title: `Sales history — ${sales.collection}`,
         kind: 'sales history',
+        season: sales.season,
         prepared_by: form.prepared_by,
         filters: {
           collection: sales.collection,
-          whs_000_from: sales.whs_000.from, whs_000_to: sales.whs_000.to,
-          sy_from: sales.sy.from, sy_to: sales.sy.to,
+          season: sales.season,
+          start_date: sales.range.from,
+          end_date: sales.range.to,
           view: 'sales',
         },
       });
@@ -157,18 +163,21 @@ export default function Report() {
           {tab === 'lookup' && (
             <>
               <form className="form-grid" onSubmit={createSales} style={{ marginTop: 14 }}>
+                <Field label="Season" hint="Which season's styles">
+                  <Combo value={sales.season}
+                    onChange={(v) => setSales((s) => ({ ...s, season: v }))}
+                    options={meta?.seasons.map((x) => x.code) || []}
+                    placeholder="e.g. S27" />
+                </Field>
                 <Field label="Collection" hint="Which collection the sheet covers">
                   <Combo value={sales.collection}
                     onChange={(v) => setSales((s) => ({ ...s, collection: v }))}
                     options={meta?.collections || []} placeholder="e.g. ESSENTIALS" />
                 </Field>
-                <Field label="WHS 000" hint="Period the wholesale figures cover">
-                  <DateRange value={sales.whs_000}
-                    onChange={(v) => setSales((s) => ({ ...s, whs_000: v }))} />
-                </Field>
-                <Field label="SY" hint="Period the Shopify figures cover">
-                  <DateRange value={sales.sy}
-                    onChange={(v) => setSales((s) => ({ ...s, sy: v }))} />
+                <Field label="Sales period"
+                  hint="Both channels over the same dates — Salesforce fills WHS 000, Shopify fills SY">
+                  <DateRange value={sales.range}
+                    onChange={(v) => setSales((s) => ({ ...s, range: v }))} />
                 </Field>
                 <div className="rep-submit">
                   <button type="submit" className="btn btn-save">Create</button>
