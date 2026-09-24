@@ -405,6 +405,14 @@ def link_styles(style_id: int, other_id: int) -> None:
             """, (keep, drop, keep))
             cur.execute("DELETE FROM product_identifiers WHERE product_id = %s", (drop,))
             cur.execute("DELETE FROM products WHERE id = %s", (drop,))
+            # Sales arrive under whichever name the source uses, so a link
+            # made by hand has to record the alias as well as join the styles.
+            cur.execute("""
+                INSERT INTO product_identifiers (product_id, kind, value, season_id)
+                SELECT product_id, 'style_name', style_name, season_id
+                  FROM styles WHERE product_id = %s
+                ON CONFLICT DO NOTHING
+            """, (keep,))
 
 
 def unlink_style(style_id: int) -> None:
@@ -712,6 +720,136 @@ def matrix_rows(season=None, collection=None, q=None,
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, args)
+            return [dict(r) for r in cur.fetchall()]
+
+
+# -------------------------------------------------------------------- sales
+def _sales_index(cur, season_id):
+    """Every name a style can be found by, this season, to its colourways.
+
+    Two passes. First the season's own style names. Then every other name the
+    same product has been known by, because the sources do not use this
+    season's name — Shopify sells "RIHANNA CHUNKY CARDI COTTON" where F26 says
+    "RIHANNA CARDI CHUNKY COTTON". That alias comes from product_identifiers,
+    so linking two styles by hand improves the matching without anyone
+    maintaining a separate mapping table.
+
+    The season's own name wins where both would match.
+    """
+    cur.execute("""
+        SELECT s.id AS style_id, s.product_id,
+               upper(btrim(s.style_name)) AS style,
+               cw.id AS colorway_id, upper(btrim(cw.ws_tag_color)) AS colour
+          FROM styles s
+          LEFT JOIN style_colorways cw ON cw.style_id = s.id
+         WHERE s.season_id = %s
+    """, (season_id,))
+    index, by_product = {}, {}
+    for r in cur.fetchall():
+        index.setdefault(r["style"], {})[r["colour"]] = (r["style_id"], r["colorway_id"])
+        if r["product_id"]:
+            by_product.setdefault(r["product_id"], r["style"])
+
+    cur.execute("""
+        SELECT DISTINCT i.product_id, upper(btrim(i.value)) AS alias
+          FROM product_identifiers i
+         WHERE i.kind = 'style_name'
+    """)
+    for r in cur.fetchall():
+        own = by_product.get(r["product_id"])
+        if own and r["alias"] not in index:
+            index[r["alias"]] = index[own]
+    return index
+
+
+def import_sales(season, start_date, end_date, channel, rows) -> dict:
+    """Store one channel's sold quantities for a period.
+
+    Rows that match nothing are kept, with style_id null and the source's own
+    spelling in source_style and source_color, so a miss can be looked at
+    rather than disappearing.
+
+    Re-importing the same channel and period replaces it — a second run after
+    a correction must not double the figures.
+    """
+    if channel not in ("WHS_000", "SY"):
+        raise ValueError("channel must be WHS_000 or SY")
+
+    matched = unmatched = 0
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            season_id = _season_id(cur, season)
+            if season_id is None:
+                raise ValueError("unknown season: %r" % (season,))
+
+            cur.execute(
+                "DELETE FROM style_sales WHERE season_id = %s AND channel = %s"
+                "   AND period_start = %s AND period_end = %s",
+                (season_id, channel, start_date, end_date))
+
+            index = _sales_index(cur, season_id)
+
+            # More than one source row can land on the same colourway — that
+            # is what alias matching is for, and Shopify splits a colour
+            # across listings anyway. They add up; one row per colourway is
+            # what the sheet prints and what the unique index allows.
+            totals, seen_as, misses = {}, {}, []
+            for row in rows:
+                style = " ".join(str(row.get("style") or "").split()).upper()
+                colour = " ".join(str(row.get("color") or "").split()).upper()
+                try:
+                    qty = int(float(row.get("quantity") or 0))
+                except (TypeError, ValueError):
+                    continue
+                hit = index.get(style, {}).get(colour)
+                if hit:
+                    matched += 1
+                    totals[hit] = totals.get(hit, 0) + qty
+                    seen_as.setdefault(hit, (row.get("style"), row.get("color")))
+                else:
+                    unmatched += 1
+                    misses.append((row.get("style"), row.get("color"), qty))
+
+            for (style_id, colorway_id), qty in totals.items():
+                src_style, src_colour = seen_as[(style_id, colorway_id)]
+                cur.execute("""
+                    INSERT INTO style_sales
+                        (style_id, colorway_id, season_id, channel, quantity,
+                         period_start, period_end, source_style, source_color)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (style_id, colorway_id, season_id, channel, qty,
+                      start_date, end_date, src_style, src_colour))
+
+            for src_style, src_colour, qty in misses:
+                cur.execute("""
+                    INSERT INTO style_sales
+                        (season_id, channel, quantity,
+                         period_start, period_end, source_style, source_color)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """, (season_id, channel, qty, start_date, end_date,
+                      src_style, src_colour))
+
+    return {"channel": channel, "season": season,
+            "period": [start_date, end_date],
+            "matched": matched, "unmatched": unmatched,
+            "colourways": len(totals),
+            "rows": matched + unmatched}
+
+
+def unmatched_sales(season=None) -> list[dict]:
+    """Rows no style or colourway was found for — the ones worth reading."""
+    sql = """
+        SELECT sl.source_style, sl.source_color, sl.channel, sl.quantity,
+               sl.period_start, sl.period_end, se.code AS season
+          FROM style_sales sl
+          LEFT JOIN seasons se ON se.id = sl.season_id
+         WHERE sl.style_id IS NULL
+           AND (%s::text IS NULL OR se.code = %s)
+         ORDER BY sl.quantity DESC
+    """
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, (season, season))
             return [dict(r) for r in cur.fetchall()]
 
 

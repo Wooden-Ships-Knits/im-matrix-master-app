@@ -174,7 +174,7 @@ export default function Report() {
                     onChange={(v) => setSales((s) => ({ ...s, collection: v }))}
                     options={meta?.collections || []} placeholder="e.g. ESSENTIALS" />
                 </Field>
-                <Field label="Sales period"
+                <Field label="Sales period" className="span-2"
                   hint="Both channels over the same dates — Salesforce fills WHS 000, Shopify fills SY">
                   <DateRange value={sales.range}
                     onChange={(v) => setSales((s) => ({ ...s, range: v }))} />

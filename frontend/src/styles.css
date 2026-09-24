@@ -784,7 +784,9 @@ select.input {
 
 /* A from/to pair, side by side until the screen is too narrow. */
 .date-range { display: flex; align-items: center; gap: 8px; }
-.date-range .input { min-width: 0; }
+/* Wide enough for a whole date plus the browser's own calendar button, which
+   is what was clipping "08/01/2026" to "08/01/2". */
+.date-range .input { flex: 1 1 0; min-width: 150px; }
 .date-sep { font-size: 0.82rem; color: var(--muted); flex: 0 0 auto; }
 @media (max-width: 560px) {
   .date-range { flex-wrap: wrap; }

@@ -56,9 +56,9 @@ export function ConfirmDialog({ open, title, message, confirmLabel = 'Yes, conti
 
 /* ---------------- Field wrappers ---------------- */
 
-export function Field({ label, hint, children }) {
+export function Field({ label, hint, className = '', children }) {
   return (
-    <div className="field">
+    <div className={`field${className ? ` ${className}` : ''}`}>
       {label && <label>{label}</label>}
       {children}
       {hint && <span className="hint">{hint}</span>}
