@@ -9,6 +9,20 @@ const PER_PAGE = 10;
 const today = () => new Date().toLocaleDateString(undefined,
   { day: 'numeric', month: 'long', year: 'numeric' });
 
+// Sold quantity for one colourway on one channel. There is no sales data in
+// the database yet, so this is where it will be read from — the table and its
+// total are built on it, rather than on a blank that has to be replaced.
+const qty = (style, colour, channel) => style.sales?.[colour]?.[channel] ?? null;
+
+const sum = (style, channel) => {
+  const values = style.colorways
+    .map((c) => qty(style, c, channel))
+    .filter((v) => v != null);
+  return values.length ? values.reduce((a, b) => a + Number(b), 0) : null;
+};
+
+const cell = (v) => (v == null ? '' : Number(v).toLocaleString('en-US'));
+
 const SEASON_NAMES = { S: 'SPRING', F: 'FALL' };
 const seasonTitle = (code) => (code
   ? `${SEASON_NAMES[code[0]] || ''} ${code.slice(1)}`.trim()
@@ -150,13 +164,21 @@ export default function PrintSheet() {
                       {s.colorways.map((c) => (
                         <tr key={c}>
                           <th scope="row">{c}</th>
-                          <td /><td />
+                          <td>{cell(qty(s, c, 'whs_000'))}</td>
+                          <td>{cell(qty(s, c, 'sy'))}</td>
                         </tr>
                       ))}
                       {s.colorways.length === 0 && (
                         <tr><th scope="row" className="none">no colourways</th><td /><td /></tr>
                       )}
                     </tbody>
+                    <tfoot>
+                      <tr>
+                        <th scope="row">TOTAL</th>
+                        <td>{cell(sum(s, 'whs_000'))}</td>
+                        <td>{cell(sum(s, 'sy'))}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 ) : (
                   <ul className="sheet-colours">

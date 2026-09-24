@@ -775,6 +775,9 @@ select.input {
 .sheet-sales td {
   text-align: right; font-variant-numeric: tabular-nums; min-width: 22%;
 }
+.sheet-sales tfoot th, .sheet-sales tfoot td {
+  font-weight: 800; background: #f2f2f2; border-top: 1pt solid #1b1b1b;
+}
 
 .rep-open { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
 .rep-open .muted { font-size: 0.85rem; }
