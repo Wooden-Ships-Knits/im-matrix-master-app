@@ -674,7 +674,13 @@ def matrix_rows(season=None, collection=None, q=None) -> list[dict]:
                  ORDER BY se2.season_number DESC LIMIT 1) AS last_season,
                ARRAY(SELECT cw.ws_tag_color FROM style_colorways cw
                       WHERE cw.style_id = s.id
-                      ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways
+                      ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways,
+               -- Every season this garment ran in, for the sales history
+               -- table. Quantities are not here: no sales data is loaded.
+               ARRAY(SELECT se2.code FROM styles o
+                       JOIN seasons se2 ON se2.id = o.season_id
+                      WHERE o.product_id = s.product_id
+                      ORDER BY se2.season_number DESC) AS seasons_run
         FROM styles s
         JOIN seasons se            ON se.id = s.season_id
         LEFT JOIN collections col   ON col.id = s.collection_id

@@ -29,6 +29,8 @@ export default function PrintSheet() {
   const season = params.get('season') || '';
   const collection = params.get('collection') || '';
   const title = params.get('title') || '';
+  // 'sales' adds the season-by-season table to each card.
+  const view = params.get('view') || 'matrix';
   const [rows, setRows] = useState(null);
   const [meta, setMeta] = useState(null);
 
@@ -42,6 +44,10 @@ export default function PrintSheet() {
   };
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
+
+  // Newest first, and exactly the seasons that exist — the table is the
+  // history, so it should not invent rows for seasons nobody has run.
+  const seasonRows = (meta?.seasons || []).map((s) => s.code);
 
   useEffect(() => {
     setRows(null);
@@ -114,7 +120,10 @@ export default function PrintSheet() {
       {pages.map((p, i) => (
         <article className="sheet" key={`${p.collection}-${p.page}-${i}`}>
           <header className="sheet-head">
-            <h1>{seasonTitle(season)} — {p.collection.toUpperCase()}</h1>
+            <h1>
+              {seasonTitle(season)} — {p.collection.toUpperCase()}
+              {view === 'sales' && ' — SALES HISTORY'}
+            </h1>
             <span className="sheet-page">PAGE {p.page} OF {p.of}</span>
             <span className="sheet-date">Printed {today()}</span>
           </header>
@@ -139,6 +148,22 @@ export default function PrintSheet() {
                   {s.colorways.map((c) => <li key={c}>{c}</li>)}
                   {s.colorways.length === 0 && <li className="none">no colourways</li>}
                 </ul>
+
+                {view === 'sales' && (
+                  <table className="sheet-sales">
+                    <tbody>
+                      {seasonRows.map((code) => {
+                        const ran = (s.seasons_run || []).includes(code);
+                        return (
+                          <tr key={code} className={ran ? 'ran' : ''}>
+                            <th scope="row">{code}</th>
+                            <td>{ran ? '' : '\u2014'}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ))}
           </div>

@@ -104,10 +104,22 @@ export default function Report() {
               onClick={() => setTab('matrix')}>Matrix Master</button>
             <button type="button" role="tab" aria-selected={tab === 'lookup'}
               className={`card-title tab${tab === 'lookup' ? ' on' : ''}`}
-              onClick={() => setTab('lookup')}>Master File Lookup</button>
+              onClick={() => setTab('lookup')}>Sales History</button>
           </div>
 
-          {tab === 'lookup' && <MasterFileLookup />}
+          {tab === 'lookup' && (
+            <>
+              <div className="rep-open">
+                <Link className="btn-chip" to="/print?view=sales">
+                  <Printer size={15} /> Open the printable sales history sheet
+                </Link>
+                <span className="muted">
+                  Same layout as Matrix Master, with a season table on each style.
+                </span>
+              </div>
+              <MasterFileLookup />
+            </>
+          )}
 
           <form className="form-grid" hidden={tab !== 'matrix'}
             onSubmit={create} style={{ marginTop: 14 }}>

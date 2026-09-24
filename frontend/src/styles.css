@@ -755,3 +755,18 @@ select.input {
 .mfl-run:hover { border-color: var(--success); background: var(--inset); }
 .mfl-run-name { font-size: 0.84rem; font-weight: 600; }
 .mfl-run-cw { font-size: 0.74rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* The sales history table on a card: one row per season, newest first.
+   Quantities are blank because no sales data is loaded; a season the garment
+   did not run in is dashed, so the shape of its history reads at a glance. */
+.sheet-sales { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.sheet-sales th, .sheet-sales td {
+  border: 0.5pt solid #bbb; padding: 1px 3px;
+  font-size: 6.5pt; line-height: 1.3; font-weight: 400;
+}
+.sheet-sales th { text-align: left; width: 42%; color: #666; }
+.sheet-sales td { text-align: right; font-variant-numeric: tabular-nums; color: #999; }
+.sheet-sales tr.ran th { color: #1b1b1b; font-weight: 800; }
+.sheet-sales tr.ran td { background: #f2f2f2; }
+.rep-open { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.rep-open .muted { font-size: 0.85rem; }
