@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, TextInput, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
-import MasterFileLookup from '../sections/MasterFileLookup.jsx';
+import MatrixSalesHistory from '../sections/MatrixSalesHistory.jsx';
 
 const STATUSES = ['draft', 'submitted', 'approved', 'rejected'];
 const KINDS = ['style list', 'pricing', 'costing', 'packaging', 'salesforce upload'];
@@ -117,7 +117,7 @@ export default function Report() {
                   Same layout as Matrix Master, with a season table on each style.
                 </span>
               </div>
-              <MasterFileLookup />
+              <MatrixSalesHistory />
             </>
           )}
 

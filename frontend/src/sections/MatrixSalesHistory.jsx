@@ -14,7 +14,7 @@ import { api } from '../api.js';
  * yet. What it answers is which styles are one garment — which is the part
  * the workbook has to be told.
  */
-export default function MasterFileLookup() {
+export default function MatrixSalesHistory() {
   const [q, setQ] = useState('');
   const [rows, setRows] = useState(null);
   const timer = useRef(null);
