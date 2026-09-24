@@ -45,9 +45,6 @@ export default function PrintSheet() {
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
 
-  // Newest first, and exactly the seasons that exist — the table is the
-  // history, so it should not invent rows for seasons nobody has run.
-  const seasonRows = (meta?.seasons || []).map((s) => s.code);
 
   useEffect(() => {
     setRows(null);
@@ -144,26 +141,30 @@ export default function PrintSheet() {
                 </div>
                 <div className="sheet-name">{s.name}</div>
                 <div className="sheet-code">{s.style_code || ''}</div>
-                <ul className="sheet-colours">
-                  {s.colorways.map((c) => <li key={c}>{c}</li>)}
-                  {s.colorways.length === 0 && <li className="none">no colourways</li>}
-                </ul>
-
-                {view === 'sales' && (
+                {view === 'sales' ? (
                   <table className="sheet-sales">
+                    <thead>
+                      <tr><th /><th>WHS 000</th><th>SY</th></tr>
+                    </thead>
                     <tbody>
-                      {seasonRows.map((code) => {
-                        const ran = (s.seasons_run || []).includes(code);
-                        return (
-                          <tr key={code} className={ran ? 'ran' : ''}>
-                            <th scope="row">{code}</th>
-                            <td>{ran ? '' : '\u2014'}</td>
-                          </tr>
-                        );
-                      })}
+                      {s.colorways.map((c) => (
+                        <tr key={c}>
+                          <th scope="row">{c}</th>
+                          <td /><td />
+                        </tr>
+                      ))}
+                      {s.colorways.length === 0 && (
+                        <tr><th scope="row" className="none">no colourways</th><td /><td /></tr>
+                      )}
                     </tbody>
                   </table>
+                ) : (
+                  <ul className="sheet-colours">
+                    {s.colorways.map((c) => <li key={c}>{c}</li>)}
+                    {s.colorways.length === 0 && <li className="none">no colourways</li>}
+                  </ul>
                 )}
+
               </div>
             ))}
           </div>
