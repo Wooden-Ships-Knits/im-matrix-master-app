@@ -30,9 +30,9 @@ export default function MatrixSalesHistory() {
 
   return (
     <div>
-      <input className="input mfl-search" value={q} autoComplete="off"
+      {/* <input className="input mfl-search" value={q} autoComplete="off"
         placeholder="Search a style — any name it has ever had, e.g. ARDEN"
-        onChange={(e) => setQ(e.target.value)} />
+        onChange={(e) => setQ(e.target.value)} /> */}
 
       {q.trim().length > 0 && q.trim().length < 2 && (
         <p className="muted mfl-hint">Keep typing…</p>
@@ -60,12 +60,12 @@ export default function MatrixSalesHistory() {
         </div>
       ))}
 
-      {rows === null && q.trim().length < 2 && (
+      {/* {rows === null && q.trim().length < 2 && (
         <p className="muted mfl-hint">
           Type a style name. Styles linked as the same garment are listed
           together, even where the name changed between seasons.
         </p>
-      )}
+      )} */}
     </div>
   );
 }
