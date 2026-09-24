@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
@@ -35,10 +35,28 @@ export default function Report() {
   const [sales, setSales] = useState({
     collection: '', whs_000: { from: '', to: '' }, sy: { from: '', to: '' },
   });
+  // Seeded once from the last sales history report, so the dates come back
+  // the way they were left. Stored on the report rather than in this browser,
+  // so it follows whoever runs it next.
+  const seeded = useRef(false);
   const showToast = useToast();
 
   const load = (status = filter) =>
-    api.listReports(status || undefined).then(setRows).catch((e) => {
+    api.listReports(status || undefined).then((r) => {
+      setRows(r);
+      if (!seeded.current) {
+        const last = r.find((x) => x.kind === 'sales history');
+        if (last?.filters) {
+          const f = last.filters;
+          setSales({
+            collection: f.collection || '',
+            whs_000: { from: f.whs_000_from || '', to: f.whs_000_to || '' },
+            sy: { from: f.sy_from || '', to: f.sy_to || '' },
+          });
+        }
+        seeded.current = true;
+      }
+    }).catch((e) => {
       showToast(e.message, 'error'); setRows([]);
     });
 
