@@ -781,3 +781,13 @@ select.input {
 
 .rep-open { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
 .rep-open .muted { font-size: 0.85rem; }
+
+/* A from/to pair, side by side until the screen is too narrow. */
+.date-range { display: flex; align-items: center; gap: 8px; }
+.date-range .input { min-width: 0; }
+.date-sep { font-size: 0.82rem; color: var(--muted); flex: 0 0 auto; }
+@media (max-width: 560px) {
+  .date-range { flex-wrap: wrap; }
+  .date-sep { display: none; }
+}
+.rep-submit { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }

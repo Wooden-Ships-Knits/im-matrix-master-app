@@ -95,6 +95,21 @@ export function NumberInput({ value, onChange, decimals, ...rest }) {
   );
 }
 
+/** A from/to pair. Sales are always asked for over a period, never a day. */
+export function DateRange({ value = {}, onChange }) {
+  const set = (k) => (e) => onChange({ ...value, [k]: e.target.value });
+  return (
+    <div className="date-range">
+      <input className="input" type="date" aria-label="From"
+        value={value.from || ''} max={value.to || undefined} onChange={set('from')} />
+      <span className="date-sep">to</span>
+      <input className="input" type="date" aria-label="To"
+        value={value.to || ''} min={value.from || undefined} onChange={set('to')} />
+    </div>
+  );
+}
+
+
 export function PriceInput({ value, onChange, ...rest }) {
   return (
     <div className={`price-input${rest.disabled ? ' is-disabled' : ''}`}>

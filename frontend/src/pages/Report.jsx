@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2 } from 'lucide-react';
 import { api } from '../api.js';
-import { Field, TextInput, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
+import {
+  Field, TextInput, Combo, DateRange, ConfirmDialog, useToast,
+} from '../components/ui.jsx';
 import MatrixSalesHistory from '../sections/MatrixSalesHistory.jsx';
 
 const STATUSES = ['draft', 'submitted', 'approved', 'rejected'];
@@ -28,6 +30,11 @@ export default function Report() {
   const [form, setForm] = useState({
     title: '', kind: 'style list', season: '', collection: '', prepared_by: '', note: '',
   });
+  // Sales history asks for different things: one collection, and a period per
+  // channel, because the two are not always pulled over the same dates.
+  const [sales, setSales] = useState({
+    collection: '', whs_000: { from: '', to: '' }, sy: { from: '', to: '' },
+  });
   const showToast = useToast();
 
   const load = (status = filter) =>
@@ -50,6 +57,28 @@ export default function Report() {
       });
       setForm({ ...form, title: '', note: '' });
       showToast('Report created');
+      load();
+    } catch (err) { showToast(err.message, 'error'); }
+  }
+
+  async function createSales(e) {
+    e.preventDefault();
+    if (!sales.collection.trim()) {
+      showToast('Pick a collection', 'error'); return;
+    }
+    try {
+      await api.createReport({
+        title: `Sales history — ${sales.collection}`,
+        kind: 'sales history',
+        prepared_by: form.prepared_by,
+        filters: {
+          collection: sales.collection,
+          whs_000_from: sales.whs_000.from, whs_000_to: sales.whs_000.to,
+          sy_from: sales.sy.from, sy_to: sales.sy.to,
+          view: 'sales',
+        },
+      });
+      showToast('Sales history report created');
       load();
     } catch (err) { showToast(err.message, 'error'); }
   }
@@ -109,20 +138,35 @@ export default function Report() {
 
           {tab === 'lookup' && (
             <>
-              <div className="rep-open">
-                <Link className="btn-chip" to="/print?view=sales">
-                  <Printer size={15} /> Open the printable sales history sheet
-                </Link>
-                <span className="muted">
-                  Same layout as Matrix Master, with a season table on each style.
-                </span>
-              </div>
+              <form className="form-grid" onSubmit={createSales} style={{ marginTop: 14 }}>
+                <Field label="Collection" hint="Which collection the sheet covers">
+                  <Combo value={sales.collection}
+                    onChange={(v) => setSales((s) => ({ ...s, collection: v }))}
+                    options={meta?.collections || []} placeholder="e.g. ESSENTIALS" />
+                </Field>
+                <Field label="WHS 000" hint="Period the wholesale figures cover">
+                  <DateRange value={sales.whs_000}
+                    onChange={(v) => setSales((s) => ({ ...s, whs_000: v }))} />
+                </Field>
+                <Field label="SY" hint="Period the Shopify figures cover">
+                  <DateRange value={sales.sy}
+                    onChange={(v) => setSales((s) => ({ ...s, sy: v }))} />
+                </Field>
+                <div className="rep-submit">
+                  <button type="submit" className="btn btn-save">Create</button>
+                  <Link className="btn-chip"
+                    to={`/print?view=sales&collection=${encodeURIComponent(sales.collection)}`}>
+                    <Printer size={15} /> Preview the sheet
+                  </Link>
+                </div>
+              </form>
+
               <MatrixSalesHistory />
             </>
           )}
 
-          <form className="form-grid" hidden={tab !== 'matrix'}
-            onSubmit={create} style={{ marginTop: 14 }}>
+          {tab === 'matrix' && (
+          <form className="form-grid" onSubmit={create} style={{ marginTop: 14 }}>
             <Field label="Title">
               <TextInput value={form.title} onChange={set('title')}
                 placeholder="e.g. S27 pricing review" />
@@ -145,10 +189,11 @@ export default function Report() {
             <Field label="Note" hint="What should be looked at">
               <TextInput value={form.note} onChange={set('note')} />
             </Field>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+            <div className="rep-submit">
               <button type="submit" className="btn btn-save">Create</button>
             </div>
           </form>
+          )}
           
         </section>
 
