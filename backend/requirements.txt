@@ -6,3 +6,7 @@ pydantic-settings==2.7.0
 alembic==1.14.0
 SQLAlchemy==2.0.36
 python-multipart==0.0.20
+
+# Sales fetching (app/sales). Shopify goes over plain urllib;
+# Salesforce needs the login and query paging this gives us.
+simple-salesforce==1.12.6

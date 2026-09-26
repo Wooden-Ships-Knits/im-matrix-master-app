@@ -47,6 +47,18 @@ export const api = {
   // One row per garment: the seasons it ran in, under whatever names.
   lookup: (q) => request(`/api/styles/lookup?q=${encodeURIComponent(q || '')}`),
 
+  // Ask Salesforce and Shopify for a window and store what comes back.
+  // Both are live calls, so this can take a while.
+  fetchSales: (season, start_date, end_date) =>
+    request('/api/sales/fetch', {
+      method: 'POST',
+      body: JSON.stringify({ season, start_date, end_date }),
+    }),
+
+  // Which sales windows have been loaded.
+  salesPeriods: (season) =>
+    request(`/api/sales/periods${season ? `?season=${encodeURIComponent(season)}` : ''}`),
+
   // Reports: prepared, submitted, then approved or sent back.
   listReports: (status) =>
     request(`/api/reports${status ? `?status=${encodeURIComponent(status)}` : ''}`),

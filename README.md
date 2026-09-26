@@ -28,6 +28,53 @@ docker compose --profile web up -d    # + the built frontend
 | API | http://localhost:8085 | loopback only |
 | Dev server | http://localhost:5173 | `cd frontend && npm run dev` |
 
+### Day to day: the dev server
+
+From nothing — Docker Desktop closed, no terminals open:
+
+```bash
+open -a Docker                        # wait for the whale icon to settle
+cd "<this folder>"
+docker compose up -d                  # database + API
+cd frontend && npm run dev            # http://localhost:5173
+```
+
+Leave `npm run dev` running in its own terminal; Ctrl-C stops it. That is the
+whole loop for frontend work — the page reloads as you save, and the dev
+server proxies `/api` and `/uploads` to the backend on 8085, so you never need
+the nginx container while developing.
+
+Check what is already up before starting anything:
+
+```bash
+docker info >/dev/null 2>&1 && echo "docker up" || echo "docker closed"
+lsof -nP -iTCP:5173 -sTCP:LISTEN >/dev/null && echo "dev server up"
+docker compose ps
+```
+
+### Showing it to someone else
+
+```bash
+cloudflared tunnel --url http://localhost:5173
+```
+
+It prints a `https://….trycloudflare.com` address. **Public and
+unauthenticated** — anyone with the link is in — and a new address every time.
+`allowedHosts: ['.trycloudflare.com']` is already in `vite.config.js`; without
+it Vite refuses the request outright. Hot reload will not work for the person
+opening the link (Vite points their browser at port 5173, which is not on the
+tunnel), so they reload the page by hand.
+
+To tunnel the built app instead, rebuild nginx first or you will be showing
+them a stale bundle:
+
+```bash
+docker compose --profile web up -d --build nginx
+cloudflared tunnel --url http://localhost:8086
+```
+
+### Rebuilding
+
 Work on the frontend through the dev server — it reloads as you save and
 proxies `/api` to the backend. The built copy on 8086 only changes when its
 image is rebuilt:

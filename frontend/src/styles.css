@@ -706,6 +706,33 @@ select.input {
   font-size: 6.5pt; font-weight: 800; letter-spacing: 0.05em;
   padding: 1.5px 4px; border-radius: 3px; border: 1px solid #1b1b1b;
 }
+/* Same pill as the PLY and NEW/REPEAT badges it sits beside. */
+.sheet-chan {
+  font-size: 6.5pt; font-weight: 800; letter-spacing: 0.05em;
+  padding: 1.5px 4px; border-radius: 3px; border: 1px solid #1b1b1b;
+  color: #1b1b1b;
+}
+.sheet-chan.whs  { background: var(--chan-000); }
+.sheet-chan.sy   { background: var(--chan-sy); }
+/* White, so the unrestricted case is present but quiet. The 1px dark border
+   the pill already has is what keeps it visible against the page. */
+.sheet-chan.both { background: #fff; }
+
+.sheet-key.chan-whs  { background: var(--chan-000); border: 1.5pt solid #a63cb0; }
+.sheet-key.chan-sy   { background: var(--chan-sy);  border: 1.5pt solid #9c1f14; }
+.sheet-key.chan-both { background: #fff;            border: 1.5pt solid #1b1b1b; }
+
+.sheet-legend-chan {
+  grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 14px;
+  align-items: baseline; border-top: 0.5pt dotted #ddd; padding-top: 1.5mm;
+}
+.sheet-legend-chan > strong {
+  font-size: 6.5pt; font-weight: 800; letter-spacing: 0.1em; color: #1b1b1b;
+}
+.sheet-legend-chan-item { display: inline-flex; gap: 5px; align-items: flex-start; }
+.sheet-legend-chan-item b { color: #1b1b1b; }
+.sheet-legend-chan-item.plain { color: #777; }
+
 .sheet-rep.new { background: #1b1b1b; color: #fff; }
 .sheet-rep.repeat { background: #fff; color: #1b1b1b; }
 .sheet-name { font-size: 8pt; font-weight: 800; line-height: 1.2; }
@@ -793,3 +820,159 @@ select.input {
   .date-sep { display: none; }
 }
 .rep-submit { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+/* The period a report covers, beside its kind. */
+.rep-period {
+  font-size: 0.76rem; font-variant-numeric: tabular-nums;
+  color: var(--green-deep); background: var(--inset);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px;
+  white-space: nowrap;
+}
+/* The highlight thresholds a sales report was run with. */
+.rep-threshold {
+  font-size: 0.74rem; font-weight: 700; font-variant-numeric: tabular-nums;
+  color: var(--tan); background: var(--card);
+  border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px;
+  white-space: nowrap;
+}
+/* Said on screen, never printed: the paper should not carry a warning. */
+.sheet-warn {
+  max-width: 297mm; margin: 16px auto 0; padding: 14px 18px;
+  background: var(--danger-soft); border: 1px solid var(--danger);
+  border-radius: var(--radius); font-size: 0.9rem; color: var(--text);
+}
+.sheet-warn-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; align-items: center; }
+@media print { .sheet-warn { display: none !important; } }
+
+/* ============ Matrix Master repeat colouring, on the sales sheet ============
+   Three states, from two facts: does the garment run again a year later, and
+   did it sell past the threshold. The frame is the style's SY total, the
+   highlight behind a colour name is that colourway's.
+
+   good — repeating, sold enough          (keep it)
+   add  — sold enough, but not repeating  (it should be)
+   drop — repeating, but did not sell     (it should not be)
+
+   Nothing is coloured when the question cannot be answered; see verdict() in
+   PrintSheet.jsx. The colours carry no meaning on their own, so the legend
+   prints on every page. */
+/* The three hex codes are the Matrix Master workbook's own fills, so a printed
+   sheet and the spreadsheet it replaces are the same colour. Green and blue
+   are light enough to be faint as a thin line, hence 3pt frames. */
+:root {
+  --mark-good: #B7FD4F;
+  --mark-add:  #EA3323;
+  --mark-drop: #75FBFD;
+  /* Channel restriction, a separate axis from the repeat rule. --chan-sy is
+     deliberately the same red as --mark-add: both come from the workbook and
+     the two are told apart by where they sit, a pill in the badge row against
+     a frame and a name highlight. */
+  --chan-000: #ED70F8;
+  --chan-sy:  #EA3323;
+}
+
+.sheet-photo.mark-good { border: 3pt solid var(--mark-good); }
+.sheet-photo.mark-add  { border: 3pt solid var(--mark-add); }
+.sheet-photo.mark-drop { border: 3pt solid var(--mark-drop); }
+
+/* The name carries the same verdict as the frame. Text stays dark on all
+   three, as it is in the workbook. The box is inline so the highlight ends
+   with the name rather than running the width of the card. */
+.sheet-name[class*="mark-"] {
+  display: inline-block; align-self: flex-start;
+  padding: 0 3px; border-radius: 2px;
+}
+.sheet-name.mark-good { background: var(--mark-good); }
+.sheet-name.mark-add  { background: var(--mark-add); }
+.sheet-name.mark-drop { background: var(--mark-drop); }
+
+/* Three columns, one per verdict, with the lead and the footnote spanning all
+   of them. Set small and tight: this prints at the top of every page, and the
+   page below it has to hold ten cards. */
+.sheet-legend {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5mm 5mm;
+  margin: 0 0 3.5mm; padding-bottom: 2mm; border-bottom: 0.5pt solid #bbb;
+  font-size: 6pt; line-height: 1.35; color: #333;
+}
+.sheet-legend-lead {
+  grid-column: 1 / -1; display: flex; gap: 7px; align-items: baseline;
+}
+.sheet-legend-lead strong {
+  font-size: 6.5pt; font-weight: 800; letter-spacing: 0.1em; color: #1b1b1b;
+  flex: none;
+}
+.sheet-legend-lead span { color: #555; }
+/* The surface, the channel and the figure are the three things being
+   named; they carry the same weight so the sentence between them reads
+   as connective tissue. */
+.sheet-legend-lead b { font-weight: 800; color: #1b1b1b; }
+.sheet-legend-item { display: flex; gap: 5px; align-items: flex-start; }
+.sheet-legend-item > div { display: flex; flex-direction: column; min-width: 0; }
+.sheet-legend-item b {
+  font-weight: 800; letter-spacing: 0.05em; color: #1b1b1b;
+}
+/* The figure the whole sheet is judged against, so it reads as a number
+   rather than as part of the sentence around it. */
+.sheet-legend-num {
+  font-weight: 800; color: #1b1b1b; font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+}
+.sheet-legend-rule { color: #1b1b1b; }
+/* The reading is the only part that is advice rather than fact, so it is set
+   apart from the rule above it. */
+.sheet-legend-reading { color: #777; font-style: italic; }
+.sheet-legend-note {
+  grid-column: 1 / -1; color: #777;
+  border-top: 0.5pt dotted #ddd; padding-top: 1.5mm;
+}
+.sheet-key {
+  width: 10px; height: 10px; border-radius: 2px; flex: none; margin-top: 1px;
+}
+/* The key is both a frame and a fill, because the colour means the same thing
+   whichever of the two it appears as on the sheet. */
+.sheet-key.mark-good { background: var(--mark-good); border: 1.5pt solid #7a9c2a; }
+.sheet-key.mark-add  { background: var(--mark-add);  border: 1.5pt solid #9c1f14; }
+.sheet-key.mark-drop { background: var(--mark-drop); border: 1.5pt solid #3aa7a9; }
+
+/* A printer drops background colour by default, and these ARE the message —
+   a sheet printed without them says the opposite of what it means. */
+@media print {
+  .sheet-photo[class*="mark-"], .sheet-name[class*="mark-"], .sheet-chan,
+  .sheet-key {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+
+/* ================= Reordering cards on the review sheet =================
+   The boss reads the sheet in the order the cards sit in, so the order is
+   part of the review. Dragging changes it; nothing here reaches the paper. */
+.sheet-card { position: relative; }
+.sheet-card[draggable="true"] { cursor: grab; }
+.sheet-card.dragging { opacity: 0.4; cursor: grabbing; }
+
+/* The grip is an affordance, not a target — the whole card is the drag
+   source, so a small hover hint is enough and it never has to be hit. */
+.sheet-drag {
+  position: absolute; top: 2px; right: 2px; z-index: 2;
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 3px;
+  background: rgba(255, 255, 255, 0.92); color: #666;
+  border: 1px solid #ddd;
+  opacity: 0; transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.sheet-card:hover .sheet-drag { opacity: 1; }
+
+/* Where the dragged card will land. A line rather than a filled box: the
+   card keeps its own colour, which on the sales sheet is a verdict. */
+.sheet-card.drop-here::before {
+  content: ''; position: absolute; inset: -3px -4px; z-index: 1;
+  border-left: 2.5px solid var(--accent, #1b1b1b);
+  background: rgba(27, 27, 27, 0.04);
+  pointer-events: none;
+}
+
+@media print {
+  .sheet-drag { display: none !important; }
+  .sheet-card.dragging { opacity: 1; }
+  .sheet-card.drop-here::before { display: none !important; }
+}

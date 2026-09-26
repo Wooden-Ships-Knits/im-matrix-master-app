@@ -13,6 +13,22 @@ const KINDS = ['style list', 'pricing', 'costing', 'packaging', 'salesforce uplo
 const when = (t) => (t ? new Date(t).toLocaleDateString(undefined,
   { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
+const day = (t, withYear = true) => (t
+  ? new Date(`${t}T00:00:00`).toLocaleDateString(undefined,
+    { day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}) })
+  : '');
+
+/** "1 Aug – 31 Aug 2026", or what is known of it. */
+const period = (f = {}) => {
+  const { start_date: from, end_date: to } = f;
+  if (!from && !to) return '';
+  if (from && to) {
+    const sameYear = from.slice(0, 4) === to.slice(0, 4);
+    return `${day(from, !sameYear)} \u2013 ${day(to)}`;
+  }
+  return from ? `from ${day(from)}` : `up to ${day(to)}`;
+};
+
 /**
  * Reports an operator prepares and someone signs off.
  *
@@ -27,8 +43,10 @@ export default function Report() {
   const [filter, setFilter] = useState('');
   const [toDelete, setToDelete] = useState(null);
   const [tab, setTab] = useState('matrix');
+  const [fetching, setFetching] = useState(false);
   const [form, setForm] = useState({
-    title: '', kind: 'style list', season: '', collection: '', prepared_by: '', note: '',
+    title: '', kind: 'style list', season: '', collection: ''
+    , prepared_by: '', note: '',
   });
   // Sales history asks for different things: one collection, and a period per
   // channel, because the two are not always pulled over the same dates.
@@ -38,6 +56,7 @@ export default function Report() {
   // parameters so nothing has to be translated later.
   const [sales, setSales] = useState({
     collection: '', season: '', range: { from: '', to: '' },
+    threshold: '', whsThreshold: '',
   });
   // Seeded once from the last sales history report, so the dates come back
   // the way they were left. Stored on the report rather than in this browser,
@@ -56,6 +75,8 @@ export default function Report() {
             collection: f.collection || '',
             season: f.season || '',
             range: { from: f.start_date || '', to: f.end_date || '' },
+            threshold: f.sy_threshold || '',
+            whsThreshold: f.whs_000_threshold || '',
           });
         }
         seeded.current = true;
@@ -99,11 +120,32 @@ export default function Report() {
           season: sales.season,
           start_date: sales.range.from,
           end_date: sales.range.to,
+          sy_threshold: sales.threshold,
+          whs_000_threshold: sales.whsThreshold,
           view: 'sales',
         },
       });
-      showToast('Sales history report created');
+      showToast('Report created — fetching sales…');
       load();
+
+      // The figures are the point of the report, so Create gets them. Both
+      // sources are live calls; the report is already saved if this fails,
+      // and the fetch can be repeated without creating another.
+      setFetching(true);
+      try {
+        const done = await api.fetchSales(
+          sales.season, sales.range.from, sales.range.to);
+        const summary = done
+          .map((d) => `${d.channel === 'SY' ? 'SY' : '000'} ${d.matched}`)
+          .join(', ');
+        const missed = done.reduce((n, d) => n + d.unmatched, 0);
+        showToast(`Sales loaded — ${summary}`
+          + (missed ? `, ${missed} unmatched` : ''));
+      } catch (err) {
+        showToast(`Report saved, but the fetch failed: ${err.message}`, 'error');
+      } finally {
+        setFetching(false);
+      }
     } catch (err) { showToast(err.message, 'error'); }
   }
 
@@ -179,14 +221,28 @@ export default function Report() {
                   <DateRange value={sales.range}
                     onChange={(v) => setSales((s) => ({ ...s, range: v }))} />
                 </Field>
+                <Field label="SY Threshold" hint="The Shopify minimum sales quantity for the highlight">
+                  <TextInput value={sales.threshold} onChange={(v) => setSales((s) => ({ ...s, threshold: v }))}
+                    placeholder="e.g. 10" />
+                </Field>
+                <Field label="000 Wholesale Threshold" hint="The WHS 000 minimum sales quantity for the highlight">
+                  <TextInput value={sales.whsThreshold} onChange={(v) => setSales((s) => ({ ...s, whsThreshold: v }))}
+                    placeholder="e.g. 10" />
+                </Field>
                 <div className="rep-submit">
-                  <button type="submit" className="btn btn-save">Create</button>
+                  <button type="submit" className="btn btn-save" disabled={fetching}>
+                    {fetching ? 'Fetching sales…' : 'Create'}
+                  </button>
                   <Link className="btn-chip"
                     to={`/print?${new URLSearchParams(
                       Object.entries({
                         view: 'sales', collection: sales.collection,
                         season: sales.season,
                         start_date: sales.range.from, end_date: sales.range.to,
+                        // The sheet colours against these; without them the
+                        // preview prints plain while the saved report does not.
+                        sy_threshold: sales.threshold,
+                        whs_000_threshold: sales.whsThreshold,
                       }).filter(([, v]) => v))}`}>
                     <Printer size={15} /> Preview the sheet
                   </Link>
@@ -253,6 +309,21 @@ export default function Report() {
               <span className="rep-title">{r.title}</span>
               {r.season && <span className="acc-season">{r.season}</span>}
               <span className="rep-kind">{r.kind}</span>
+              {period(r.filters) && (
+                <span className="rep-period" title="The period this report covers">
+                  {period(r.filters)}
+                </span>
+              )}
+              {r.filters?.whs_000_threshold && (
+                <span className="rep-threshold" title="WHS 000 highlight threshold">
+                  000 ≥ {r.filters.whs_000_threshold}
+                </span>
+              )}
+              {r.filters?.sy_threshold && (
+                <span className="rep-threshold" title="SY highlight threshold">
+                  SY ≥ {r.filters.sy_threshold}
+                </span>
+              )}
               <span className="rep-actions">
                 <Link className="icon-btn" title="Printable review sheet"
                   aria-label={`Print ${r.title}`}

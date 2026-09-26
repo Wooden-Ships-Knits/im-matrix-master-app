@@ -690,6 +690,24 @@ def matrix_rows(season=None, collection=None, q=None,
                        JOIN seasons se2 ON se2.id = o.season_id
                       WHERE o.product_id = s.product_id
                       ORDER BY se2.season_number DESC) AS seasons_run,
+               -- A repeat runs a year later in the same half of the year:
+               -- F26 -> F27, not F26 -> S27. That is season_number + 2.
+               -- The code is computed rather than joined so it can be named
+               -- even when that season has not been imported yet.
+               CASE WHEN (se.season_number + 2) %% 2 = 0
+                    THEN 'S' || ((se.season_number - 2) / 2)
+                    ELSE 'F' || ((se.season_number - 3) / 2)
+               END AS next_season,
+               -- Whether the next season exists at all. Without this,
+               -- "not imported" and "decided against" both read as
+               -- not-repeating, and the whole sheet comes out red.
+               EXISTS (SELECT 1 FROM styles o2
+                         JOIN seasons se3 ON se3.id = o2.season_id
+                        WHERE se3.season_number = se.season_number + 2) AS next_season_loaded,
+               EXISTS (SELECT 1 FROM styles o
+                         JOIN seasons se2 ON se2.id = o.season_id
+                        WHERE o.product_id = s.product_id
+                          AND se2.season_number = se.season_number + 2) AS repeats_next,
                -- {colourway: {whs_000: n, sy: n}} for the period asked for.
                -- Absent rather than zero when nothing was fetched: a blank
                -- cell means "not known", a 0 means "sold none".
@@ -801,14 +819,23 @@ def import_sales(season, start_date, end_date, channel, rows) -> dict:
                     qty = int(float(row.get("quantity") or 0))
                 except (TypeError, ValueError):
                     continue
-                hit = index.get(style, {}).get(colour)
+                colours = index.get(style)
+                hit = colours.get(colour) if colours else None
                 if hit:
                     matched += 1
                     totals[hit] = totals.get(hit, 0) + qty
                     seen_as.setdefault(hit, (row.get("style"), row.get("color")))
                 else:
                     unmatched += 1
-                    misses.append((row.get("style"), row.get("color"), qty))
+                    # A colour we do not list is a different problem from a
+                    # style we do not have: the first needs a colourway added,
+                    # the second a product link. Keep the style_id when we
+                    # know it, so the two can be told apart.
+                    style_id = None
+                    if colours:
+                        style_id = next(iter(colours.values()))[0]
+                    misses.append((style_id, row.get("style"),
+                                   row.get("color"), qty))
 
             for (style_id, colorway_id), qty in totals.items():
                 src_style, src_colour = seen_as[(style_id, colorway_id)]
@@ -820,30 +847,55 @@ def import_sales(season, start_date, end_date, channel, rows) -> dict:
                 """, (style_id, colorway_id, season_id, channel, qty,
                       start_date, end_date, src_style, src_colour))
 
-            for src_style, src_colour, qty in misses:
+            for style_id, src_style, src_colour, qty in misses:
                 cur.execute("""
                     INSERT INTO style_sales
-                        (season_id, channel, quantity,
+                        (style_id, season_id, channel, quantity,
                          period_start, period_end, source_style, source_color)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s)
-                """, (season_id, channel, qty, start_date, end_date,
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (style_id, season_id, channel, qty, start_date, end_date,
                       src_style, src_colour))
 
     return {"channel": channel, "season": season,
             "period": [start_date, end_date],
             "matched": matched, "unmatched": unmatched,
+            "colour_only": sum(1 for m in misses if m[0] is not None),
             "colourways": len(totals),
             "rows": matched + unmatched}
+
+
+def sales_periods(season=None) -> list[dict]:
+    """The windows sales have been loaded for, newest first.
+
+    A sheet asking for a window nobody loaded shows empty cells, which look
+    exactly like a style that sold nothing. This is what lets it say which
+    it is.
+    """
+    sql = """
+        SELECT se.code AS season, sl.period_start, sl.period_end,
+               sl.channel, count(*) AS rows, sum(sl.quantity) AS units
+          FROM style_sales sl
+          LEFT JOIN seasons se ON se.id = sl.season_id
+         WHERE (%s::text IS NULL OR se.code = %s)
+         GROUP BY se.code, sl.period_start, sl.period_end, sl.channel
+         ORDER BY sl.period_start DESC, sl.channel
+    """
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, (season, season))
+            return [dict(r) for r in cur.fetchall()]
 
 
 def unmatched_sales(season=None) -> list[dict]:
     """Rows no style or colourway was found for — the ones worth reading."""
     sql = """
         SELECT sl.source_style, sl.source_color, sl.channel, sl.quantity,
-               sl.period_start, sl.period_end, se.code AS season
+               sl.period_start, sl.period_end, se.code AS season,
+               CASE WHEN sl.style_id IS NULL THEN 'style'
+                    ELSE 'colour' END AS missing
           FROM style_sales sl
           LEFT JOIN seasons se ON se.id = sl.season_id
-         WHERE sl.style_id IS NULL
+         WHERE sl.colorway_id IS NULL
            AND (%s::text IS NULL OR se.code = %s)
          ORDER BY sl.quantity DESC
     """
