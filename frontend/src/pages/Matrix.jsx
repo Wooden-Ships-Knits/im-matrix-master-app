@@ -204,10 +204,6 @@ export default function Matrix() {
                 {collections.map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </Field>
-            <Field label="Style" hint="Name or code">
-              <input className="input" type="search" value={query}
-                placeholder="Search" onChange={(e) => setQuery(e.target.value)} />
-            </Field>
             {season && (
               <Link className="btn-chip" to={printHref}>
                 <Printer size={15} /> Print this
@@ -226,7 +222,28 @@ export default function Matrix() {
           </div>
           )}
         </section>
-
+        {/* Searching narrows what is already on screen, which is a different
+            job from the season and collection above: those decide what gets
+            loaded at all. Hence its own bar, and only once there is something
+            to search. */}
+        {season && rows?.length > 0 && (
+          <section className="card card-pad mx-search">
+            <Field label="Find a style" hint="Matches the name or the style code">
+              <input className="input" type="search" value={query}
+                placeholder="e.g. CHRISTMAS, or K57C3W207"
+                onChange={(e) => setQuery(e.target.value)} />
+            </Field>
+            <span className="result-count">
+              {query.trim()
+                ? `${shown.length} of ${rows.length} styles`
+                : `${rows.length} styles`}
+            </span>
+            {query.trim() && (
+              <button type="button" className="btn-chip ghost"
+                onClick={() => setQuery('')}>Clear</button>
+            )}
+          </section>
+        )}
         {!season && (
           <p className="result-count mx-waiting">
             Choose a season to start. Collections belong to a season, so the

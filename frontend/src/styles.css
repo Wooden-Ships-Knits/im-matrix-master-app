@@ -1359,3 +1359,13 @@ select.sheet-attr-input:hover { background: rgba(255, 255, 255, 0.45); }
 }
 .mx-add-input:focus { outline: none; border-color: #1b1b1b; }
 .mx-add-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* The search bar sits between choosing what to load and the sheet itself, so
+   it reads as narrowing rather than as another filter to fill in. */
+.mx-search {
+  display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  margin-top: 14px; padding: 14px 18px;
+}
+.mx-search .field { min-width: 260px; flex: 1; max-width: 420px; }
+.mx-search .result-count { margin: 0 0 9px; white-space: nowrap; }
+.mx-search .btn-chip { margin-bottom: 4px; }
