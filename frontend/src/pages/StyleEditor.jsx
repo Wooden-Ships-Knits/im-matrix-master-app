@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer,
-  ClipboardList,ListChecks
+  ClipboardList,ListChecks, LayoutGrid,
 } from 'lucide-react';
 import { api } from '../api.js';
 import { roundFixed } from '../format.js';
@@ -128,6 +128,7 @@ export default function StyleEditor() {
   const [section, setSection] = useState('bom');
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!!id);
+  // Where to go once the discard is confirmed, or false when not asking.
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [costing, setCosting] = useState([]);
   const [preview, setPreview] = useState('');
@@ -237,9 +238,23 @@ export default function StyleEditor() {
   }
 
   function discard() {
-    if (dirty) setConfirmDiscard(true);
+    if (dirty) setConfirmDiscard('/browse');
     else navigate('/browse');
   }
+
+  // Leaving with unsaved changes asks first; confirming discards them.
+  const leaveTo = (href) => setConfirmDiscard(href);
+
+  // Where this style sits on the Matrix layout. Built from what is saved, not
+  // what is on screen: the Matrix reads the database, so an unsaved season
+  // or collection would point at a block the card is not in. A new style or
+  // a draft has no card there at all.
+  const saved = dirty ? JSON.parse(snapshot.current || '{}') : form;
+  const matrixHref = id && saved.status !== 'draft' && saved.season
+    ? `/matrix?${new URLSearchParams(Object.entries({
+      season: saved.season, collection: saved.collection, tab: 'layout', style: id,
+    }).filter(([, v]) => v))}`
+    : null;
 
   // The style code is assembled, not typed: K58C3W709 is category, season
   // number, content, gauge, line letter, style number (schema.md §2.3). Three
@@ -380,6 +395,17 @@ export default function StyleEditor() {
                         e.target.value = '';
                       }} />
                   </div>
+                  {matrixHref && (
+                    <Link className="btn-chip photo-matrix-link" to={matrixHref}
+                      title="Open the Matrix layout at this style"
+                      onClick={(e) => {
+                        if (!dirty) return;
+                        e.preventDefault();
+                        leaveTo(matrixHref);
+                      }}>
+                      <LayoutGrid size={15} /> Show in Matrix
+                    </Link>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -525,12 +551,12 @@ export default function StyleEditor() {
       </main>
 
       <ConfirmDialog
-        open={confirmDiscard}
+        open={!!confirmDiscard}
         danger
         title="Discard changes?"
         message="Everything you changed since the last save will be lost."
         confirmLabel="Yes, discard"
-        onConfirm={() => { setConfirmDiscard(false); navigate('/browse'); }}
+        onConfirm={() => { const to = confirmDiscard; setConfirmDiscard(false); navigate(to); }}
         onCancel={() => setConfirmDiscard(false)}
       />
     </>

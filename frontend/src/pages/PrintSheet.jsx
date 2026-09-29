@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Printer, ArrowLeft, RotateCcw } from 'lucide-react';
 import { api } from '../api.js';
 // The card itself is shared with the Matrix screen, so what the team
@@ -220,6 +220,7 @@ const seasonTitle = (code) => (code
  */
 export default function PrintSheet() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
   const season = params.get('season') || '';
   const collection = params.get('collection') || '';
   const title = params.get('title') || '';
@@ -563,6 +564,7 @@ export default function PrintSheet() {
                 wide={Boolean(wide[s.id])}
                 frameMark={view === 'sales' ? syVerdict(s) : null}
                 nameMark={view === 'sales' ? whsVerdict(s) : null}
+                onOpen={(style) => navigate(`/edit/${style.id}`)}
                 drag={{
                   isDragging: dragging?.id === s.id,
                   isOver: over === s.id && dragging && dragging.id !== s.id,

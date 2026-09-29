@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus,
 } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
+import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 // The same card the printed sheet draws, so what is arranged here is
 // what comes out of the printer.
 import SheetCard from '../sections/SheetCard.jsx';
@@ -22,15 +23,21 @@ import SheetCard from '../sections/SheetCard.jsx';
  */
 export default function Matrix() {
   const toast = useToast();
+  const navigate = useNavigate();
+  // A link can open the page already pointed somewhere — the style editor's
+  // "Show in Matrix" sends ?season=&collection=&tab=layout&style=<id>. Read
+  // once, as starting values: after that the page's own controls own them.
+  const [params] = useSearchParams();
+  const focusId = Number(params.get('style')) || null;
   const [meta, setMeta] = useState(null);
   const [fields, setFields] = useState([]);
   const [steps, setSteps] = useState([]);
   const [yarnCodes, setYarnCodes] = useState([]);
   const [rows, setRows] = useState(null);
-  const [season, setSeason] = useState('');
-  const [collection, setCollection] = useState('');
+  const [season, setSeason] = useState(params.get('season') || '');
+  const [collection, setCollection] = useState(params.get('collection') || '');
   const [query, setQuery] = useState('');
-  const [tab, setTab] = useState('grid');
+  const [tab, setTab] = useState(params.get('tab') === 'layout' ? 'layout' : 'grid');
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null);
 
@@ -55,8 +62,29 @@ export default function Matrix() {
   // changes rather than left showing a name that no longer applies.
   const collections = meta?.collections_by_season?.[season] || [];
   useEffect(() => {
+    // Not before meta arrives: until then every collection looks unknown, and
+    // one given in the link would be dropped before it could be checked.
+    if (!meta) return;
     if (collection && !collections.includes(collection)) setCollection('');
   }, [season, meta]);
+
+  // Bring the linked style into view once its card is drawn, and mark it so
+  // the eye finds it among the rest. Only the first time the rows arrive.
+  const [focused, setFocused] = useState(null);
+  const focusDone = useRef(false);
+  useEffect(() => {
+    if (!focusId || focusDone.current || !rows?.length) return;
+    focusDone.current = true;
+    const el = document.querySelector(`[data-style-id="${focusId}"]`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFocused(focusId);
+  }, [rows, tab]);
+  useEffect(() => {
+    if (!focused) return undefined;
+    const t = setTimeout(() => setFocused(null), 2500);
+    return () => clearTimeout(t);
+  }, [focused]);
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -266,7 +294,7 @@ export default function Matrix() {
                 <thead>
                   <tr>
                     <th className="chk-style">Style</th>
-                    <th className="mx-read">Weight</th>
+                    <th>Weight S/M (kg)</th>
                     {fields.map((f) => <th key={f.key}>{f.label}</th>)}
                   </tr>
                 </thead>
@@ -277,10 +305,23 @@ export default function Matrix() {
                         <Link to={`/edit/${r.id}`}>{r.name}</Link>
                         <span className="chk-code">{r.style_code}</span>
                       </th>
-                      {/* Weight is graded across four sizes from the S/M
-                          figure, so it is edited where that grading lives. */}
-                      <td className="mx-read" title="Edited on the style, where the sizes are graded">
-                        {r.weight_sm == null ? '' : `${Number(r.weight_sm).toFixed(3)} kg`}
+                      {/* The S/M weight. The server grades the other sizes
+                          from it on save, as the style editor does. */}
+                      <td>
+                        <input
+                          className="mx-cell"
+                          defaultValue={commaDecimal(roundFixed(r.weight_sm, 3))}
+                          inputMode="decimal"
+                          aria-label={`Weight S/M (kg) — ${r.name}`}
+                          title="S/M, in kg. The other sizes are graded from it."
+                          onBlur={(e) => {
+                            // Shown rounded, so an untouched cell is not
+                            // saved back as its own rounding.
+                            if (e.target.value === commaDecimal(roundFixed(r.weight_sm, 3))) return;
+                            save(r, 'weight_sm', pointDecimal(e.target.value));
+                          }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                        />
                       </td>
                       {fields.map((f) => (
                         <td key={f.key}>
@@ -325,6 +366,8 @@ export default function Matrix() {
                   steps={steps}
                   options={{ yarn_codes: yarnCodes }}
                   onEdit={(style, key, value) => save(style, key, value)}
+                  onOpen={(style) => navigate(`/edit/${style.id}`)}
+                  focused={focused === r.id}
                   drag={{
                     isDragging: dragging === r.id,
                     isOver: over === r.id && dragging && dragging !== r.id,

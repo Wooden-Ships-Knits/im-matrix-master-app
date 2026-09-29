@@ -1292,8 +1292,9 @@ def set_step(style_id: int, step: str, done: bool, done_by=None) -> dict:
 
 # ----------------------------------------------------------------- matrix
 # The fields the Matrix screen collects: what the garment is, as opposed to
-# what it costs. Weight is not here — it lives on style_sizes and the other
-# three sizes are graded from it, so it is edited where that grading happens.
+# what it costs. Weight is not in this list — it lives on style_sizes, not on
+# the style, so update_matrix_fields takes it separately as weight_sm and
+# grades the other sizes from it (see _set_weight_sm).
 MATRIX_FIELDS = [
     # gauge_detail, not gauge: "gauge" is the single character inside the
     # style code (K57C3W542), and editing it here would silently rename the
@@ -1320,16 +1321,65 @@ _MATRIX_KEYS = {f["key"] for f in MATRIX_FIELDS}
 _MATRIX_NUMERIC = {f["key"] for f in MATRIX_FIELDS if f.get("numeric")}
 
 
+def _set_weight_sm(cur, style_id: int, value) -> None:
+    """Store the S/M weight and grade the other sizes from it.
+
+    The same arithmetic as regradeSizes in the frontend's grading.js, so the
+    Matrix screen and the style editor leave a style in the same state: M/L
+    at x1.1, X/L at x1.21, X/S at the style's own factor. A size outside those
+    four is left as it stands, and so is the finished weight of any size the
+    style does not come in.
+
+    S/M is added to the style's sizes if it is not there — the weight is
+    stored on that row, and it is the one the others are graded from.
+    Clearing it clears every graded size too, as the editor does.
+    """
+    text = "" if value is None else str(value).strip()
+    if text == "":
+        cur.execute(
+            "UPDATE style_sizes ss SET finished_wt_kg = NULL FROM sizes z"
+            " WHERE z.id = ss.size_id AND ss.style_id = %s"
+            "   AND z.code IN ('S/M', 'M/L', 'X/L', 'X/S')", (style_id,))
+        return
+    weight = _num(text)
+    if weight is None or not weight.is_finite() or weight < 0:
+        raise ValueError("weight_sm must be a number of kilograms")
+
+    size_id = get_or_create(cur, "sizes", "code", "S/M")
+    cur.execute(
+        "INSERT INTO style_sizes (style_id, size_id) VALUES (%s, %s)"
+        " ON CONFLICT (style_id, size_id) DO NOTHING", (style_id, size_id))
+    cur.execute(
+        """
+        UPDATE style_sizes ss
+           SET finished_wt_kg = round(%s * CASE z.code
+                   WHEN 'S/M' THEN 1
+                   WHEN 'M/L' THEN 1.1
+                   WHEN 'X/L' THEN 1.21
+                   WHEN 'X/S' THEN s.xs_weight_factor
+               END, 5)
+          FROM sizes z, styles s
+         WHERE z.id = ss.size_id AND s.id = ss.style_id
+           AND ss.style_id = %s
+           AND z.code IN ('S/M', 'M/L', 'X/L', 'X/S')
+        """, (weight, style_id))
+
+
 def update_matrix_fields(style_id: int, fields: dict) -> dict:
     """Write some of the Matrix attributes on one style.
 
     Only the keys given are touched, so the grid can save a single cell
     without sending — and risking overwriting — the rest of the row.
+    weight_sm is accepted alongside the style's own columns and written to
+    its sizes.
     """
+    fields = dict(fields)
+    has_weight = "weight_sm" in fields
+    weight = fields.pop("weight_sm", None)
     unknown = set(fields) - _MATRIX_KEYS
     if unknown:
         raise ValueError(f"not a matrix field: {', '.join(sorted(unknown))}")
-    if not fields:
+    if not fields and not has_weight:
         raise ValueError("nothing to update")
 
     sets, args = [], []
@@ -1352,16 +1402,28 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
         sets.append(f"{key} = %s")
 
     args.append(style_id)
+    sets.append("updated_at = now()")
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
+            # The style first, so an unknown id fails here rather than on the
+            # sizes' foreign key.
             cur.execute(
-                f"UPDATE styles SET {', '.join(sets)}, updated_at = now()"
+                f"UPDATE styles SET {', '.join(sets)}"
                 f" WHERE id = %s RETURNING id, "
                 + ", ".join(sorted(_MATRIX_KEYS)), args)
             row = cur.fetchone()
             if not row:
                 raise ValueError(f"no style {style_id}")
-            return dict(row)
+            row = dict(row)
+            if has_weight:
+                _set_weight_sm(cur, style_id, weight)
+                cur.execute(
+                    "SELECT ss.finished_wt_kg FROM style_sizes ss"
+                    " JOIN sizes z ON z.id = ss.size_id"
+                    " WHERE ss.style_id = %s AND z.code = 'S/M'", (style_id,))
+                sm = cur.fetchone()
+                row["weight_sm"] = sm["finished_wt_kg"] if sm else None
+            return row
 
 
 def set_matrix_order(style_ids: list[int]) -> int:

@@ -1,4 +1,16 @@
 /**
+ * Decimal comma, the way the team writes numbers ("0,240", not "0.240").
+ *
+ * Only for what is shown and typed. What is stored and sent to the server
+ * stays a point, so pointDecimal turns typing back before it is saved — and
+ * accepts a point too, so either key works.
+ */
+export const commaDecimal = (v) =>
+  (v === '' || v == null ? '' : String(v).replace('.', ','));
+
+export const pointDecimal = (v) => String(v ?? '').trim().replace(',', '.');
+
+/**
  * Round half up at `dp` decimals and format with exactly that many.
  *
  * toFixed alone gets this wrong. 0.315 * 1.1 is held as 0.34649999999999997,

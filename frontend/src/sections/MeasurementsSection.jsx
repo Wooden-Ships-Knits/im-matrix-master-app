@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Field, NumberInput, Combo } from '../components/ui.jsx';
-import { regradeSizes } from '../grading.js';
+import { orderSizes, regradeSizes } from '../grading.js';
 
 // Every style is measured across and down, and only those two. The grid is
 // fixed rather than a list anyone extends.
@@ -36,9 +36,18 @@ export default function MeasurementsSection({ form, update, meta }) {
   const sm = form.sizes.find((x) => x.size === 'S/M');
   const smWeight = sm?.weight_kg;
 
-  // S/M drives every other size, so typing it here re-grades the rest.
-  const setSmWeight = (v) =>
-    update({ sizes: regradeSizes(form.sizes, v, Number(form.xs_weight_factor) || 0.9) });
+  // S/M drives every other size, so typing it here re-grades the rest. The
+  // weight is stored on the S/M size row, so a style without S/M ticked gets
+  // it ticked by the first figure typed — this field is where the weight
+  // starts, and locking it until someone found the size box sent people
+  // looking for the input somewhere else.
+  const setSmWeight = (v) => {
+    const empty = v === '' || v == null;
+    if (!sm && empty) return;
+    const sizes = sm ? form.sizes : orderSizes(
+      [...form.sizes, { size: 'S/M', weight_kg: '', pcs_per_box: '' }], meta?.sizes);
+    update({ sizes: regradeSizes(sizes, v, Number(form.xs_weight_factor) || 0.9) });
+  };
 
   // One row per point of measure, carrying whatever is stored for it.
   const rows = useMemo(() => {
@@ -108,9 +117,11 @@ export default function MeasurementsSection({ form, update, meta }) {
           <Combo value={form.construction} onChange={field('construction')}
             options={opts.construction || []} placeholder="e.g. MACHINE KNIT" />
         </Field>
-        <Field label="Weight S/M (kg)" hint="The other sizes are graded from this">
+        <Field label="Weight S/M (kg)"
+          hint={sm ? 'The other sizes are graded from this'
+            : 'Entering it ticks S/M; the other sizes are graded from this'}>
           <NumberInput value={smWeight ?? ''} min="0" step="0.001" decimals={3}
-            disabled={!sm} onChange={setSmWeight} placeholder="e.g. 0.240" />
+            onChange={setSmWeight} placeholder="e.g. 0.240" />
         </Field>
 
         {ATTRIBUTES.map(([key, label]) => (

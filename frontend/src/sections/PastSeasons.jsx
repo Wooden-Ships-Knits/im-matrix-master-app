@@ -56,7 +56,7 @@ export default function PastSeasons({ styleId, styleName, onOpen, onToast }) {
   if (!styleId) {
     return (
       <div className="past">
-        <div className="group-label">Past seasons</div>
+        <div className="group-label">Linked seasons</div>
         <p className="muted past-empty">Save the style to link it to earlier seasons.</p>
       </div>
     );
@@ -64,7 +64,7 @@ export default function PastSeasons({ styleId, styleName, onOpen, onToast }) {
 
   return (
     <div className="past">
-      <div className="group-label">Past seasons</div>
+      <div className="group-label">Linked seasons</div>
 
       {rows === null && <p className="muted past-empty">Looking…</p>}
 
