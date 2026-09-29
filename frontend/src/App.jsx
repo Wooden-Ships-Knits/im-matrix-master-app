@@ -4,6 +4,8 @@ import Home from './pages/Home.jsx';
 import Browse from './pages/Browse.jsx';
 import StyleEditor from './pages/StyleEditor.jsx';
 import Report from './pages/Report.jsx';
+import Checklist from './pages/Checklist.jsx';
+import Matrix from './pages/Matrix.jsx';
 import PrintSheet from './pages/PrintSheet.jsx';
 
 export default function App() {
@@ -14,6 +16,8 @@ export default function App() {
         <Route path="/browse" element={<Browse />} />
         <Route path="/new" element={<StyleEditor key="new" />} />
         <Route path="/report" element={<Report />} />
+        <Route path="/checklist" element={<Checklist />} />
+        <Route path="/matrix" element={<Matrix />} />
         <Route path="/print" element={<PrintSheet />} />
         <Route path="/edit/:id" element={<StyleEditor />} />
       </Routes>

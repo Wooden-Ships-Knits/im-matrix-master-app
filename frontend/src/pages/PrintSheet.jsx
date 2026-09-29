@@ -1,27 +1,63 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Printer, ArrowLeft, Shirt, GripVertical, RotateCcw } from 'lucide-react';
+import { Printer, ArrowLeft, RotateCcw } from 'lucide-react';
 import { api } from '../api.js';
+// The card itself is shared with the Matrix screen, so what the team
+// arranges there is what comes out of the printer.
+import SheetCard, { qty, sum, attributesOf } from '../sections/SheetCard.jsx';
 
 // What fits on one A4 sheet, landscape, and still reads across a table.
+// Adjustable from the toolbar: how much fits depends on how tall the cards
+// come out, which depends on how many attributes a season has filled in.
 const PER_PAGE = 10;
+const PAGE_SIZES = [5, 8, 10, 12, 13, 15, 20];
+
+// Two ways to fill a sheet. 'grid' keeps five roomy cards across and runs
+// down the page; 'row' puts every card of the page in one line, the way the
+// workbook does, so the cards get as narrow as the count demands.
+const LAYOUTS = [['grid', 'Grid, 5 across'], ['row', 'One row']];
+
+// A4 landscape, less the 12mm margins each side.
+const PAGE_WIDTH_MM = 297 - 24;
+const COLUMN_GAP_MM = 1.5;
+
+const cardWidthMm = (columns) =>
+  (PAGE_WIDTH_MM - (columns - 1) * COLUMN_GAP_MM) / columns;
+
+/**
+ * Type size for a given number of columns across.
+ *
+ * Scaled rather than fixed, because a sheet of eight has room the same sheet
+ * of twenty does not, and there is no reason to print eight at the size
+ * twenty forces.
+ *
+ * 6pt is the floor worth printing: below it an office laser on plain paper
+ * fills in the counters and the text greys out rather than reads. The sheet
+ * still renders below that — it is the operator's call, not ours — but the
+ * toolbar says so.
+ */
+const LEGIBLE_PT = 6;
+
+const typeScale = (columns) => {
+  const width = cardWidthMm(columns);
+  // Roughly a point of type per 3mm of card, which keeps a two-word style
+  // name on two or three lines rather than seven.
+  const base = Math.max(4, Math.min(8, width / 3));
+  return {
+    name: base,
+    body: base * 0.85,
+    chip: base * 0.75,
+    legible: base >= LEGIBLE_PT,
+  };
+};
+
+// A photo holding both the front and the back of a garment is about twice as
+// wide as a single shot. Its card takes two columns rather than squeezing the
+// pair into one, and counts as two places on the page.
+const WIDE_RATIO = 1.3;
 
 const today = () => new Date().toLocaleDateString(undefined,
   { day: 'numeric', month: 'long', year: 'numeric' });
-
-// Sold quantity for one colourway on one channel. There is no sales data in
-// the database yet, so this is where it will be read from — the table and its
-// total are built on it, rather than on a blank that has to be replaced.
-const qty = (style, colour, channel) => style.sales?.[colour]?.[channel] ?? null;
-
-const sum = (style, channel) => {
-  const values = style.colorways
-    .map((c) => qty(style, c, channel))
-    .filter((v) => v != null);
-  return values.length ? values.reduce((a, b) => a + Number(b), 0) : null;
-};
-
-const cell = (v) => (v == null ? '' : Number(v).toLocaleString('en-US'));
 
 /**
  * The Matrix Master colouring: two facts crossed.
@@ -52,17 +88,6 @@ const verdict = (repeating, sold, threshold) => {
  * the sheet is handed to someone who was not in the room when the report was
  * set up — "over the threshold" means nothing on paper without the figure.
  */
-// Which channels the style is released on. A blank is the one case left
-// unbadged: the workbook never filled it in, and that is not the same as
-// "both" — saying BOTH there would invent an answer nobody gave.
-const CHANNEL_MARK = { '000 ONLY': 'whs', 'SY ONLY': 'sy', BOTH: 'both' };
-
-const CHANNEL_LEGEND = [
-  ['whs', '000 ONLY', 'Wholesale only. Not sold on the SY web store, so an empty SY column is expected, not a gap.'],
-  ['sy', 'SY ONLY', 'SY web store only. Not sold through wholesale, so an empty 000 column is expected.'],
-  ['both', 'BOTH', 'Released on both channels, so a quantity is expected in either column.'],
-];
-
 const legendFor = (season) => [
   {
     key: 'good',
@@ -90,6 +115,12 @@ const legendFor = (season) => [
 const surfacesFor = (sy, whs) => [
   ['Frame around the photo', 'SY', sy],
   ['Highlight behind the name', 'WHS 000', whs],
+];
+
+const CHANNEL_LEGEND = [
+  ['whs', '000 ONLY', 'Wholesale only. Not sold on the SY web store, so an empty SY column is expected, not a gap.'],
+  ['sy', 'SY ONLY', 'SY web store only. Not sold through wholesale, so an empty 000 column is expected.'],
+  ['both', 'BOTH', 'Released on both channels, so a quantity is expected in either column.'],
 ];
 
 /**
@@ -142,6 +173,36 @@ const byManualOrder = (items, order) => {
   });
 };
 
+/**
+ * Cut a collection into pages, counting places rather than cards.
+ *
+ * A wide card takes two places, so a page is full when the places are used up,
+ * not when a number of cards is reached. A card that would straddle the end
+ * starts the next page instead of being split across the fold.
+ *
+ * Always returns at least one page, so a collection with nothing in it still
+ * prints its heading rather than vanishing from the run.
+ */
+const cutPages = (items, perPage, isWide) => {
+  const places = Math.max(1, Number(perPage) || 1);
+  const out = [];
+  let current = [];
+  let used = 0;
+  for (const item of items) {
+    // A card wider than a whole page still has to go somewhere: it gets a
+    // page of its own rather than looping for ever looking for room.
+    const takes = Math.min(isWide(item) ? 2 : 1, places);
+    if (used + takes > places && current.length) {
+      out.push(current); current = []; used = 0;
+    }
+    current.push(item);
+    used += takes;
+  }
+  if (current.length || !out.length) out.push(current);
+  return out;
+};
+
+
 const SEASON_NAMES = { S: 'SPRING', F: 'FALL' };
 const seasonTitle = (code) => (code
   ? `${SEASON_NAMES[code[0]] || ''} ${code.slice(1)}`.trim()
@@ -184,6 +245,23 @@ export default function PrintSheet() {
   };
 
   useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
+  useEffect(() => { api.checklistSteps().then(setSteps).catch(() => setSteps([])); }, []);
+
+  // Read each photo's own proportions before laying the page out. Done here
+  // rather than from a stored flag because the file already knows, and a flag
+  // is one more thing to keep in step with it. The browser has the bytes
+  // cached by the time the card renders, so this costs one pass, not two.
+  useEffect(() => {
+    if (!rows?.length) { setWide({}); return undefined; }
+    let live = true;
+    Promise.all(rows.filter((r) => r.image_path).map((r) => new Promise((done) => {
+      const img = new window.Image();
+      img.onload = () => done([r.id, img.naturalWidth / img.naturalHeight >= WIDE_RATIO]);
+      img.onerror = () => done([r.id, false]);   // a broken photo is not wide
+      img.src = r.image_path;
+    }))).then((pairs) => { if (live) setWide(Object.fromEntries(pairs)); });
+    return () => { live = false; };
+  }, [rows]);
 
   // Empty cells look the same whether nothing sold or nothing was loaded.
   // Knowing which windows exist is what lets the page say which it is.
@@ -231,6 +309,14 @@ export default function PrintSheet() {
   useEffect(() => { setOrder(readOrder(view, season)); }, [view, season]);
   useEffect(() => { writeOrder(view, season, order); }, [view, season, order]);
 
+  // How many places a page holds, and which photos are wide. Both feed
+  // pagination, so both are settled before the pages are cut.
+  const perPage = Number(params.get('per_page')) || PER_PAGE;
+  const layout = params.get('layout') === 'row' ? 'row' : 'grid';
+  const scale = typeScale(layout === 'row' ? perPage : 5);
+  const [steps, setSteps] = useState([]);
+  const [wide, setWide] = useState({});
+
   const [dragging, setDragging] = useState(null);   // {id, collection}
   const [over, setOver] = useState(null);           // id the card is above
 
@@ -252,18 +338,13 @@ export default function PrintSheet() {
   const pages = useMemo(() => {
     const out = [];
     for (const g of groups) {
-      const total = Math.ceil(g.items.length / PER_PAGE) || 1;
-      for (let i = 0; i < total; i += 1) {
-        out.push({
-          collection: g.name,
-          page: i + 1,
-          of: total,
-          items: g.items.slice(i * PER_PAGE, (i + 1) * PER_PAGE),
-        });
-      }
+      const sheets = cutPages(g.items, perPage, (item) => Boolean(wide[item.id]));
+      sheets.forEach((items, i) => out.push({
+        collection: g.name, page: i + 1, of: sheets.length, items,
+      }));
     }
     return out;
-  }, [groups]);
+  }, [groups, wide, perPage]);
 
   // Drop `fromId` where `toId` currently sits, within one collection.
   const moveCard = (collection, fromId, toId) => {
@@ -306,6 +387,38 @@ export default function PrintSheet() {
             <option key={c} value={c}>{c}</option>
           ))}
         </select>
+
+        <select className="input sheet-pick" value={layout}
+          aria-label="Page layout"
+          onChange={(e) => {
+            const next = new URLSearchParams(params);
+            next.set('layout', e.target.value);
+            setParams(next, { replace: true });
+          }}>
+          {LAYOUTS.map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
+
+        <select className="input sheet-pick" value={perPage}
+          aria-label="Cards per page"
+          onChange={(e) => {
+            const next = new URLSearchParams(params);
+            next.set('per_page', e.target.value);
+            setParams(next, { replace: true });
+          }}>
+          {PAGE_SIZES.map((n) => (
+            <option key={n} value={n}>{n} per page</option>
+          ))}
+        </select>
+
+        {layout === 'row' && !scale.legible && (
+          <span className="sheet-warn-inline"
+            title="Office printers stop resolving type below about 6pt on plain paper">
+            {cardWidthMm(perPage).toFixed(0)}mm cards · {scale.name.toFixed(1)}pt —
+            too small to print
+          </span>
+        )}
 
         {reordered.length > 0 && (
           <button type="button" className="btn-chip ghost" onClick={resetOrder}
@@ -432,106 +545,55 @@ export default function PrintSheet() {
             </div>
           )}
 
-          <div className="sheet-grid">
+          <div
+            className={`sheet-grid${layout === 'row' ? ' one-row' : ''}`}
+            style={layout === 'row' ? {
+              gridTemplateColumns: `repeat(${perPage}, minmax(0, 1fr))`,
+              '--name-pt': `${scale.name.toFixed(2)}pt`,
+              '--body-pt': `${scale.body.toFixed(2)}pt`,
+              '--chip-pt': `${scale.chip.toFixed(2)}pt`,
+            } : undefined}
+          >
             {p.items.map((s) => (
-              <div
+              <SheetCard
                 key={s.id}
-                className={`sheet-card${dragging?.id === s.id ? ' dragging' : ''}${
-                  over === s.id && dragging && dragging.id !== s.id ? ' drop-here' : ''}`}
-                draggable
-                onDragStart={(e) => {
-                  setDragging({ id: s.id, collection: p.collection });
-                  e.dataTransfer.effectAllowed = 'move';
-                  // Firefox will not start a drag without data on the transfer.
-                  e.dataTransfer.setData('text/plain', String(s.id));
+                style={s}
+                view={view}
+                steps={steps}
+                wide={Boolean(wide[s.id])}
+                frameMark={view === 'sales' ? syVerdict(s) : null}
+                nameMark={view === 'sales' ? whsVerdict(s) : null}
+                drag={{
+                  isDragging: dragging?.id === s.id,
+                  isOver: over === s.id && dragging && dragging.id !== s.id,
+                  title: `Drag to move ${s.name} within ${p.collection}`,
+                  handlers: {
+                    draggable: true,
+                    onDragStart: (e) => {
+                      setDragging({ id: s.id, collection: p.collection });
+                      e.dataTransfer.effectAllowed = 'move';
+                      // Firefox will not start a drag without data on the transfer.
+                      e.dataTransfer.setData('text/plain', String(s.id));
+                    },
+                    onDragEnd: () => { setDragging(null); setOver(null); },
+                    onDragOver: (e) => {
+                      // Only within the same section: a card cannot change
+                      // which collection it belongs to by being dragged.
+                      if (!dragging || dragging.collection !== p.collection) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      if (over !== s.id) setOver(s.id);
+                    },
+                    onDragLeave: () => { if (over === s.id) setOver(null); },
+                    onDrop: (e) => {
+                      if (!dragging || dragging.collection !== p.collection) return;
+                      e.preventDefault();
+                      moveCard(p.collection, dragging.id, s.id);
+                      setDragging(null); setOver(null);
+                    },
+                  },
                 }}
-                onDragEnd={() => { setDragging(null); setOver(null); }}
-                onDragOver={(e) => {
-                  // Only within the same section: a card cannot change which
-                  // collection it belongs to by being dragged.
-                  if (!dragging || dragging.collection !== p.collection) return;
-                  e.preventDefault();
-                  e.dataTransfer.dropEffect = 'move';
-                  if (over !== s.id) setOver(s.id);
-                }}
-                onDragLeave={() => { if (over === s.id) setOver(null); }}
-                onDrop={(e) => {
-                  if (!dragging || dragging.collection !== p.collection) return;
-                  e.preventDefault();
-                  moveCard(p.collection, dragging.id, s.id);
-                  setDragging(null); setOver(null);
-                }}
-              >
-                <span className="sheet-drag" aria-hidden="true"
-                  title={`Drag to move ${s.name} within ${p.collection}`}>
-                  <GripVertical size={13} />
-                </span>
-                <div className={`sheet-photo${
-                  view === 'sales' && syVerdict(s) ? ` mark-${syVerdict(s)}` : ''}`}>
-                  {s.image_path
-                    ? <img src={s.image_path} alt={s.name} />
-                    : <Shirt size={38} strokeWidth={1.3} />}
-                </div>
-                <div className="sheet-badges">
-                  {/* Yarn weight and NEW/REPEAT are Matrix Master concerns.
-                      The sales sheet is read for what sold, so both only add
-                      noise there — and the repeat question is already answered
-                      by the frame and the name highlight. */}
-                  {view !== 'sales' && (<>
-                    <span className="sheet-ply">{s.ply ? `${s.ply} PLY` : 'PLY —'}</span>
-                    <span className={`sheet-rep ${s.is_repeat ? 'repeat' : 'new'}`}>
-                      {s.is_repeat ? `REPEAT ${s.last_season || ''}`.trim() : 'NEW'}
-                    </span>
-                  </>)}
-                  {/* Which channels the style sells through at all. A separate
-                      question from the repeat rule, and independent of it: a
-                      style can be 000 ONLY and still be repeating. BOTH and
-                      blank get no badge — only the restrictions are worth
-                      calling out. */}
-                  {view === 'sales' && CHANNEL_MARK[s.whs_channel] && (
-                    <span className={`sheet-chan ${CHANNEL_MARK[s.whs_channel]}`}>
-                      {s.whs_channel}
-                    </span>
-                  )}
-                </div>
-                <div className={`sheet-name${
-                  view === 'sales' && whsVerdict(s) ? ` mark-${whsVerdict(s)}` : ''}`}>
-                  {s.name}
-                </div>
-                <div className="sheet-code">{s.style_code || ''}</div>
-                {view === 'sales' ? (
-                  <table className="sheet-sales">
-                    <thead>
-                      <tr><th /><th>WHS 000</th><th>SY</th></tr>
-                    </thead>
-                    <tbody>
-                      {s.colorways.map((c) => (
-                        <tr key={c}>
-                          <th scope="row">{c}</th>
-                          <td>{cell(qty(s, c, 'whs_000'))}</td>
-                          <td>{cell(qty(s, c, 'sy'))}</td>
-                        </tr>
-                      ))}
-                      {s.colorways.length === 0 && (
-                        <tr><th scope="row" className="none">no colourways</th><td /><td /></tr>
-                      )}
-                    </tbody>
-                    <tfoot>
-                      <tr>
-                        <th scope="row">TOTAL</th>
-                        <td>{cell(sum(s, 'whs_000'))}</td>
-                        <td>{cell(sum(s, 'sy'))}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                ) : (
-                  <ul className="sheet-colours">
-                    {s.colorways.map((c) => <li key={c}>{c}</li>)}
-                    {s.colorways.length === 0 && <li className="none">no colourways</li>}
-                  </ul>
-                )}
-
-              </div>
+              />
             ))}
           </div>
         </article>

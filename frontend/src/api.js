@@ -37,6 +37,33 @@ export const api = {
     request(`/api/styles/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStyle: (id) => request(`/api/styles/${id}`, { method: 'DELETE' }),
 
+  // Matrix Master: what the garment is, and how the sheet is laid out.
+  matrixFields: () => request('/api/matrix/fields'),
+  yarnCodes: () => request('/api/matrix/yarn-codes'),
+  updateMatrix: (styleId, fields) =>
+    request(`/api/matrix/${styleId}`, {
+      method: 'PATCH', body: JSON.stringify(fields),
+    }),
+  // The whole block is sent, first to last, so the server never has to work
+  // out what the screen meant by "third".
+  setMatrixOrder: (styleIds, clear = false) =>
+    request('/api/matrix/order', {
+      method: 'POST', body: JSON.stringify({ style_ids: styleIds, clear }),
+    }),
+
+  // The operator's preparation checklist, read as a grid for a whole season.
+  checklistSteps: () => request('/api/checklist/steps'),
+  checklist: (filters = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(filters).filter(([, v]) => v !== '' && v != null));
+    return request(`/api/checklist?${qs}`);
+  },
+  setStep: (styleId, step, done, doneBy) =>
+    request(`/api/checklist/${styleId}`, {
+      method: 'POST',
+      body: JSON.stringify({ step, done, done_by: doneBy }),
+    }),
+
   // The printed review sheet: styles grouped by collection.
   matrix: (filters = {}) => {
     const qs = new URLSearchParams(

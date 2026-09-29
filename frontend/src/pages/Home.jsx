@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, FileSpreadsheet, BarChart3, Table2, FileDown} from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown} from 'lucide-react';
 
 export default function Home() {
   return (
@@ -14,9 +14,19 @@ export default function Home() {
           <span className="label">Add</span>
         </Link>
 
+        <Link to="/matrix" className="home-card">
+          <span className="icon-frame"><Table2 size={54} strokeWidth={1.6} /></span>
+          <span className="label">Matrix</span>
+        </Link>
+
         <Link to="/browse" className="home-card">
           <span className="icon-frame"><TextSearch size={54} strokeWidth={1.6} /></span>
           <span className="label">Browse / Edit</span>
+        </Link>
+
+        <Link to="/checklist" className="home-card">
+          <span className="icon-frame"><ListChecks size={54} strokeWidth={1.6} /></span>
+          <span className="label">Checklist</span>
         </Link>
 
         <Link to="/report" className="home-card">

@@ -694,14 +694,26 @@ select.input {
   display: grid; grid-template-columns: repeat(5, 1fr);
   gap: 6mm 4mm; align-content: start;
 }
-.sheet-card { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sheet-card {
+  display: flex; flex-direction: column; gap: 3px;
+  min-width: 0; overflow: hidden;         /* nothing escapes its column */
+}
 .sheet-photo {
   aspect-ratio: 3 / 3.4; border: 1px solid #ccc; background: #fafafa;
   display: flex; align-items: center; justify-content: center;
   color: #bbb; overflow: hidden;
+  /* Holds its shape when a long card is squeezed, so photos stay level
+     across a row even if one style has a dozen colourways. */
+  flex-shrink: 0;
 }
 .sheet-photo img { width: 100%; height: 100%; object-fit: cover; }
-.sheet-badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px; }
+/* Kept even when the style carries no badge, so the table below starts at
+   the same height on every card — the 38 F26 styles whose channel the
+   workbook never filled in would otherwise ride up a row. */
+.sheet-badges {
+  display: flex; gap: 4px; flex-wrap: wrap; margin-top: 3px;
+  min-height: 1.6em;
+}
 .sheet-ply, .sheet-rep {
   font-size: 6.5pt; font-weight: 800; letter-spacing: 0.05em;
   padding: 1.5px 4px; border-radius: 3px; border: 1px solid #1b1b1b;
@@ -735,10 +747,39 @@ select.input {
 
 .sheet-rep.new { background: #1b1b1b; color: #fff; }
 .sheet-rep.repeat { background: #fff; color: #1b1b1b; }
-.sheet-name { font-size: 8pt; font-weight: 800; line-height: 1.2; }
-.sheet-code { font-size: 7pt; color: #666; font-variant-numeric: tabular-nums; }
-.sheet-colours { list-style: none; margin: 2px 0 0; padding: 0; }
-.sheet-colours li { font-size: 7pt; line-height: 1.35; }
+/* A fixed height, so the colourways below start at the same place on every
+   card however long the name is. Set in em rather than mm: the one-row layout
+   shrinks the type, and the block should shrink with it.
+   min-height, not height — a name longer than three lines still prints in
+   full and pushes down. Truncating a style name on a sheet someone is using
+   to identify garments is the worse failure. */
+.sheet-name {
+  font-size: 8pt; font-weight: 800; line-height: 1.2;
+  min-height: 3.6em;                      /* three lines */
+}
+/* Takes the slack in the card, which pushes the step chips and the attribute
+   line to the bottom. Cards in a grid row are already the same height, so
+   bottom-aligning them is what makes the blocks line up across a page —
+   colourway counts run from one to a dozen, and anything that simply follows
+   the list starts at a different height on every card. */
+.sheet-colours {
+  list-style: none; margin: 2px 0 0; padding: 0;
+  flex-grow: 1;
+}
+.sheet-colours li {
+  font-size: 7pt; line-height: 1.35;
+  /* Backstop for a single long word with no separator to break at: better a
+     broken word inside the card than a tidy one across the next column. */
+  overflow-wrap: anywhere;
+  /* Ruled like the attribute rows below. A multi-colour name wraps onto two
+     lines — "KHAKI/BLUSH CHAMPAGNE MARL" — and without a rule there is no
+     way to tell one wrapped colourway from two short ones. */
+  border-top: 0.4pt solid #e2e2e2;
+  padding: 1px 2px;
+  text-align: center;
+}
+.sheet-colours li:last-child { border-bottom: 0.4pt solid #e2e2e2; }
+.sheet-colours li.none { border-bottom: 0.4pt solid #e2e2e2; }
 .sheet-colours li.none { color: #999; font-style: italic; }
 
 @media print {
@@ -786,7 +827,11 @@ select.input {
 /* Sales on a card: one row per colourway, a column per channel. The
    quantities are blank because no sales data is loaded — the sheet is ready
    for them, and the colourways are real. */
-.sheet-sales { width: 100%; border-collapse: collapse; margin-top: 4px; }
+.sheet-sales {
+  width: 100%; border-collapse: collapse; margin-top: 4px;
+  /* The name above is a fixed three lines and the badge row a fixed height,
+     so every table on a row starts level. */
+}
 .sheet-sales th, .sheet-sales td {
   border: 0.5pt solid #bbb; padding: 1.5px 3px;
   font-size: 6.5pt; line-height: 1.3;
@@ -797,6 +842,7 @@ select.input {
 .sheet-sales thead th:first-child { border: 0; background: none; }
 .sheet-sales tbody th {
   text-align: left; font-weight: 600; color: #1b1b1b; width: 56%;
+  overflow-wrap: anywhere;
 }
 .sheet-sales tbody th.none { color: #999; font-style: italic; font-weight: 400; }
 .sheet-sales td {
@@ -965,7 +1011,7 @@ select.input {
 /* Where the dragged card will land. A line rather than a filled box: the
    card keeps its own colour, which on the sales sheet is a verdict. */
 .sheet-card.drop-here::before {
-  content: ''; position: absolute; inset: -3px -4px; z-index: 1;
+  content: ''; position: absolute; inset: 0; z-index: 1;
   border-left: 2.5px solid var(--accent, #1b1b1b);
   background: rgba(27, 27, 27, 0.04);
   pointer-events: none;
@@ -976,3 +1022,340 @@ select.input {
   .sheet-card.dragging { opacity: 1; }
   .sheet-card.drop-here::before { display: none !important; }
 }
+
+/* ===================== Checklist grid =====================
+   Styles down, preparation steps across. The steps are independent, so this
+   is a grid of checkboxes and not a progress bar — a style can finish the
+   last step before the first. */
+.chk-filters {
+  display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end;
+  margin-top: 14px;
+}
+.chk-filters .field { min-width: 170px; }
+.chk-toggle {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-size: 0.9rem; padding-bottom: 9px; cursor: pointer;
+}
+
+.chk-card { padding: 0; overflow: hidden; margin-top: 18px; }
+/* The step columns stay put; the style names scroll under nothing. */
+.chk-scroll { overflow-x: auto; }
+.chk-grid { border-collapse: separate; border-spacing: 0; width: 100%; }
+
+.chk-grid th, .chk-grid td {
+  border-bottom: 1px solid var(--border, #e6e6e6); padding: 7px 8px;
+}
+.chk-grid thead th {
+  position: sticky; top: 0; z-index: 3;
+  background: var(--card, #fff); font-size: 0.74rem; font-weight: 800;
+  letter-spacing: 0.04em; text-align: center; white-space: nowrap;
+  border-bottom: 1.5px solid var(--border, #e6e6e6);
+}
+
+/* The style name is the row's label, so it stays readable while the step
+   columns scroll sideways. */
+.chk-grid .chk-style {
+  position: sticky; left: 0; z-index: 2;
+  background: var(--card, #fff); text-align: left; font-weight: 600;
+  min-width: 230px; max-width: 320px;
+}
+.chk-grid thead .chk-style { z-index: 4; }
+.chk-grid .chk-style a { color: inherit; text-decoration: none; }
+.chk-grid .chk-style a:hover { text-decoration: underline; }
+.chk-code {
+  display: block; font-size: 0.72rem; color: #888; font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.chk-step { min-width: 46px; }
+.chk-cell { text-align: center; }
+.chk-box {
+  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
+  border: 1.5px solid #c4c4c4; background: #fff; color: #fff;
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; transition: background 100ms ease, border-color 100ms ease;
+}
+.chk-box:hover { border-color: #8a8a8a; }
+.chk-box.on { background: #1b1b1b; border-color: #1b1b1b; }
+.chk-box:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 2px; }
+
+.chk-count {
+  text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+  color: #666; font-size: 0.82rem;
+}
+/* Finished styles stay in place but stop competing for attention — the
+   workbook greys them for the same reason. */
+.chk-grid tr.is-complete .chk-style,
+.chk-grid tr.is-complete .chk-count { color: #9a9a9a; }
+.chk-grid tr.is-complete .chk-box.on { background: #b6b6b6; border-color: #b6b6b6; }
+
+.chk-grid tfoot td, .chk-grid tfoot th {
+  position: sticky; bottom: 0; z-index: 2;
+  background: #fafafa; border-top: 1.5px solid var(--border, #e6e6e6);
+  border-bottom: 0; font-weight: 700;
+}
+.chk-grid tfoot .chk-style { z-index: 3; font-size: 0.82rem; color: #444; }
+.chk-total {
+  text-align: center; font-variant-numeric: tabular-nums; font-size: 0.85rem;
+}
+
+/* Search sits in the column header it filters, so it is next to the names
+   rather than up with the season pickers. */
+.chk-search { display: flex; flex-direction: column; gap: 4px; }
+.chk-search > span { font-size: 0.74rem; font-weight: 800; letter-spacing: 0.04em; }
+.chk-search-input {
+  min-height: 30px; padding: 4px 9px; font-size: 0.82rem; font-weight: 400;
+  letter-spacing: 0; width: 100%;
+}
+
+/* Computed steps. They read as ticked, but there is nothing to click — the
+   answer comes from the style record, so the cell is evidence, not a control. */
+.chk-step.is-auto { color: #6b6b6b; }
+.chk-auto-mark {
+  display: block; font-size: 0.56rem; font-weight: 700; letter-spacing: 0.06em;
+  color: #9a9a9a; text-transform: uppercase; margin-top: 1px;
+}
+.chk-box.is-auto { cursor: default; border-style: dashed; }
+.chk-box.is-auto:hover { border-color: #c4c4c4; }
+.chk-box.is-auto.on {
+  background: #6b6b6b; border-color: #6b6b6b; border-style: solid;
+}
+
+/* ============ The checklist and attribute block on a review card ============
+   The workbook stacks these under the photo, greying a row when it is done.
+   Kept tight because they share the page with the photo the boss is here to
+   look at. */
+.sheet-steps {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 1px; margin-top: 3px;
+  flex-shrink: 0;
+}
+.sheet-step {
+  font-size: 5pt; font-weight: 700; letter-spacing: 0.02em; text-align: center;
+  padding: 1px 0; border: 0.4pt solid #ccc; color: #b0b0b0;
+  overflow: hidden; white-space: nowrap;
+}
+/* Done. Filled rather than ticked: at this size a tick is a smudge. */
+.sheet-step.done { background: #1b1b1b; border-color: #1b1b1b; color: #fff; }
+
+/* Ten rows, stacked, in the workbook's order. Blank rows are kept: they are
+   what makes the block the same height on every card, which is what keeps
+   the step chips above it level across the page. */
+.sheet-attrs {
+  margin: 3px 0 0; padding: 0;
+  display: grid; grid-template-columns: 1fr;
+  font-size: 6pt; line-height: 1.35; color: #1b1b1b;
+  flex-shrink: 0;
+}
+.sheet-attrs dd {
+  margin: 0; min-height: 1.35em;
+  border-top: 0.4pt solid #e2e2e2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: center;
+}
+.sheet-attrs dd:last-child { border-bottom: 0.4pt solid #e2e2e2; }
+/* A row with nothing in it still rules off, so the reader can count down to
+   the one they want. */
+.sheet-attrs dd.empty { color: transparent; }
+.sheet-attrs dd { margin: 0; }
+
+/* A photo carrying both the front and the back is about twice as wide as a
+   single shot, so its card takes two columns instead of squeezing the pair
+   into one. Pagination counts it as two places. */
+.sheet-card.is-wide { grid-column: span 2; }
+.sheet-card.is-wide .sheet-photo { aspect-ratio: 6 / 3.4; }
+.sheet-card.is-wide .sheet-steps { grid-template-columns: repeat(10, 1fr); }
+
+/* ---- One row per page, the way the workbook lays it out ----
+   The column count comes from the page size, so the cards are only as wide as
+   the page allows. Everything shrinks with them: at fifteen or twenty across
+   a card is about the width of a thumbnail, and the type has to follow. */
+.sheet-grid.one-row {
+  gap: 0 1.5mm;
+  align-content: start;
+}
+/* Sizes come from --name-pt / --body-pt / --chip-pt, set on the element from
+   the column count: eight across has room that twenty does not, and there is
+   no reason to print eight at the size twenty forces. */
+.sheet-grid.one-row .sheet-photo { aspect-ratio: 3 / 3.6; }
+.sheet-grid.one-row .sheet-name {
+  font-size: var(--name-pt, 5.5pt);
+  min-height: 4.8em;                      /* four lines at whatever size */
+}
+.sheet-grid.one-row .sheet-colours li {
+  font-size: var(--body-pt, 4.5pt); line-height: 1.25;
+}
+.sheet-grid.one-row .sheet-chan {
+  font-size: var(--body-pt, 4.5pt); padding: 1px 2px;
+}
+/* One chip per line, the way the workbook stacks them. Two to a line fitted,
+   but split "SEND TO PB" across the fold; a single column gives every code
+   the full width of the card. */
+.sheet-grid.one-row .sheet-steps { grid-template-columns: 1fr; }
+.sheet-grid.one-row .sheet-step { font-size: var(--chip-pt, 4pt); }
+.sheet-grid.one-row .sheet-attrs { font-size: var(--body-pt, 4.5pt); gap: 0 3px; }
+.sheet-grid.one-row .sheet-sales th,
+.sheet-grid.one-row .sheet-sales td {
+  font-size: var(--body-pt, 4.5pt); padding: 1px 2px;
+}
+
+/* Said in the toolbar, not on the sheet: it is advice about the setting, not
+   part of what gets printed. */
+.sheet-warn-inline {
+  font-size: 0.78rem; font-weight: 700; color: #9c1f14;
+  background: #fdeceb; border: 1px solid #f3c7c3; border-radius: 6px;
+  padding: 5px 10px; white-space: nowrap;
+}
+@media print { .sheet-warn-inline { display: none !important; } }
+
+/* ===================== Matrix Master =====================
+   The attribute grid reuses the checklist grid's frame — same sticky header,
+   same sticky style column — and swaps the checkboxes for text cells. */
+.mx-grid td { padding: 3px 4px; }
+.mx-cell {
+  width: 100%; min-width: 92px; border: 1px solid transparent;
+  border-radius: 4px; padding: 5px 7px; font: inherit; font-size: 0.85rem;
+  background: transparent; color: inherit;
+}
+.mx-cell:hover { border-color: var(--border, #e0e0e0); }
+.mx-cell:focus {
+  outline: none; border-color: #1b1b1b; background: #fff;
+  box-shadow: 0 0 0 2px rgba(27, 27, 27, 0.08);
+}
+/* Weight is graded across four sizes from the S/M figure, so it is shown
+   here and edited where that grading lives. */
+.mx-read {
+  color: #8a8a8a; font-variant-numeric: tabular-nums; white-space: nowrap;
+  text-align: right;
+}
+
+.mx-layout { margin-top: 18px; }
+.mx-layout-head {
+  display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mx-layout-head .card-title { margin: 0; margin-right: auto; }
+
+.mx-tiles {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 12px;
+}
+.mx-tile {
+  display: flex; flex-direction: column; gap: 6px; cursor: grab;
+  border: 1px solid var(--border, #e0e0e0); border-radius: 8px; padding: 8px;
+  background: var(--card, #fff);
+}
+.mx-tile.dragging { opacity: 0.4; cursor: grabbing; }
+/* A rule on the leading edge rather than a filled box, so the tile keeps its
+   own appearance while it says where the card will land. */
+.mx-tile.drop-here { border-left: 3px solid #1b1b1b; }
+.mx-thumb {
+  aspect-ratio: 3 / 3.4; border-radius: 5px; background: #fafafa;
+  display: flex; align-items: center; justify-content: center; color: #bbb;
+  overflow: hidden;
+}
+.mx-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.mx-tile-name {
+  font-size: 0.72rem; font-weight: 700; line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* The Matrix screen shows the printable cards at screen size: the same
+   layout, but roomier, since nothing here has to fit A4. */
+.mx-sheet { padding: 18px; margin-top: 18px; }
+.mx-sheet .sheet-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 18px 14px;
+}
+.mx-sheet .sheet-name { font-size: 0.82rem; min-height: 2.4em; }
+.mx-sheet .sheet-colours li { font-size: 0.72rem; }
+.mx-sheet .sheet-step { font-size: 0.56rem; padding: 2px 0; }
+.mx-sheet .sheet-attrs { font-size: 0.7rem; }
+.mx-sheet .sheet-card { cursor: default; }
+.mx-sheet .sheet-drag { opacity: 1; cursor: grab; pointer-events: auto; }
+
+/* An attribute row is a field here rather than a line of text. It keeps the
+   row's height so the card is the same shape it will print in. */
+.sheet-attr-input {
+  width: 100%; border: 0; background: transparent; color: inherit;
+  font: inherit; text-align: center; padding: 0 2px; border-radius: 3px;
+}
+.sheet-attr-input::placeholder { color: #c8c8c8; }
+.sheet-attrs dd.editing { padding: 0; }
+.sheet-attr-input:hover { background: #f4f4f4; }
+.sheet-attr-input:focus {
+  outline: none; background: #fff;
+  box-shadow: inset 0 0 0 1.5px #1b1b1b;
+}
+
+/* A value that came from another field rather than this one. Shown lighter so
+   the operator can see at a glance what has been set and what is inherited. */
+.sheet-attr-input.inherited { color: #8a8a8a; font-style: italic; }
+.sheet-attr-input.inherited:focus { color: inherit; font-style: normal; }
+
+/* A field whose unit is part of the row rather than part of the value: the
+   number is typed, the word is not. Centred as one unit so the row still
+   lines up with the plain text rows above and below it. */
+.sheet-attrs dd.has-suffix {
+  display: flex; align-items: baseline; justify-content: center; gap: 3px;
+}
+.sheet-attrs dd.has-suffix .sheet-attr-input {
+  width: auto; min-width: 22px; max-width: 48px; text-align: right;
+}
+.sheet-attr-suffix { color: inherit; white-space: nowrap; }
+
+/* ---- Length category: four values, four colours ----
+   The colours come from the workbook. They are on the row itself rather than
+   on a chip inside it, so a printed sheet reads the same as the screen and
+   the row keeps its height. */
+:root {
+  --len-cropped:       #74FAFD;
+  --len-super-cropped: #F3B19B;
+  --len-biasa:         #9D9EF8;
+  --len-long:          #92902C;
+}
+.sheet-attrs dd.swatch-cropped       { background: var(--len-cropped); }
+.sheet-attrs dd.swatch-super-cropped { background: var(--len-super-cropped); }
+.sheet-attrs dd.swatch-biasa         { background: var(--len-biasa); }
+.sheet-attrs dd.swatch-long          { background: var(--len-long); }
+
+/* A select inside an attribute row: no chrome until it is reached for, so a
+   filled sheet reads as text rather than as a form. */
+select.sheet-attr-input {
+  appearance: none; text-align: center; text-align-last: center;
+  cursor: pointer;
+}
+select.sheet-attr-input:hover { background: rgba(255, 255, 255, 0.45); }
+
+@media print {
+  .sheet-attrs dd[class*="swatch-"] {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+
+/* The page before a season is chosen: an instruction, not an empty result. */
+.mx-waiting { margin-top: 26px; text-align: center; max-width: 40em; }
+
+/* ---- The empty slot at the end of a collection ----
+   Shaped like a card so the row keeps its rhythm, but plainly not one: a
+   dashed outline and no photo frame. */
+.sheet-card.mx-add {
+  border: 1.5px dashed var(--border, #d4d4d4); border-radius: 8px;
+  min-height: 180px; cursor: default; padding: 10px;
+  align-items: stretch; justify-content: center;
+}
+.mx-add-open {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 8px; cursor: pointer;
+  border: 0; background: transparent; color: #8a8a8a;
+  font: inherit; font-size: 0.74rem; text-align: center; line-height: 1.3;
+  border-radius: 6px; padding: 10px;
+}
+.mx-add-open:hover { background: #f4f4f4; color: #1b1b1b; }
+.mx-add-form { display: flex; flex-direction: column; gap: 8px; justify-content: center; flex: 1; }
+.mx-add-input {
+  width: 100%; border: 1px solid var(--border, #d4d4d4); border-radius: 6px;
+  padding: 7px 9px; font: inherit; font-size: 0.78rem; font-weight: 700;
+}
+.mx-add-input:focus { outline: none; border-color: #1b1b1b; }
+.mx-add-actions { display: flex; gap: 6px; flex-wrap: wrap; }

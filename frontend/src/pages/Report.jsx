@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2 } from 'lucide-react';
+import { Search, CirclePlus, Download, Printer, Send, Check, Undo2, Trash2,Ruler, ListChecks } from 'lucide-react';
 import { api } from '../api.js';
 import {
   Field, TextInput, Combo, DateRange, ConfirmDialog, useToast,
@@ -186,8 +186,11 @@ export default function Report() {
       <header className="band">
         <div className="band-row">
           <Link to="/" className="logo">IM Master</Link>
-          <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
           <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
+          <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
+          <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
+          <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
+          
         </div>
       </header>
 

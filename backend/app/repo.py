@@ -684,6 +684,40 @@ def matrix_rows(season=None, collection=None, q=None,
                ARRAY(SELECT cw.ws_tag_color FROM style_colorways cw
                       WHERE cw.style_id = s.id
                       ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways,
+               -- The attribute block the workbook prints under each photo.
+               -- Most of these columns exist but were never imported, so they
+               -- come back null today and the sheet prints the row blank.
+               -- gauge is listed here as well as inside the style_code concat
+               -- above: used there it builds a string, and a column that is
+               -- only ever concatenated never reaches the sheet.
+               s.gauge, s.gauge_detail, s.construction, s.based_body,
+               s.print_placement, s.total_ends,
+               s.bottom_type, s.bottom_rib, s.distressed,
+               s.sleeve_category, s.sleeve_length, s.length_category,
+               s.similar_style_past, s.yarn_type,
+               -- The S/M weight is what the workbook shows; the others are
+               -- graded from it.
+               (SELECT ss.finished_wt_kg FROM style_sizes ss
+                  JOIN sizes sz ON sz.id = ss.size_id
+                 WHERE ss.style_id = s.id AND sz.code = 'S/M') AS weight_sm,
+               -- The preparation checklist, same rules as the Checklist page.
+               (coalesce((
+                   SELECT jsonb_object_agg(st.step,
+                              jsonb_build_object('by', st.done_by,
+                                                 'at', st.done_at))
+                     FROM style_steps st
+                    WHERE st.style_id = s.id
+                      AND NOT (st.step = ANY (%s))
+               ), '{}'::jsonb)
+                || CASE WHEN {IM_P}
+                        THEN jsonb_build_object('IM-P',
+                                 jsonb_build_object('auto', true))
+                        ELSE '{}'::jsonb END
+                || CASE WHEN {C_IM}
+                        THEN jsonb_build_object('C-IM',
+                                 jsonb_build_object('auto', true))
+                        ELSE '{}'::jsonb END
+               ) AS steps,
                -- Every season this garment ran in, for the sales history
                -- table. Quantities are not here: no sales data is loaded.
                ARRAY(SELECT se2.code FROM styles o
@@ -725,16 +759,18 @@ def matrix_rows(season=None, collection=None, q=None,
         LEFT JOIN collections col   ON col.id = s.collection_id
         LEFT JOIN content_codes cc  ON cc.id = s.content_code_id
         WHERE s.status <> 'draft'
-    """
-    # The four sales placeholders sit in the SELECT, so they bind first.
-    args: list = [start_date, start_date, end_date, end_date]
+    """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)
+    # Placeholders bind in the order they appear, and all five are in the
+    # SELECT: the checklist's AUTO_STEPS, then the four sales dates.
+    args: list = [AUTO_STEPS, start_date, start_date, end_date, end_date]
     if season:
         sql += " AND se.code = %s"; args.append(season)
     if collection:
         sql += " AND col.name = %s"; args.append(collection)
     if q:
         sql += " AND s.style_name ILIKE %s"; args.append(f"%{q}%")
-    sql += " ORDER BY col.sort_order NULLS LAST, col.name NULLS LAST, s.style_name"
+    sql += (" ORDER BY col.sort_order NULLS LAST, col.name NULLS LAST,"
+            " s.matrix_order NULLS LAST, s.style_name")
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, args)
@@ -999,6 +1035,22 @@ def delete_report(report_id: int) -> None:
             cur.execute("DELETE FROM reports WHERE id = %s", (report_id,))
 
 
+def _collections_by_season(cur) -> dict:
+    """{season code: [collection names]}, in the order the sheet runs."""
+    cur.execute("""
+        SELECT se.code, c.name
+          FROM collections c
+          JOIN seasons se ON se.id = c.season_id
+         ORDER BY se.season_number, c.sort_order NULLS LAST, c.name
+    """)
+    out: dict = {}
+    for row in cur.fetchall():
+        code = row["code"] if isinstance(row, dict) else row[0]
+        name = row["name"] if isinstance(row, dict) else row[1]
+        out.setdefault(code, []).append(name)
+    return out
+
+
 def meta() -> dict:
     """Every dropdown the editor needs, in one call (backend.md §5)."""
     with pool.connection() as conn:
@@ -1039,6 +1091,11 @@ def meta() -> dict:
                 "materials": col("SELECT name AS v FROM materials WHERE kind = 'yarn'"
                                  " ORDER BY v"),
                 "collections": col("SELECT DISTINCT name AS v FROM collections ORDER BY v"),
+                # Collections belong to a season — S26's COTTON and F26's
+                # COTTON are different rows — so a screen that has picked a
+                # season can offer only that season's blocks rather than all
+                # 31 names at once.
+                "collections_by_season": _collections_by_season(cur),
                 "subGroups": distinct("sub_group"),
                 "yarns": col("SELECT DISTINCT name AS v FROM yarn_colors ORDER BY v"),
                 # YCA, YST, YAC, YTX, YP — the code every yarn colour name
@@ -1094,3 +1151,272 @@ def costing(style_id: int) -> list[dict]:
                 "SELECT * FROM v_sku_costing WHERE style_id = %s"
                 " ORDER BY colorway, size_id", (style_id,))
             return [dict(r) for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------- checklist
+# The preparation steps the operators tick off per style (migration 0011).
+# The order is the order they read in the workbook, which is the order they
+# are worked through; it is not enforced anywhere.
+# Two of them are not ticked by anyone: they are true when the data they
+# describe is present, so the tick and the record cannot disagree. The other
+# seven are about things outside the database — a pattern, a spec, a knitted
+# swatch on a rail — and nothing here can know whether those exist.
+CHECKLIST_STEPS = [
+    {"code": "IM",   "label": "Entered in IM", "auto": False},
+    {"code": "IM-P", "label": "IM price", "auto": True,
+     "rule": "Ticked when IM is ticked and the retail price is entered —"
+             " and the wholesale line price too, if the style sells"
+             " through 000."},
+    {"code": "Y%",   "label": "Yarn %", "auto": False},
+    {"code": "P",    "label": "Pola", "auto": False},
+    {"code": "S",    "label": "Spec", "auto": False},
+    {"code": "C-PB", "label": "PB has chosen the colour", "auto": False},
+    {"code": "C-IM", "label": "Colour entered in IM", "auto": True,
+     "rule": "Ticked when IM is ticked and the style has colourways."},
+    {"code": "SW-S", "label": "Hanging swatch — spec", "auto": False},
+    {"code": "SW-R", "label": "Hanging swatch — knit", "auto": False},
+    {"code": "SEND TO PB", "label": "Sent to PB", "auto": False},
+]
+
+AUTO_STEPS = [s["code"] for s in CHECKLIST_STEPS if s["auto"]]
+
+# Both computed steps are about work done *in IM*, so neither can be true
+# before the style is in IM at all. IM is the one hand tick they hang off.
+_IN_IM = """
+    EXISTS (SELECT 1 FROM style_steps im
+             WHERE im.style_id = s.id AND im.step = 'IM')
+"""
+
+# sy_retail_price_usd is deliberately not read here: it is filled on 1 style
+# out of 1462, so requiring it would leave every SY style unticked for ever.
+# The retail figure the sheet actually carries is whls_retail_price_usd, on
+# both channels; whls_line_price_usd is the wholesale one and only matters to
+# a style that sells through 000.
+_IM_P_RULE = _IN_IM + """
+    AND s.whls_retail_price_usd IS NOT NULL
+    AND (NOT s.sell_000 OR s.whls_line_price_usd IS NOT NULL)
+    AND (s.sell_000 OR s.sell_sy)
+"""
+
+_C_IM_RULE = _IN_IM + """
+    AND EXISTS (SELECT 1 FROM style_colorways cw WHERE cw.style_id = s.id)
+"""
+
+
+def checklist_rows(season=None, collection=None, q=None) -> list[dict]:
+    """One row per style, with the steps already done.
+
+    Returns the done steps as an object keyed by step, so a tick carries its
+    own who-and-when rather than the grid having to ask again per cell.
+    """
+    sql = """
+        SELECT s.id, s.style_name AS name, se.code AS season,
+               col.name AS collection,
+               concat(se.cat_code, se.season_number, cc.code, s.gauge,
+                      se.style_letter, s.style_number) AS style_code,
+               -- Hand ticks, then the computed ones merged on top. A hand
+               -- tick left on a step that later became automatic is dropped
+               -- rather than shown: the rule is the answer now, not what
+               -- somebody once clicked.
+               (coalesce((
+                   SELECT jsonb_object_agg(st.step,
+                              jsonb_build_object('by', st.done_by,
+                                                 'at', st.done_at))
+                     FROM style_steps st
+                    WHERE st.style_id = s.id
+                      AND NOT (st.step = ANY (%s))
+               ), '{}'::jsonb)
+                || CASE WHEN {IM_P}
+                        THEN jsonb_build_object('IM-P',
+                                 jsonb_build_object('auto', true))
+                        ELSE '{}'::jsonb END
+                || CASE WHEN {C_IM}
+                        THEN jsonb_build_object('C-IM',
+                                 jsonb_build_object('auto', true))
+                        ELSE '{}'::jsonb END
+               ) AS steps
+          FROM styles s
+          JOIN seasons se           ON se.id = s.season_id
+     LEFT JOIN collections col       ON col.id = s.collection_id
+     LEFT JOIN content_codes cc      ON cc.id = s.content_code_id
+         WHERE s.status <> 'draft'
+    """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)
+    args: list = [AUTO_STEPS]        # the placeholder in the SELECT binds first
+    if season:
+        sql += " AND se.code = %s"; args.append(season)
+    if collection:
+        sql += " AND col.name = %s"; args.append(collection)
+    if q:
+        sql += " AND s.style_name ILIKE %s"; args.append(f"%{q}%")
+    sql += (" ORDER BY col.sort_order NULLS LAST, col.name NULLS LAST,"
+            " s.matrix_order NULLS LAST, s.style_name")
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, args)
+            return [dict(r) for r in cur.fetchall()]
+
+
+def set_step(style_id: int, step: str, done: bool, done_by=None) -> dict:
+    """Tick or untick one step. Ticking twice is not an error.
+
+    Unticking deletes the row rather than storing a false: a step that was
+    never done and a step that was undone are the same thing to everyone
+    reading the sheet, and keeping the difference would mean explaining it.
+    """
+    step = (step or "").strip()
+    if not step:
+        raise ValueError("step is required")
+    if step in AUTO_STEPS:
+        # Accepting it would store a tick the grid then ignores, which reads
+        # as the save having failed.
+        raise ValueError(f"{step} is worked out from the data, not ticked")
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT 1 FROM styles WHERE id = %s", (style_id,))
+            if not cur.fetchone():
+                raise ValueError(f"no style {style_id}")
+            if done:
+                cur.execute("""
+                    INSERT INTO style_steps (style_id, step, done_by)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (style_id, step) DO UPDATE
+                       SET done_by = EXCLUDED.done_by, done_at = now()
+                    RETURNING step, done_by, done_at
+                """, (style_id, step, (done_by or "").strip() or None))
+                return dict(cur.fetchone())
+            cur.execute(
+                "DELETE FROM style_steps WHERE style_id = %s AND step = %s",
+                (style_id, step))
+            return {"step": step, "done_by": None, "done_at": None}
+
+
+# ----------------------------------------------------------------- matrix
+# The fields the Matrix screen collects: what the garment is, as opposed to
+# what it costs. Weight is not here — it lives on style_sizes and the other
+# three sizes are graded from it, so it is edited where that grading happens.
+MATRIX_FIELDS = [
+    # gauge_detail, not gauge: "gauge" is the single character inside the
+    # style code (K57C3W542), and editing it here would silently rename the
+    # style. The machine gauge is a spec — "3B + 3GG", "3GP" — and is what
+    # the workbook's GG (MACHINE) row shows.
+    {"key": "gauge_detail", "label": "GG (machine)"},
+    {"key": "construction", "label": "Construction"},
+    {"key": "print_placement", "label": "Printed"},
+    {"key": "based_body", "label": "Base body"},
+    {"key": "sleeve_category", "label": "Sleeve category"},
+    {"key": "sleeve_length", "label": "Sleeve length"},
+    # A closed list, unlike Yarn: these four are the whole vocabulary, and
+    # each has a colour on the sheet. Defined here so the field, its choices
+    # and the sheet all read from one place.
+    {"key": "length_category", "label": "Length category",
+     "choices": ["Cropped", "Super Cropped", "Biasa", "Long"]},
+    # An override on the ends count, not a second copy of it: left empty the
+    # sheet shows total_ends, and clearing this puts it back to that.
+    {"key": "ply", "label": "Ply", "numeric": True, "from": "total_ends"},
+    {"key": "yarn_type", "label": "Yarn", "options": "yarn_codes"},
+]
+
+_MATRIX_KEYS = {f["key"] for f in MATRIX_FIELDS}
+_MATRIX_NUMERIC = {f["key"] for f in MATRIX_FIELDS if f.get("numeric")}
+
+
+def update_matrix_fields(style_id: int, fields: dict) -> dict:
+    """Write some of the Matrix attributes on one style.
+
+    Only the keys given are touched, so the grid can save a single cell
+    without sending — and risking overwriting — the rest of the row.
+    """
+    unknown = set(fields) - _MATRIX_KEYS
+    if unknown:
+        raise ValueError(f"not a matrix field: {', '.join(sorted(unknown))}")
+    if not fields:
+        raise ValueError("nothing to update")
+
+    sets, args = [], []
+    for key, value in fields.items():
+        text = "" if value is None else str(value).strip()
+        # An emptied cell is "not known", whatever its type — stored as NULL
+        # rather than "" so the sheet and the importer agree on what absent
+        # looks like. Half the columns here arrived empty-string from the
+        # importer and half NULL, and telling those apart helps nobody.
+        if text == "":
+            sets.append(f"{key} = NULL")
+            continue
+        if key in _MATRIX_NUMERIC:
+            try:
+                args.append(int(float(text)))
+            except ValueError as exc:
+                raise ValueError(f"{key} must be a number") from exc
+        else:
+            args.append(text)
+        sets.append(f"{key} = %s")
+
+    args.append(style_id)
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                f"UPDATE styles SET {', '.join(sets)}, updated_at = now()"
+                f" WHERE id = %s RETURNING id, "
+                + ", ".join(sorted(_MATRIX_KEYS)), args)
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f"no style {style_id}")
+            return dict(row)
+
+
+def set_matrix_order(style_ids: list[int]) -> int:
+    """Place these styles in this order, first to last.
+
+    The list is the whole of one collection as the screen showed it, so the
+    positions are rewritten rather than nudged — no gaps to run out of, and
+    no arithmetic to get wrong when a card moves three places.
+    """
+    ids = [int(i) for i in style_ids]
+    if not ids:
+        return 0
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                UPDATE styles s SET matrix_order = pos.ord
+                  FROM unnest(%s::bigint[]) WITH ORDINALITY AS pos(id, ord)
+                 WHERE s.id = pos.id
+            """, (ids,))
+            return cur.rowcount
+
+
+def clear_matrix_order(style_ids: list[int]) -> int:
+    """Back to name order for these styles."""
+    ids = [int(i) for i in style_ids]
+    if not ids:
+        return 0
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE styles SET matrix_order = NULL WHERE id = ANY(%s)",
+                (ids,))
+            return cur.rowcount
+
+
+def yarn_codes(min_colours: int = 5) -> list[str]:
+    """The yarn codes worth offering in a list, commonest first.
+
+    Taken from the prefix on yarn_colors.name — "YCA ALMOND BUTTER - 872" is
+    a YCA — because the prefix column exists but was never populated by the
+    importer.
+
+    Filtered by how many colours carry the code. The table also holds trims
+    and zips under names like "XZIPAB-J4534-65CM-CASHEW", each appearing once;
+    a threshold separates the codes that are really in use from the one-offs
+    without anyone having to keep a hand-written list in step.
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT split_part(btrim(name), ' ', 1) AS code, count(*) AS n
+                  FROM yarn_colors
+                 WHERE name IS NOT NULL AND btrim(name) <> ''
+                 GROUP BY 1
+                HAVING count(*) >= %s
+                 ORDER BY n DESC, code
+            """, (min_colours,))
+            return [r[0] for r in cur.fetchall()]
