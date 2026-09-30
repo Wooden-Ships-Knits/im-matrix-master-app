@@ -18,6 +18,18 @@ def fields():
     return repo.MATRIX_FIELDS
 
 
+@router.get("/highlights")
+def highlights():
+    """The colours the highlighter bar offers."""
+    return repo.HIGHLIGHT_COLOURS
+
+
+@router.get("/ring-marks")
+def ring_marks():
+    """The colours a ring round a next-season circle can be."""
+    return repo.RING_MARKS
+
+
 @router.get("/yarn-codes")
 def yarn_codes():
     """The codes the Yarn field offers. Not a closed list — the field still
@@ -40,6 +52,60 @@ def update(style_id: int, payload: dict = Body(...)):
     """Write one or more attributes. Absent keys are left alone."""
     try:
         return repo.update_matrix_fields(style_id, payload or {})
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/colorway-marks")
+def colorway_marks():
+    """The pen colours a colourway name can be written in."""
+    return repo.COLORWAY_MARKS
+
+
+@router.get("/colorway-highlights")
+def colorway_highlights():
+    """The backgrounds a colourway name can sit on."""
+    return repo.COLORWAY_HIGHLIGHTS
+
+
+@router.post("/{style_id}/colorway", status_code=201)
+def add_colorway(style_id: int, payload: dict = Body(...)):
+    """Add a colourway to this style, at the end of its list."""
+    try:
+        return repo.add_colorway(style_id, payload.get("color"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.patch("/{style_id}/colorway")
+def colorway(style_id: int, payload: dict = Body(...)):
+    """Set or clear one of a colourway's two colours.
+
+    The pen on the name and the background behind it are separate marks, so
+    a request carries whichever it is changing.
+    """
+    try:
+        if "name" in payload:
+            return repo.rename_colorway(
+                style_id, payload.get("color"), payload.get("name"))
+        if "highlight" in payload:
+            return repo.set_colorway_highlight(
+                style_id, payload.get("color"), payload.get("highlight"))
+        return repo.set_colorway_mark(
+            style_id, payload.get("color"), payload.get("mark"))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.delete("/{style_id}/colorway")
+def remove_colorway(style_id: int, color: str = Query(...)):
+    """Remove a colourway from this style.
+
+    The name travels as a query parameter rather than a body: a DELETE with a
+    body is legal but poorly supported, and the name is already the key.
+    """
+    try:
+        return repo.delete_colorway(style_id, color)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

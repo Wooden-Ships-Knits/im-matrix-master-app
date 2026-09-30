@@ -76,8 +76,16 @@ export default function Browse() {
           <h2 className="query-title">Query</h2>
           <form className="query-grid" onSubmit={(e) => { e.preventDefault(); search(); }}>
             <Field label="Season">
+              {/* Searches on pick. Choosing from a list is a decision, not a
+                  keystroke — there is nothing more to type afterwards, so
+                  making it wait for the button just adds a step. The text
+                  fields still wait for Search or Enter. */}
               <select className="input" value={filters.season}
-                onChange={(e) => set('season')(e.target.value)}>
+                onChange={(e) => {
+                  const next = { ...filters, season: e.target.value };
+                  setFilters(next);
+                  search(next);
+                }}>
                 <option value="">All seasons</option>
                 {meta?.seasons.map((s) => <option key={s.code} value={s.code}>{s.code}</option>)}
               </select>

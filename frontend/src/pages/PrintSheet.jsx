@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { Printer, ArrowLeft, RotateCcw } from 'lucide-react';
 import { api } from '../api.js';
 // The card itself is shared with the Matrix screen, so what the team
 // arranges there is what comes out of the printer.
-import SheetCard, { qty, sum, attributesOf } from '../sections/SheetCard.jsx';
+import SheetCard, { qty, sum, attributesOf, numberCards } from '../sections/SheetCard.jsx';
 
 // What fits on one A4 sheet, landscape, and still reads across a table.
 // Adjustable from the toolbar: how much fits depends on how tall the cards
@@ -221,6 +221,7 @@ const seasonTitle = (code) => (code
 export default function PrintSheet() {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const season = params.get('season') || '';
   const collection = params.get('collection') || '';
   const title = params.get('title') || '';
@@ -340,8 +341,12 @@ export default function PrintSheet() {
     const out = [];
     for (const g of groups) {
       const sheets = cutPages(g.items, perPage, (item) => Boolean(wide[item.id]));
+      // Numbered over the whole collection before it is cut into pages: the
+      // web-store-only styles carry their own S sequence, so a card's number
+      // cannot be worked out from its position on the page.
+      const numbers = numberCards(g.items);
       sheets.forEach((items, i) => out.push({
-        collection: g.name, page: i + 1, of: sheets.length, items,
+        collection: g.name, page: i + 1, of: sheets.length, items, numbers,
       }));
     }
     return out;
@@ -372,7 +377,20 @@ export default function PrintSheet() {
   return (
     <div className="sheet-root">
       <div className="sheet-bar">
-        <Link to="/report" className="btn-chip ghost"><ArrowLeft size={15} /> Back</Link>
+        {/* Back to the page this sheet was opened from, with whatever was
+            set up on it — a fresh /matrix would land on the season picker and
+            the filters would have to be chosen again.
+
+            A plain link when there is nowhere to go back to: the sheet is
+            printed from a saved report's link and opened cold often enough
+            that history cannot be assumed. */}
+        <button type="button" className="btn-chip ghost"
+          onClick={() => {
+            if (location.key && location.key !== 'default') navigate(-1);
+            else navigate(view === 'sales' ? '/report' : '/matrix');
+          }}>
+          <ArrowLeft size={15} /> Back
+        </button>
         <select className="input sheet-pick" value={season} onChange={choose('season')}
           aria-label="Season">
           <option value="">All seasons</option>
@@ -559,6 +577,7 @@ export default function PrintSheet() {
               <SheetCard
                 key={s.id}
                 style={s}
+                index={p.numbers[s.id]}
                 view={view}
                 steps={steps}
                 wide={Boolean(wide[s.id])}

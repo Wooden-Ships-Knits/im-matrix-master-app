@@ -42,7 +42,11 @@ export default function Report() {
   const [rows, setRows] = useState(null);
   const [filter, setFilter] = useState('');
   const [toDelete, setToDelete] = useState(null);
-  const [tab, setTab] = useState('matrix');
+  // 'lookup' is the Sales History tab. It opens on this one because the
+  // Matrix Master tab moved to its own page — its button and body here
+  // are commented out, so starting on 'matrix' would show a page with a
+  // tab bar and nothing under it.
+  const [tab, setTab] = useState('lookup');
   const [fetching, setFetching] = useState(false);
   const [form, setForm] = useState({
     title: '', kind: 'style list', season: '', collection: ''
@@ -106,17 +110,25 @@ export default function Report() {
 
   async function createSales(e) {
     e.preventDefault();
-    if (!sales.collection.trim()) {
-      showToast('Pick a collection', 'error'); return;
+    // The season is what is required, not the collection. A blank collection
+    // is a real choice — the sheet then covers the whole season, one section
+    // per collection — but without a season there is nothing to fetch and no
+    // report to file it against.
+    if (!sales.season.trim()) {
+      showToast('Pick a season', 'error'); return;
     }
+    const scope = sales.collection.trim();
     try {
       await api.createReport({
-        title: `Sales history — ${sales.collection}`,
+        title: `Sales history — ${scope || `${sales.season}, all collections`}`,
         kind: 'sales history',
         season: sales.season,
         prepared_by: form.prepared_by,
         filters: {
-          collection: sales.collection,
+          // Left out when blank rather than sent empty: the print sheet reads
+          // these straight into its query string, and collection= would be a
+          // filter matching nothing instead of no filter at all.
+          ...(scope ? { collection: scope } : {}),
           season: sales.season,
           start_date: sales.range.from,
           end_date: sales.range.to,
@@ -197,9 +209,9 @@ export default function Report() {
       <main className="page">
         <section className="card card-pad">
           <div className="rep-tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab === 'matrix'}
+            {/* <button type="button" role="tab" aria-selected={tab === 'matrix'}
               className={`card-title tab${tab === 'matrix' ? ' on' : ''}`}
-              onClick={() => setTab('matrix')}>Matrix Master</button>
+              onClick={() => setTab('matrix')}>Matrix Master</button> */}
             <button type="button" role="tab" aria-selected={tab === 'lookup'}
               className={`card-title tab${tab === 'lookup' ? ' on' : ''}`}
               onClick={() => setTab('lookup')}>Sales History</button>
@@ -208,17 +220,18 @@ export default function Report() {
           {tab === 'lookup' && (
             <>
               <form className="form-grid" onSubmit={createSales} style={{ marginTop: 14 }}>
-                <Field label="Season" hint="Which season's styles">
+                <Field label="Season" hint="Required — which season's styles">
                   <Combo value={sales.season}
                     onChange={(v) => setSales((s) => ({ ...s, season: v }))}
                     options={meta?.seasons.map((x) => x.code) || []}
                     placeholder="e.g. S27" />
                 </Field>
-                <Field label="Collection" hint="Which collection the sheet covers">
+                {/* <Field label="Collection"
+                  hint="Leave blank for the whole season, one section per collection">
                   <Combo value={sales.collection}
                     onChange={(v) => setSales((s) => ({ ...s, collection: v }))}
                     options={meta?.collections || []} placeholder="e.g. ESSENTIALS" />
-                </Field>
+                </Field> */}
                 <Field label="Sales period" className="span-2"
                   hint="Both channels over the same dates — Salesforce fills WHS 000, Shopify fills SY">
                   <DateRange value={sales.range}
@@ -256,7 +269,7 @@ export default function Report() {
             </>
           )}
 
-          {tab === 'matrix' && (
+          {/* {tab === 'matrix' && (
           <form className="form-grid" onSubmit={create} style={{ marginTop: 14 }}>
             <Field label="Title">
               <TextInput value={form.title} onChange={set('title')}
@@ -284,7 +297,7 @@ export default function Report() {
               <button type="submit" className="btn btn-save">Create</button>
             </div>
           </form>
-          )}
+          )} */}
           
         </section>
 

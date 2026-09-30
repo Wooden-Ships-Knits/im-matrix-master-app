@@ -8,7 +8,7 @@ import { api } from '../api.js';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 // The same card the printed sheet draws, so what is arranged here is
 // what comes out of the printer.
-import SheetCard from '../sections/SheetCard.jsx';
+import SheetCard, { numberCards } from '../sections/SheetCard.jsx';
 
 /**
  * Matrix Master, as the team sets it up.
@@ -27,7 +27,7 @@ export default function Matrix() {
   // A link can open the page already pointed somewhere — the style editor's
   // "Show in Matrix" sends ?season=&collection=&tab=layout&style=<id>. Read
   // once, as starting values: after that the page's own controls own them.
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const focusId = Number(params.get('style')) || null;
   const [meta, setMeta] = useState(null);
   const [fields, setFields] = useState([]);
@@ -50,6 +50,19 @@ export default function Matrix() {
   // season into one screen, and "COTTON" would appear five times over —
   // collections belong to a season, so the page has no meaning until one is
   // picked.
+  // The selection lives in the URL as well as in state, so leaving the page
+  // and coming back — or reloading, or sharing the link — lands on the same
+  // screen instead of the empty season picker. Replaced rather than pushed:
+  // changing a filter is not a place in history to go back to.
+  useEffect(() => {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of [['season', season], ['collection', collection],
+                                ['tab', tab === 'layout' ? 'layout' : '']]) {
+      if (value) next.set(key, value); else next.delete(key);
+    }
+    if (next.toString() !== params.toString()) setParams(next, { replace: true });
+  }, [season, collection, tab]);
+
   const load = () => {
     if (!season) { setRows(null); return; }
     setRows(null);
@@ -103,21 +116,38 @@ export default function Matrix() {
       if (!g) { g = { name, items: [] }; out.push(g); }
       g.items.push(r);
     }
-    return out;
+    // Numbered here so it happens once per collection rather than once per
+    // card, and so the S sequence is counted over the whole block.
+    return out.map((g) => ({ ...g, numbers: numberCards(g.items) }));
   }, [shown]);
 
   // Saved on blur rather than per keystroke: a cell is a thought, not a
   // stream, and a request per character would race itself.
+  // Everything travels to the server as text, including flags. Put back into
+  // the row as text, "false" is a non-empty string and therefore true — which
+  // is why clearing NEED NEW PHOTO saved correctly and left the banner up.
+  const asStored = (v) => {
+    if (v === '') return null;
+    if (v === 'true') return true;
+    if (v === 'false') return false;
+    return v;
+  };
+
   const save = async (row, key, value) => {
     const before = row[key] ?? '';
     if (String(value) === String(before)) return;
-    setRows((prev) => prev.map(
-      (r) => (r.id === row.id ? { ...r, [key]: value === '' ? null : value } : r)));
+    const patch = (fields) => setRows((prev) => prev.map(
+      (r) => (r.id === row.id ? { ...r, ...fields } : r)));
+
+    patch({ [key]: asStored(value) });          // shown straight away
     try {
-      await api.updateMatrix(row.id, { [key]: value });
+      // The server answers with the stored values, in their real types. That
+      // is the authority — the guess above only has to be close enough to
+      // avoid a flicker.
+      const saved = await api.updateMatrix(row.id, { [key]: value });
+      if (saved && typeof saved === 'object') patch(saved);
     } catch (err) {
-      setRows((prev) => prev.map(
-        (r) => (r.id === row.id ? { ...r, [key]: before || null } : r)));
+      patch({ [key]: before === '' ? null : before });
       toast?.(err.message || 'Could not save that', 'error');
     }
   };
@@ -177,6 +207,142 @@ export default function Matrix() {
       toast?.(err.message || 'Could not add that style', 'error');
     } finally {
       setCreating(false);
+    }
+  };
+
+  // The pen colour on a colourway name. Shown straight away, then confirmed,
+  // the same way an attribute cell is.
+  const markColour = async (style, colour, mark) => {
+    const before = style.colorway_marks?.[colour] || '';
+    const apply = (value) => setRows((prev) => prev.map((r) => {
+      if (r.id !== style.id) return r;
+      const marks = { ...(r.colorway_marks || {}) };
+      if (value) marks[colour] = value; else delete marks[colour];
+      return { ...r, colorway_marks: marks };
+    }));
+    apply(mark);
+    try {
+      await api.markColorway(style.id, colour, mark);
+    } catch (err) {
+      apply(before);
+      toast?.(err.message || 'Could not colour that name', 'error');
+    }
+  };
+
+  // A photo, straight onto the card. The row is updated from what the server
+  // returns rather than from a local object URL, so what is on screen is the
+  // stored file — a blob that only exists in this tab would look identical
+  // and vanish on reload.
+  const addPhoto = async (style, file) => {
+    try {
+      const { image_path: path } = await api.uploadImage(style.id, file);
+      setRows((prev) => prev.map(
+        (r) => (r.id === style.id ? { ...r, image_path: path } : r)));
+      toast?.(`Photo added to ${style.name}`);
+    } catch (err) {
+      toast?.(err.message || 'Could not add that photo', 'error');
+    }
+  };
+
+  // The background behind a colourway name. Same shape as the pen above it,
+  // against a different field.
+  const highlightColour = async (style, colour, value) => {
+    const before = style.colorway_highlights?.[colour] || '';
+    const apply = (v) => setRows((prev) => prev.map((r) => {
+      if (r.id !== style.id) return r;
+      const lit = { ...(r.colorway_highlights || {}) };
+      if (v) lit[colour] = v; else delete lit[colour];
+      return { ...r, colorway_highlights: lit };
+    }));
+    apply(value);
+    try {
+      await api.highlightColorway(style.id, colour, value);
+    } catch (err) {
+      apply(before);
+      toast?.(err.message || 'Could not highlight that row', 'error');
+    }
+  };
+
+  // Renaming and adding change the list itself, so both take the row back
+  // from the server rather than guessing — the name is the key the pen, the
+  // background and the sales figures are all filed under.
+  // Rewrite one row in place rather than reloading the season. load() blanks
+  // the grid while it refetches, which reads as the page reloading every time
+  // a name is saved — and the other forty cards did not change.
+  const patchRow = (id, fn) => setRows(
+    (prev) => prev.map((r) => (r.id === id ? fn(r) : r)));
+
+  // Renaming moves a colourway's key: the pen and the background are filed
+  // under the name, so they have to move with it or they are left behind
+  // pointing at a colourway that no longer exists.
+  const renameKey = (map, from, to) => {
+    if (!map || !(from in map)) return map;
+    const next = { ...map };
+    next[to] = next[from];
+    delete next[from];
+    return next;
+  };
+
+  const renameColour = async (style, colour, name) => {
+    try {
+      const saved = await api.renameColorway(style.id, colour, name);
+      const to = saved?.color || name;
+      patchRow(style.id, (r) => ({
+        ...r,
+        colorways: r.colorways.map((c) => (c === colour ? to : c)),
+        colorway_marks: renameKey(r.colorway_marks, colour, to),
+        colorway_highlights: renameKey(r.colorway_highlights, colour, to),
+      }));
+    } catch (err) {
+      toast?.(err.message || 'Could not rename that colourway', 'error');
+      load();          // the typed name is wrong; take the row back as stored
+    }
+  };
+
+  // The name comes from the field on the card now, not a dialog.
+  const addColour = async (style, name) => {
+    try {
+      const saved = await api.addColorway(style.id, name);
+      const added = saved?.color || name.toUpperCase();
+      // Appended, which is where the server puts it: sort_order is max + 1.
+      patchRow(style.id, (r) => ({ ...r, colorways: [...r.colorways, added] }));
+    } catch (err) {
+      toast?.(err.message || 'Could not add that colourway', 'error');
+    }
+  };
+
+  // Removing a colourway takes its yarn lines, operation overrides and any
+  // fetched sales with it, so the toast says what went rather than a bare
+  // "deleted" — by then there is nothing left to look at.
+  const deleteColour = async (style, colour) => {
+    try {
+      const gone = await api.deleteColorway(style.id, colour);
+      const also = [
+        gone.yarns && `${gone.yarns} yarn line${gone.yarns === 1 ? '' : 's'}`,
+        gone.sales && `${gone.sales} sales row${gone.sales === 1 ? '' : 's'}`,
+        gone.operations && `${gone.operations} operation${gone.operations === 1 ? '' : 's'}`,
+      ].filter(Boolean);
+      toast?.(`${colour} removed${also.length ? `, with ${also.join(' and ')}` : ''}`);
+      patchRow(style.id, (r) => {
+        const marks = { ...(r.colorway_marks || {}) };
+        const lit = { ...(r.colorway_highlights || {}) };
+        delete marks[colour];
+        delete lit[colour];
+        return {
+          ...r,
+          colorways: r.colorways.filter((c) => c !== colour),
+          colorway_marks: marks,
+          colorway_highlights: lit,
+          // The quantities were fetched against that colourway and went with
+          // it, so the sales table must not keep showing its row.
+          sales: r.sales
+            ? Object.fromEntries(
+              Object.entries(r.sales).filter(([c]) => c !== colour))
+            : r.sales,
+        };
+      });
+    } catch (err) {
+      toast?.(err.message || 'Could not remove that colourway', 'error');
     }
   };
 
@@ -362,10 +528,17 @@ export default function Matrix() {
                 <SheetCard
                   key={r.id}
                   style={r}
+                  index={g.numbers[r.id]}
                   view="matrix"
                   steps={steps}
                   options={{ yarn_codes: yarnCodes }}
                   onEdit={(style, key, value) => save(style, key, value)}
+                  onMarkColour={markColour}
+                  onHighlightColour={highlightColour}
+                  onRenameColour={renameColour}
+                  onAddColour={addColour}
+                  onDeleteColour={deleteColour}
+                  onPhoto={addPhoto}
                   onOpen={(style) => navigate(`/edit/${style.id}`)}
                   focused={focused === r.id}
                   drag={{

@@ -26,6 +26,7 @@ FLAT = [
     "box_depth_cm", "box_height_cm", "pcs_per_box", "ship_via", "hs_code",
     "duty_category", "hang_tag", "special_instructions", "notes", "photo_url",
     # what the garment is, collected on the Matrix screen (migration 0008)
+    "matrix_construction",
     "based_body", "print_placement", "bottom_type", "bottom_rib",
     "similar_style_past", "distressed", "sleeve_category", "sleeve_length",
     "length_category", "yarn_type", "ply",
@@ -504,6 +505,25 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                 style_id = cur.fetchone()["id"]
 
             # Children are replaced, not diffed (flow.md §3).
+            #
+            # Which means anything on a colourway that the editor does not
+            # send would be destroyed by a save. Some of it is set elsewhere
+            # entirely — the pen colour comes from the Matrix screen — so the
+            # editor legitimately knows nothing about it and cannot send it
+            # back. Kept here across the rewrite, keyed by the colourway name,
+            # which is unique per style.
+            #
+            # subbed_to_colorway_id is deliberately not kept: it points at a
+            # row id that this rewrite destroys, so restoring it would either
+            # dangle or fail the constraint.
+            cur.execute("""
+                SELECT ws_tag_color, mark, product_colorway_id, whs_channel,
+                       reps_color, color_sequence, sell_restriction,
+                       subbed_on, sub_reason
+                  FROM style_colorways WHERE style_id = %s
+            """, (style_id,))
+            kept = {r["ws_tag_color"]: dict(r) for r in cur.fetchall()}
+
             cur.execute("DELETE FROM style_sizes WHERE style_id = %s", (style_id,))
             cur.execute("DELETE FROM style_measurements WHERE style_id = %s", (style_id,))
             cur.execute("DELETE FROM style_colorways WHERE style_id = %s", (style_id,))
@@ -529,6 +549,20 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                     (style_id, name, order),
                 )
                 cw_id = cur.fetchone()["id"]
+                # Put back what the editor never had.
+                prior = kept.get(name)
+                if prior:
+                    cur.execute("""
+                        UPDATE style_colorways
+                           SET mark = %s, product_colorway_id = %s,
+                               whs_channel = %s, reps_color = %s,
+                               color_sequence = %s, sell_restriction = %s,
+                               subbed_on = %s, sub_reason = %s
+                         WHERE id = %s
+                    """, (prior["mark"], prior["product_colorway_id"],
+                          prior["whs_channel"], prior["reps_color"],
+                          prior["color_sequence"], prior["sell_restriction"],
+                          prior["subbed_on"], prior["sub_reason"], cw_id))
                 for slot, line in enumerate(cw.get("bom") or [], start=1):
                     yarn = _clean(line.get("yarn"))
                     if not yarn:
@@ -684,13 +718,31 @@ def matrix_rows(season=None, collection=None, q=None,
                ARRAY(SELECT cw.ws_tag_color FROM style_colorways cw
                       WHERE cw.style_id = s.id
                       ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways,
+               -- The pen colour on a colourway's name, keyed by the name
+               -- rather than folded into the array above: the sales table
+               -- looks its quantities up by that name, and turning the list
+               -- into objects would mean changing every reader of it.
+               -- The name is unique per style, so it is a safe key.
+               coalesce((
+                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.mark)
+                     FROM style_colorways cw
+                    WHERE cw.style_id = s.id AND cw.mark IS NOT NULL
+               ), '{}'::jsonb) AS colorway_marks,
+               coalesce((
+                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.highlight)
+                     FROM style_colorways cw
+                    WHERE cw.style_id = s.id AND cw.highlight IS NOT NULL
+               ), '{}'::jsonb) AS colorway_highlights,
                -- The attribute block the workbook prints under each photo.
                -- Most of these columns exist but were never imported, so they
                -- come back null today and the sheet prints the row blank.
                -- gauge is listed here as well as inside the style_code concat
                -- above: used there it builds a string, and a column that is
                -- only ever concatenated never reaches the sheet.
-               s.gauge, s.gauge_detail, s.construction, s.based_body,
+               s.matrix_highlight, s.next_sy_mark, s.next_000_mark,
+               s.matrix_band, s.needs_photo, s.notes,
+               s.gauge, s.gauge_detail, s.matrix_construction,
+               s.construction, s.based_body,
                s.print_placement, s.total_ends,
                s.bottom_type, s.bottom_rib, s.distressed,
                s.sleeve_category, s.sleeve_length, s.length_category,
@@ -742,6 +794,20 @@ def matrix_rows(season=None, collection=None, q=None,
                          JOIN seasons se2 ON se2.id = o.season_id
                         WHERE o.product_id = s.product_id
                           AND se2.season_number = se.season_number + 2) AS repeats_next,
+               -- Which channels the NEXT season's version of this garment is
+               -- set to sell through. Read off the booleans rather than
+               -- whs_channel: that text is blank on 254 styles, while the
+               -- flags are NOT NULL and are what the editor actually toggles.
+               (SELECT o.sell_sy FROM styles o
+                  JOIN seasons se2 ON se2.id = o.season_id
+                 WHERE o.product_id = s.product_id
+                   AND se2.season_number = se.season_number + 2
+                 ORDER BY o.id LIMIT 1) AS next_sells_sy,
+               (SELECT o.sell_000 FROM styles o
+                  JOIN seasons se2 ON se2.id = o.season_id
+                 WHERE o.product_id = s.product_id
+                   AND se2.season_number = se.season_number + 2
+                 ORDER BY o.id LIMIT 1) AS next_sells_000,
                -- {colourway: {whs_000: n, sy: n}} for the period asked for.
                -- Absent rather than zero when nothing was fetched: a blank
                -- cell means "not known", a 0 means "sold none".
@@ -1301,7 +1367,9 @@ MATRIX_FIELDS = [
     # style. The machine gauge is a spec — "3B + 3GG", "3GP" — and is what
     # the workbook's GG (MACHINE) row shows.
     {"key": "gauge_detail", "label": "GG (machine)"},
-    {"key": "construction", "label": "Construction"},
+    # The Matrix construction, not the knit one on the Yarn screen — that is
+    # styles.construction and stays MACHINE KNIT.
+    {"key": "matrix_construction", "label": "Construction"},
     {"key": "print_placement", "label": "Printed"},
     {"key": "based_body", "label": "Base body"},
     {"key": "sleeve_category", "label": "Sleeve category"},
@@ -1317,7 +1385,24 @@ MATRIX_FIELDS = [
     {"key": "yarn_type", "label": "Yarn", "options": "yarn_codes"},
 ]
 
-_MATRIX_KEYS = {f["key"] for f in MATRIX_FIELDS}
+# The highlighter bar. Not one of the attribute rows — it says nothing about
+# the garment — but it is set from the same screen and saved the same way, so
+# it is writable through the same endpoint.
+HIGHLIGHT_COLOURS = ["green", "amber", "blue"]
+
+# The ring round a next-season circle. Same idea as the highlighter: a pen,
+# not a fact about the garment. Kept in step with RING_MARKS in
+# frontend/src/sections/SheetCard.jsx; frontend/test compares the two.
+RING_MARKS = ["yellow", "orange"]
+RING_KEYS = ("next_sy_mark", "next_000_mark")
+
+# The second bar. One colour today; a list so a second is CSS, not a migration.
+BAND_COLOURS = ["purple"]
+
+_MATRIX_KEYS = ({f["key"] for f in MATRIX_FIELDS}
+                | {"matrix_highlight", "matrix_band", "needs_photo", "notes"}
+                | set(RING_KEYS))
+
 _MATRIX_NUMERIC = {f["key"] for f in MATRIX_FIELDS if f.get("numeric")}
 
 
@@ -1385,6 +1470,12 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
     sets, args = [], []
     for key, value in fields.items():
         text = "" if value is None else str(value).strip()
+        if key == "needs_photo":
+            # It arrives over JSON as a string, and "false" is a true one, so
+            # the words are read rather than left to Python's truthiness.
+            sets.append(f"{key} = %s")
+            args.append(text.lower() in ("1", "true", "yes", "on"))
+            continue
         # An emptied cell is "not known", whatever its type — stored as NULL
         # rather than "" so the sheet and the importer agree on what absent
         # looks like. Half the columns here arrived empty-string from the
@@ -1392,6 +1483,18 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
         if text == "":
             sets.append(f"{key} = NULL")
             continue
+        if key == "matrix_band" and text and text not in BAND_COLOURS:
+            raise ValueError(
+                f"{text!r} is not a band colour"
+                f" — expected one of {', '.join(BAND_COLOURS)}")
+        if key in RING_KEYS and text and text not in RING_MARKS:
+            raise ValueError(
+                f"{text!r} is not a ring colour"
+                f" — expected one of {', '.join(RING_MARKS)}")
+        if key == "matrix_highlight" and text and text not in HIGHLIGHT_COLOURS:
+            raise ValueError(
+                f"{text!r} is not a highlight colour"
+                f" — expected one of {', '.join(HIGHLIGHT_COLOURS)}")
         if key in _MATRIX_NUMERIC:
             try:
                 args.append(int(float(text)))
@@ -1482,3 +1585,168 @@ def yarn_codes(min_colours: int = 5) -> list[str]:
                  ORDER BY n DESC, code
             """, (min_colours,))
             return [r[0] for r in cur.fetchall()]
+
+
+# The pen colours a colourway name can be written in. Nothing means the
+# ordinary colour, which is why it is not in the list.
+# Kept in step with COLORWAY_MARKS in frontend/src/sections/SheetCard.jsx —
+# the card decides which pen comes next, this decides which it will accept, and
+# a list that drifts means a click the server refuses. frontend/test does check.
+COLORWAY_MARKS = ["green", "red", "purple", "magenta", "blue"]
+
+# The background behind a colourway name, as opposed to the pen it is
+# written in. Yellow first because that is the one reached for; grey is
+# the second press, for a name being set aside rather than picked out.
+COLORWAY_HIGHLIGHTS = ["yellow", "grey"]
+
+
+def set_colorway_highlight(style_id: int, colour: str, highlight: str) -> dict:
+    """Write the background behind one colourway name, or clear it."""
+    return _set_colorway(style_id, colour, "highlight", highlight,
+                         COLORWAY_HIGHLIGHTS, "colourway highlight")
+
+
+def set_colorway_mark(style_id: int, colour: str, mark: str) -> dict:
+    """Write the pen colour on one colourway, or clear it.
+
+    Addressed by name rather than id because that is what the sheet has in
+    hand — the card renders a list of names, and the unique index on
+    (style_id, ws_tag_color) makes it an unambiguous key.
+    """
+    return _set_colorway(style_id, colour, "mark", mark,
+                         COLORWAY_MARKS, "colourway mark")
+
+
+def _set_colorway(style_id: int, colour: str, column: str, value: str,
+                  allowed: list, label: str) -> dict:
+    """Write one pen-or-background column on one colourway, or clear it.
+
+    Addressed by name rather than id because that is what the sheet has in
+    hand — the card renders a list of names, and the unique index on
+    (style_id, ws_tag_color) makes it an unambiguous key.
+
+    `column` is never user input: it comes from the two callers above, so it
+    can be interpolated where a bind parameter cannot go.
+    """
+    name = (colour or "").strip()
+    if not name:
+        raise ValueError("colour is required")
+    setting = (value or "").strip() or None
+    if setting is not None and setting not in allowed:
+        raise ValueError(
+            f"{setting!r} is not a {label}"
+            f" — expected one of {', '.join(allowed)}")
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(f"""
+                UPDATE style_colorways SET {column} = %s
+                 WHERE style_id = %s AND ws_tag_color = %s
+             RETURNING ws_tag_color AS color, mark, highlight
+            """, (setting, style_id, name))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f"{name!r} is not a colourway of style {style_id}")
+            return dict(row)
+
+
+def add_colorway(style_id: int, name: str) -> dict:
+    """Add a colourway to a style, at the end of its list.
+
+    The unique index on (style_id, ws_tag_color) does the duplicate check, so
+    two people adding the same colour at once get one row and one error rather
+    than two rows.
+    """
+    # Upper-cased here, not only in the browser: the name is the key the pen,
+    # the background and the matched sales figures are all filed under, and
+    # "Pure Snow" arriving from anywhere else would be a second colourway.
+    colour = (name or "").strip().upper()
+    if not colour:
+        raise ValueError("a colourway needs a name")
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT 1 FROM styles WHERE id = %s", (style_id,))
+            if not cur.fetchone():
+                raise ValueError(f"no style {style_id}")
+            cur.execute("""
+                INSERT INTO style_colorways (style_id, ws_tag_color, sort_order)
+                SELECT %s, %s, coalesce(max(sort_order) + 1, 0)
+                  FROM style_colorways WHERE style_id = %s
+                ON CONFLICT (style_id, ws_tag_color) DO NOTHING
+             RETURNING ws_tag_color AS color, sort_order
+            """, (style_id, colour, style_id))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f"{colour!r} is already a colourway of this style")
+            return dict(row)
+
+
+def rename_colorway(style_id: int, colour: str, name: str) -> dict:
+    """Rename one colourway, keeping its pen, background and sort order.
+
+    The name is this style's key for a colourway — the sales figures are
+    matched to it — so a rename here is a rename everywhere the name is used.
+    """
+    old = (colour or "").strip()
+    new = (name or "").strip().upper()
+    if not old:
+        raise ValueError("colour is required")
+    if not new:
+        raise ValueError("a colourway needs a name")
+    if old == new:
+        return {"color": new}
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                UPDATE style_colorways SET ws_tag_color = %s
+                 WHERE style_id = %s AND ws_tag_color = %s
+                   AND NOT EXISTS (SELECT 1 FROM style_colorways other
+                                    WHERE other.style_id = %s
+                                      AND other.ws_tag_color = %s)
+             RETURNING ws_tag_color AS color, mark, highlight
+            """, (new, style_id, old, style_id, new))
+            row = cur.fetchone()
+            if not row:
+                cur.execute(
+                    "SELECT 1 FROM style_colorways"
+                    " WHERE style_id = %s AND ws_tag_color = %s", (style_id, new))
+                if cur.fetchone():
+                    raise ValueError(f"{new!r} is already a colourway of this style")
+                raise ValueError(f"{old!r} is not a colourway of style {style_id}")
+            return dict(row)
+
+
+def delete_colorway(style_id: int, colour: str) -> dict:
+    """Remove a colourway, and say what went with it.
+
+    Three tables cascade off style_colorways: its yarn lines, any per-colour
+    operation overrides, and the sold quantities fetched against it. So this
+    is not only a name disappearing from a list, and the counts are returned
+    for the message that says so.
+    """
+    name = (colour or "").strip()
+    if not name:
+        raise ValueError("colour is required")
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT id FROM style_colorways"
+                " WHERE style_id = %s AND ws_tag_color = %s", (style_id, name))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError(f"{name!r} is not a colourway of style {style_id}")
+            cw_id = row["id"]
+
+            # Counted before the delete: afterwards there is nothing to count.
+            cur.execute("SELECT count(*) AS n FROM colorway_yarns WHERE colorway_id = %s",
+                        (cw_id,))
+            yarns = cur.fetchone()["n"]
+            cur.execute("SELECT count(*) AS n FROM style_sales WHERE colorway_id = %s",
+                        (cw_id,))
+            sales = cur.fetchone()["n"]
+            cur.execute("SELECT count(*) AS n FROM style_operations WHERE colorway_id = %s",
+                        (cw_id,))
+            operations = cur.fetchone()["n"]
+
+            cur.execute("DELETE FROM style_colorways WHERE id = %s", (cw_id,))
+            return {"color": name, "yarns": yarns, "sales": sales,
+                    "operations": operations}

@@ -844,8 +844,12 @@ select.input {
 }
 .sheet-sales thead th:first-child { border: 0; background: none; }
 .sheet-sales tbody th {
-  text-align: left; font-weight: 600; color: #1b1b1b; width: 56%;
+  text-align: left; font-weight: 600; width: 56%;
   overflow-wrap: anywhere;
+  /* No `color` here on purpose. The sheet already sets #1b1b1b, so this was
+     only ever restating it — and at (0,1,2) it beat the .pen-* rules at
+     (0,1,0), so a colourway written in a pen came out black on this table
+     and coloured on the Matrix one. */
 }
 .sheet-sales tbody th.none { color: #999; font-style: italic; font-weight: 400; }
 .sheet-sales td {
@@ -1384,3 +1388,417 @@ select.sheet-attr-input:hover { background: rgba(255, 255, 255, 0.45); }
 .mx-search .field { min-width: 260px; flex: 1; max-width: 420px; }
 .mx-search .result-count { margin: 0 0 9px; white-space: nowrap; }
 .mx-search .btn-chip { margin-bottom: 4px; }
+
+/* The card's position in its collection. Above the photo, the way the
+   workbook numbers its columns — it is how a garment gets referred to out
+   loud, so it belongs on the printed sheet as much as on screen. */
+.sheet-index {
+  font-size: 7pt; font-weight: 800; line-height: 1.2; text-align: center;
+  color: #1b1b1b; font-variant-numeric: tabular-nums;
+  margin-bottom: 1px;
+  border: 0.4pt solid transparent;
+}
+/* The sell channel, on the number rather than a badge of its own: the cell
+   is already there, and a colour on it costs no height on a card that has to
+   fit A4. Same two hexes as the Sales History sheet's badges. */
+.sheet-index.idx-whs { background: var(--chan-000); border-color: #a63cb0; }
+.sheet-index.idx-sy  { background: var(--chan-sy);  border-color: #9c1f14; }
+/* BOTH gets nothing: it is the ordinary case, and colouring it would leave
+   only the blanks unmarked, which says the opposite of what is meant. */
+
+@media print {
+  .sheet-index[class*="idx-"] {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+.sheet-grid.one-row .sheet-index { font-size: var(--chip-pt, 5pt); }
+/* Larger on screen, but no lighter: the number is how a garment gets
+   referred to, not a caption on the card. */
+.mx-sheet .sheet-index { font-size: 0.8rem; }
+/* The add-a-style slot has no number, so it keeps the row aligned without
+   pretending to be the next card. */
+.sheet-card.mx-add { padding-top: calc(10px + 1.2em); }
+
+/* ---- The hand-applied highlighter ----
+   A band above the number, coloured by whoever is working the collection. It
+   carries no meaning of its own, so it gets no label — it is a highlighter
+   pen, and it prints like one. */
+:root {
+  --hl-green: #75FB4C;
+  --hl-amber: #F5C342;
+  --hl-blue:  #68C8FA;
+}
+.sheet-mark {
+  display: block; width: 100%; height: 7px; margin-bottom: 2px;
+  border: 0.4pt solid #d8d8d8; border-radius: 2px; padding: 0;
+  background: transparent;
+}
+.sheet-mark.hl-green { background: var(--hl-green); border-color: #4bbd2a; }
+.sheet-mark.hl-amber { background: var(--hl-amber); border-color: #c2941f; }
+.sheet-mark.hl-blue  { background: var(--hl-blue);  border-color: #3a9ccc; }
+
+/* Only where it can be clicked. An empty bar on a printed sheet would read
+   as a colour someone meant to choose. */
+button.sheet-mark { cursor: pointer; }
+button.sheet-mark:hover { border-color: #8a8a8a; }
+button.sheet-mark:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+.mx-sheet .sheet-mark { height: 10px; }
+
+@media print {
+  .sheet-mark { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* An unmarked bar prints as nothing — but keeps its height, or a card with
+     a highlight would sit lower than the one beside it. Not display:none,
+     which is what took the height away. */
+  .sheet-mark:not([class*="hl-"]) {
+    background: transparent; border-color: transparent;
+  }
+}
+
+/* ---- The pen a colourway name is written in ----
+   Colour on the text, not a background: the rows are already ruled, and a
+   filled row would compete with the length-category swatch below. */
+:root {
+  --pen-green:   #4FAE5B;
+  --pen-red:     #EA3323;
+  --pen-purple:  #8C1AF5;
+  --pen-magenta: #EA35F7;
+  --pen-blue:    #2A64F6;
+}
+/* Named pen-, not mark-: mark-good / mark-add / mark-drop already mean the
+   repeat verdict on the photo and the name. Two meanings sharing one prefix
+   is how the ring ended up being painted by the channel's border.
+
+   Applied wherever a colourway name appears — the list on the Matrix sheet
+   and the table on the Sales History one — because it is the same colourway,
+   and a name written in red on one sheet and black on the other would read
+   as two different things. */
+.pen-green   { color: var(--pen-green); }
+.pen-red     { color: var(--pen-red); }
+.pen-purple  { color: var(--pen-purple); }
+.pen-magenta { color: var(--pen-magenta); }
+.pen-blue    { color: var(--pen-blue); }
+[class*="pen-"] { font-weight: 700; }
+
+/* The name is a button only where it can be changed. It carries none of a
+   button's appearance — on paper this is just text. */
+.sheet-colour-pen {
+  border: 0; background: transparent; color: inherit; font: inherit;
+  padding: 0; width: 100%; text-align: inherit; cursor: pointer;
+  border-radius: 2px;
+}
+.sheet-colour-pen:hover { background: #f1f1f1; }
+.sheet-colour-pen:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+@media print {
+  [class*="pen-"] {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+
+/* The photo is what opens the style, so it says so. Only where it can. */
+.sheet-photo.can-open { cursor: zoom-in; }
+.mx-sheet .sheet-photo.can-open:hover { outline: 2px solid #1b1b1b; outline-offset: -2px; }
+
+/* ---- Where the garment is going ----
+   Two circles between the highlighter and the photo: the channels the next
+   season's version of this style is set to sell through. Left is SY, right is
+   WHS 000, in the same colours those channels carry everywhere else.
+   Filled is yes, hollow is no. */
+.sheet-next {
+  /* Gap allows for the 2px ring drawn outside each circle. */
+  display: flex; justify-content: center; align-items: center; gap: 8px;
+  margin-bottom: 3px;
+  /* Holds its height when empty, so the photos below stay level across a row
+     whether or not a style has a next-season version. */
+  min-height: 9px;
+}
+.sheet-next-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid #c4c4c4; background: #fff;
+}
+.sheet-next-dot.sy.on  { background: var(--chan-sy);  border-color: #9c1f14; }
+.sheet-next-dot.whs.on { background: var(--chan-000); border-color: #a63cb0; }
+
+/* The ring is drawn OUTSIDE the circle, as a shadow, not as its border.
+   A filled circle already sets border-color to its channel's edge, and that
+   rule has three classes to the ring's two — so a ring written as a border
+   lost the cascade and a yellow ring rendered in the channel's dark red.
+   Splitting them means each property has exactly one owner:
+       background   which channel
+       border       that channel's edge
+       box-shadow   the ring
+       transform    hover
+   and no amount of reordering can make them fight again. */
+:root {
+  --ring-yellow: #FFFF54;
+  --ring-orange: #DE8344;
+}
+.sheet-next-dot.ring-yellow { box-shadow: 0 0 0 2px var(--ring-yellow); }
+.sheet-next-dot.ring-orange { box-shadow: 0 0 0 2px var(--ring-orange); }
+
+button.sheet-next-dot { padding: 0; cursor: pointer; transition: transform 90ms ease; }
+button.sheet-next-dot:hover { transform: scale(1.25); }
+button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 3px; }
+
+.mx-sheet .sheet-next { min-height: 12px; }
+.mx-sheet .sheet-next-dot { width: 12px; height: 12px; }
+.sheet-grid.one-row .sheet-next { min-height: 7px; }
+.sheet-grid.one-row .sheet-next-dot { width: 7px; height: 7px; }
+
+@media print {
+  .sheet-next-dot { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* A box-shadow is a background effect, so a printer drops it unless
+     told otherwise — the same reason the fills need the line above. */
+}
+
+/* ---- Adding a photo from the card ----
+   Hidden until the frame is hovered: the sheet is read far more often than it
+   is filled in, and a button on every card would compete with the photos. */
+.sheet-photo-file { display: none; }
+.sheet-photo-add {
+  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+  padding: 5px 10px; border-radius: 999px; cursor: pointer;
+  border: 1px solid #1b1b1b; background: rgba(27, 27, 27, 0.88); color: #fff;
+  font: inherit; font-size: 0.7rem; font-weight: 700;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.sheet-photo { position: relative; }
+.sheet-photo:hover .sheet-photo-add,
+.sheet-photo-add:focus-visible { opacity: 1; }
+.sheet-photo-add:hover { background: #1b1b1b; }
+.sheet-photo-add:disabled { opacity: 1; cursor: default; background: #6b6b6b; }
+
+/* Nothing here belongs on paper. */
+@media print { .sheet-photo-add { display: none !important; } }
+
+/* ---- The second bar, and its star ----
+   Sits under the first highlighter. Same rule as everything stacked above the
+   photo: it always takes its height, marked or not, or the cards stop lining
+   up. The star is an independent mark that lives at the bar's right end. */
+:root { --band-purple: #8D3AF6; }
+.sheet-band {
+  position: relative; display: flex; align-items: center; justify-content: flex-end;
+  height: 9px; margin-bottom: 2px; padding: 0 1px;
+  border: 0.4pt solid #d8d8d8; border-radius: 2px;
+}
+.sheet-band.band-purple { background: var(--band-purple); border-color: #6d24c9; }
+
+/* The bar itself is the target; the star sits on top of it. */
+.sheet-band-hit {
+  position: absolute; inset: 0; border: 0; background: transparent;
+  cursor: pointer; padding: 0; border-radius: 2px;
+}
+.sheet-band-hit:hover { background: rgba(141, 58, 246, 0.12); }
+.sheet-band-hit:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+/* The star only ever appears on a banded bar, so it is drawn in the paper
+   colour — a purple star on a purple band would not be there at all.
+   Above the click target, but not itself clickable: the band is the control. */
+.sheet-star {
+  position: relative; z-index: 1; display: inline-flex; align-items: center;
+  padding: 0 1px; line-height: 0; color: #fff; pointer-events: none;
+}
+
+.mx-sheet .sheet-band { height: 12px; }
+.sheet-grid.one-row .sheet-band { height: 7px; }
+
+@media print {
+  .sheet-band, .sheet-star {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  /* An unmarked band prints as nothing but keeps its height. */
+  .sheet-band:not([class*="band-"]) { border-color: transparent; background: transparent; }
+}
+
+/* ---- The background behind a colourway name ----
+   A second mark on the same row as the pen, so it gets a target of its own:
+   a small swatch at the right edge. The name stays the pen's. */
+:root {
+  --lit-yellow: #FFFF54;
+  --lit-grey:   #D9D9D9;
+}
+.sheet-colours li.lit-yellow { background: var(--lit-yellow); }
+.sheet-colours li.lit-grey   { background: var(--lit-grey); }
+
+.sheet-colours li { display: flex; align-items: center; gap: 3px; }
+.sheet-colours li .sheet-colour-pen { flex: 1; min-width: 0; }
+
+/* Every row carries one of the two, so the swatch shows the one that is on
+   rather than an empty state. */
+.sheet-colour-lit {
+  flex: none; width: 10px; height: 10px; border-radius: 2px; padding: 0;
+  border: 1px solid #c4c4c4; cursor: pointer;
+}
+.sheet-colours li.lit-yellow .sheet-colour-lit { background: var(--lit-yellow); border-color: #b8b83c; }
+.sheet-colours li.lit-grey   .sheet-colour-lit { background: var(--lit-grey);   border-color: #a5a5a5; }
+.sheet-colour-lit:hover { border-color: #6b6b6b; }
+.sheet-colour-lit:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+@media print {
+  .sheet-colours li[class*="lit-"] {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+
+/* ---- NEED NEW PHOTO ----
+   Shares the circles' row: a style whose picture must be reshot is being
+   handed to the photographer, and where it sells next season is not the
+   question at that moment. Clicking the row switches between the two. */
+.sheet-next { position: relative; }
+.sheet-next-hit {
+  position: absolute; inset: 0; border: 0; background: transparent;
+  padding: 0; cursor: pointer; border-radius: 2px;
+}
+.sheet-next-hit:hover { background: rgba(27, 27, 27, 0.07); }
+.sheet-next-hit:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+/* The circles sit above the row's own target, so each keeps its own click. */
+.sheet-next-dot { position: relative; z-index: 1; }
+
+.sheet-next.needs-photo {
+  background: var(--chan-sy);
+  border-radius: 2px;
+}
+.sheet-next-label {
+  position: relative; z-index: 1; pointer-events: none;
+  font-size: 5.5pt; font-weight: 800; letter-spacing: 0.04em; color: #fff;
+  line-height: 1; white-space: nowrap;
+}
+.mx-sheet .sheet-next-label { font-size: 0.6rem; }
+.sheet-grid.one-row .sheet-next-label { font-size: var(--chip-pt, 4.5pt); }
+
+@media print {
+  .sheet-next.needs-photo {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+
+/* ---- Editing a colourway from the card ----
+   The name is typed in; the pen and the background each keep a swatch at the
+   right edge, since a text field cannot also be a click-to-cycle button. */
+.sheet-colour-name {
+  flex: 1; min-width: 0; border: 1px solid transparent; border-radius: 3px;
+  background: transparent; color: inherit; font: inherit; font-weight: inherit;
+  padding: 0 3px; text-align: center;
+}
+.sheet-colour-name:hover { border-color: rgba(27, 27, 27, 0.18); }
+.sheet-colour-name:focus {
+  outline: none; border-color: #1b1b1b; background: #fff; text-align: left;
+}
+
+/* The pen swatch shows the pen by writing a letter in it, so the colour is
+   legible at 10px where a filled dot of the same colour would not be. */
+.sheet-colour-pen-dot {
+  flex: none; width: 12px; height: 12px; border-radius: 2px; padding: 0;
+  border: 1px solid #c4c4c4; background: #fff; cursor: pointer;
+  font: inherit; font-size: 7px; font-weight: 800; line-height: 1;
+}
+.sheet-colour-pen-dot.none { color: #c4c4c4; }
+.sheet-colour-pen-dot:hover { border-color: #6b6b6b; }
+.sheet-colour-pen-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+.sheet-colour-add { justify-content: center; }
+/* While a name is being typed the row is a field, not a button. */
+.sheet-colour-add .sheet-colour-name {
+  border-color: #1b1b1b; background: #fff; text-align: left;
+}
+.sheet-colour-add button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 100%; padding: 1px 0; cursor: pointer;
+  border: 1px dashed #c4c4c4; border-radius: 3px;
+  background: transparent; color: #8a8a8a;
+}
+.sheet-colour-add button:hover { border-color: #1b1b1b; color: #1b1b1b; }
+.sheet-colour-add button:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+/* None of the editing chrome belongs on paper. */
+@media print {
+  .sheet-colour-pen-dot, .sheet-colour-lit, .sheet-colour-add { display: none !important; }
+  .sheet-colour-name { border-color: transparent !important; }
+}
+
+/* ---- Removing a colourway ----
+   The × asks first; the row's own controls give way to a tick and a cross,
+   so the question is answered where it was asked rather than in a dialog
+   that has to name the row again. */
+.sheet-colour-del, .sheet-colour-yes, .sheet-colour-no {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 12px; height: 12px; border-radius: 2px; padding: 0; cursor: pointer;
+  border: 1px solid #c4c4c4; background: #fff; color: #8a8a8a;
+}
+.sheet-colour-del:hover { border-color: #b91c1c; color: #b91c1c; }
+.sheet-colour-yes { border-color: #b91c1c; background: #b91c1c; color: #fff; }
+.sheet-colour-yes:hover { background: #911616; }
+.sheet-colour-no { border-color: #1b1b1b; color: #1b1b1b; }
+.sheet-colour-no:hover { background: #f1f1f1; }
+.sheet-colour-del:focus-visible,
+.sheet-colour-yes:focus-visible,
+.sheet-colour-no:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+@media print { .sheet-colour-del { display: none !important; } }
+
+/* ---- NEW / EXACT REPEAT ----
+   Above the colourways, derived from whether the garment ran in an earlier
+   season. Nobody sets it, so it is text rather than a control. */
+.sheet-repeat {
+  font-size: 6pt; font-weight: 800; letter-spacing: 0.05em; text-align: center;
+  color: #1b1b1b; margin-top: 3px;
+}
+.mx-sheet .sheet-repeat { font-size: 0.62rem; }
+.sheet-grid.one-row .sheet-repeat { font-size: var(--chip-pt, 4.5pt); }
+
+/* ---- The note on a style ----
+   The button sits top-left of the photo, opposite the Add photo control, and
+   shows filled when there is something to read. */
+.sheet-note-open {
+  position: absolute; top: 2px; left: 2px; z-index: 3;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 3px; padding: 0; cursor: pointer;
+  border: 1px solid #ddd; background: rgba(255, 255, 255, 0.92); color: #8a8a8a;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.sheet-photo:hover .sheet-note-open,
+.sheet-note-open.has-note,
+.sheet-note-open:focus-visible { opacity: 1; }
+.sheet-note-open.has-note { border-color: #1b1b1b; color: #1b1b1b; }
+.sheet-note-open:hover { color: #1b1b1b; border-color: #1b1b1b; }
+
+/* Beside the card, not inside it: at 160px wide there is no room to write in.
+   The card clips its content, so it stops clipping while this is open. */
+.sheet-card.note-open { overflow: visible; z-index: 20; }
+.sheet-note-panel {
+  position: absolute; top: 0; left: calc(100% + 8px); z-index: 30;
+  width: 230px; padding: 10px; border-radius: 8px;
+  background: var(--card, #fff); border: 1px solid var(--border, #ddd);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  display: flex; flex-direction: column; gap: 8px;
+  text-align: left;
+}
+.sheet-note-panel textarea {
+  width: 100%; min-height: 96px; resize: vertical;
+  border: 1px solid var(--border, #ddd); border-radius: 6px; padding: 7px 8px;
+  font: inherit; font-size: 0.82rem; line-height: 1.4;
+}
+.sheet-note-panel textarea:focus { outline: none; border-color: #1b1b1b; }
+.sheet-note-actions { display: flex; gap: 6px; }
+
+/* On the sheet: under the photo, above the name. */
+.sheet-note {
+  font-size: 6pt; line-height: 1.3; color: #1b1b1b;
+  margin-top: 3px; padding: 2px 3px;
+  /* The same yellow a colourway is highlighted in, so a marked thing on this
+     card is always the same colour whatever it is. */
+  background: var(--lit-yellow);
+  border: 0.4pt solid #b8b83c;
+  overflow-wrap: anywhere; text-align: left;
+  min-height: 1.3em;                       /* one line, marked or not */
+}
+/* Nothing to say: the space stays, the yellow does not. */
+.sheet-note.empty { background: transparent; border-color: transparent; }
+.mx-sheet .sheet-note { font-size: 0.68rem; }
+.sheet-grid.one-row .sheet-note { font-size: var(--body-pt, 4.5pt); }
+
+@media print {
+  .sheet-note-open, .sheet-note-panel { display: none !important; }
+  .sheet-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}

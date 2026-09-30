@@ -77,7 +77,13 @@ const emptyForm = (season = '') => ({
   colorways: [],
   operations: [],
   measurements: [],
-  construction: 'MACHINE KNIT', composition_care: '', color_sequence: '', gauge: '',
+  // The knit construction, on the Yarn screen. Nearly every style is
+  // MACHINE KNIT, so it is worth defaulting.
+  construction: 'MACHINE KNIT',
+  // The Matrix one — a stitch pattern — which has no sensible default:
+  // it differs per style, and a wrong default reads as an answer.
+  matrix_construction: '',
+  composition_care: '', color_sequence: '', gauge: '',
   tension: 'LIHAT POLA', total_ends: '', logo_label: '', details: '',
   wholesale_price: '', retail_price: '', sy_price: '', sy_sale_price: '',
   price_000: '', sample_price: '',

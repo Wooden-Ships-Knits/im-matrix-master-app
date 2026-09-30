@@ -56,8 +56,10 @@ export default function YarnSection({ form, update, meta }) {
           <Combo value={form.material} onChange={field('material')}
             options={meta?.materials || []} placeholder="e.g. COTTON ACRYLIC 60/40" />
         </Field>
-        <Field label="Construction" hint="From Matrix">
-          <input className="input" value={form.construction || ''} readOnly tabIndex={-1} />
+        <Field label="Construction" hint="How the garment is knitted">
+          <Combo value={form.construction} onChange={field('construction')}
+            options={['MACHINE KNIT', 'HAND KNIT', 'CROCHET']}
+            placeholder="e.g. MACHINE KNIT" />
         </Field>
         <Field label="Gauge" hint="From Matrix">
           <input className="input" value={form.gauge || ''} readOnly tabIndex={-1} />

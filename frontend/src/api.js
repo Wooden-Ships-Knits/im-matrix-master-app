@@ -40,6 +40,25 @@ export const api = {
   // Matrix Master: what the garment is, and how the sheet is laid out.
   matrixFields: () => request('/api/matrix/fields'),
   yarnCodes: () => request('/api/matrix/yarn-codes'),
+  markColorway: (styleId, color, mark) =>
+    request(`/api/matrix/${styleId}/colorway`, {
+      method: 'PATCH', body: JSON.stringify({ color, mark }),
+    }),
+  addColorway: (styleId, color) =>
+    request(`/api/matrix/${styleId}/colorway`, {
+      method: 'POST', body: JSON.stringify({ color }),
+    }),
+  deleteColorway: (styleId, color) =>
+    request(`/api/matrix/${styleId}/colorway?color=${encodeURIComponent(color)}`,
+      { method: 'DELETE' }),
+  renameColorway: (styleId, color, name) =>
+    request(`/api/matrix/${styleId}/colorway`, {
+      method: 'PATCH', body: JSON.stringify({ color, name }),
+    }),
+  highlightColorway: (styleId, color, highlight) =>
+    request(`/api/matrix/${styleId}/colorway`, {
+      method: 'PATCH', body: JSON.stringify({ color, highlight }),
+    }),
   updateMatrix: (styleId, fields) =>
     request(`/api/matrix/${styleId}`, {
       method: 'PATCH', body: JSON.stringify(fields),

@@ -15,12 +15,46 @@ Two things the SOQL does deliberately:
 simple_salesforce is used for the login and query paging; the queries
 themselves are ours.
 """
+from datetime import date, datetime, time, timezone
+from zoneinfo import ZoneInfo
+
 from simple_salesforce import Salesforce as SalesforceAPI
 
 from .text import parse_style_color, tidy
 
 MAIN_WAREHOUSE = "000 - Bali"
 CHUNK = 200          # SOQL IN() clauses are not unbounded
+
+# The report puts WHS 000 and SY side by side over one date range, so both
+# have to mean the same window. Shopify decides that: ShopifyQL reads a bare
+# date in the STORE's timezone, which is US Eastern, and there is no way to
+# tell it otherwise. So the dates typed into the report are Eastern calendar
+# dates, and this converts them to the instants SOQL wants.
+#
+# It used to append "Z" and take them as UTC, which opened and closed the
+# wholesale window four hours before the web-store one. Orders in those two
+# slivers counted on one channel and not the other, with nothing on the sheet
+# to say so.
+#
+# A named zone rather than a fixed offset, because Eastern is -4 in July and
+# -5 in January; a hardcoded offset is wrong for half the year.
+STORE_TZ = ZoneInfo("America/New_York")
+
+
+def _utc(day: str, end_of_day: bool = False) -> str:
+    """An Eastern calendar date as the UTC instant SOQL compares against.
+
+    A malformed date is left alone rather than guessed at: SOQL will reject it
+    and say so, which is easier to act on than a window silently shifted to
+    some default day.
+    """
+    try:
+        parsed = date.fromisoformat(str(day).strip())
+    except (TypeError, ValueError):
+        return str(day)
+    moment = time.max.replace(microsecond=0) if end_of_day else time.min
+    local = datetime.combine(parsed, moment, STORE_TZ)
+    return local.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 class Salesforce:
@@ -34,8 +68,8 @@ class Salesforce:
         soql = f"""
         SELECT Id, kugo2p__RecordStatus__c
         FROM kugo2p__SalesOrder__c
-        WHERE CreatedDate >= {self.start}T00:00:00Z
-          AND CreatedDate <= {self.end}T23:59:59Z
+        WHERE CreatedDate >= {_utc(self.start)}
+          AND CreatedDate <= {_utc(self.end, end_of_day=True)}
           AND kugo2p__OrderName__c LIKE '{self.season}%'
         ORDER BY CreatedDate DESC
         LIMIT 100000
