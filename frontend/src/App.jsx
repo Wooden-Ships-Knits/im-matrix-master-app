@@ -10,6 +10,7 @@ import Matrix from './pages/Matrix.jsx';
 import PrintSheet from './pages/PrintSheet.jsx';
 import Login from './pages/Login.jsx';
 import { readSession, isOperator } from './session.js';
+import DevBanner from './components/DevBanner.jsx';
 
 export default function App() {
   const [session, setSession] = useState(readSession);
@@ -19,6 +20,7 @@ export default function App() {
   if (!session) {
     return (
       <ToastProvider>
+        <DevBanner />
         <Login onSignedIn={setSession} />
       </ToastProvider>
     );
@@ -29,6 +31,7 @@ export default function App() {
   if (!isOperator(session)) {
     return (
       <ToastProvider>
+        <DevBanner />
         <Routes>
           <Route path="/browse" element={<Browse readOnly />} />
           <Route path="*" element={<Navigate to="/browse" replace />} />
@@ -39,6 +42,7 @@ export default function App() {
 
   return (
     <ToastProvider>
+      <DevBanner />
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/browse" element={<Browse />} />

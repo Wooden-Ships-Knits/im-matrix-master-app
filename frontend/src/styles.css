@@ -1837,3 +1837,17 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   font-size: 0.82rem; font-weight: 700; color: #777;
   border: 1px solid var(--border, #ddd); border-radius: 999px; padding: 4px 11px;
 }
+
+/* ===================== The development band =====================
+   Across the top of every page when the backend says it is a dev one, and
+   absent entirely otherwise — a banner that is usually there is one nobody
+   reads. Deliberately unlike the rest of the app so it cannot be mistaken
+   for part of it. */
+.dev-banner {
+  background: #7a281f; color: #fff;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem; letter-spacing: 0.06em; text-align: center;
+}
+.dev-banner strong { letter-spacing: 0.14em; margin-right: 0.6rem; }
+/* It says which site this is, not what is on the page. */
+@media print { .dev-banner { display: none !important; } }

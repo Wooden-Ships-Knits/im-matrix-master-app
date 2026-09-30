@@ -97,5 +97,10 @@ def health():
             status_code=503,
             content={"status": "degraded", "database": "unreachable", "detail": str(exc)},
         )
-    return {"status": "ok", "database": "ok" if ok else "unreachable",
+    return {"status": "ok",
+            # Read by the banner at the top of every page. False on the VM, so
+            # the banner renders nothing there — one that is always up is one
+            # nobody reads.
+            "dev": settings.app_dev,
+            "database": "ok" if ok else "unreachable",
             "db_name": settings.postgres_db}

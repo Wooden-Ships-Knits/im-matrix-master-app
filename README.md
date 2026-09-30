@@ -28,6 +28,24 @@ docker compose --profile web up -d    # + the built frontend
 | API | http://localhost:8085 | loopback only |
 | Dev server | http://localhost:5173 | `cd frontend && npm run dev` |
 
+### Everything in Docker
+
+If you would rather not have Node on the machine at all:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+```
+
+That adds two things to the normal stack: the backend reloads on a `.py`
+change (no `--build` after every edit), and Vite runs in a container on
+**http://localhost:5174**. It also sets `APP_DEV=true`, which puts a red
+DEVELOPMENT band across the top of every page — the dev and live sites look
+identical otherwise, and only one of them holds data anyone relies on.
+
+`docker compose up -d` on its own is the production stack and shows no band.
+The dev file has to be named explicitly, so the VM cannot pick it up by
+accident.
+
 ### Day to day: the dev server
 
 From nothing — Docker Desktop closed, no terminals open:

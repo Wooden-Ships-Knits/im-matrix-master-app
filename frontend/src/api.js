@@ -22,6 +22,7 @@ async function request(url, options = {}) {
 
 export const api = {
   // One password for the team, or no password and read-only.
+  health: () => request('/api/health'),
   login: (password) =>
     request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
   guest: () => request('/api/auth/guest', { method: 'POST' }),

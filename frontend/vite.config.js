@@ -13,9 +13,12 @@ export default defineConfig({
     // build output: every `npm run build` rewrote dist/index.html and vite
     // answered with a full page reload in whatever browser was open.
     watch: { ignored: ['**/dist/**'] },
+    // In the dev container the backend is a sibling service, not localhost.
+    // VITE_API_TARGET is set there; on a laptop running `npm run dev` the
+    // default still points at the published port.
     proxy: {
-      '/api': 'http://localhost:8085',
-      '/uploads': 'http://localhost:8085',
+      '/api': process.env.VITE_API_TARGET || 'http://localhost:8085',
+      '/uploads': process.env.VITE_API_TARGET || 'http://localhost:8085',
     },
   },
   build: { outDir: 'dist' },

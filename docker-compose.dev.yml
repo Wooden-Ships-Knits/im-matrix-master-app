@@ -1,0 +1,49 @@
+# The development stack.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+#
+# Same database and the same images, with three differences:
+#
+#   - the backend reloads when a .py changes, from a bind mount, so editing
+#     app/repo.py no longer means `up -d --build backend` and a rebuild
+#   - the frontend runs Vite in a container rather than needing Node on the
+#     machine, so the VM and a laptop start the same way
+#   - APP_DEV=true, which puts the DEVELOPMENT band across the top of every
+#     page. The two sites are identical to look at and only one of them is
+#     the one people rely on.
+#
+# Never used on the VM: `docker compose up -d` alone is production, and this
+# file has to be named explicitly to take effect.
+
+services:
+  backend:
+    environment:
+      APP_DEV: "true"
+    volumes:
+      # The source, so uvicorn --reload sees an edit. The uploads volume from
+      # the base file still mounts over /app/data/uploads.
+      - ./backend:/app
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"
+
+  web:
+    image: node:20-alpine
+    working_dir: /app
+    # node_modules is a named volume, not the host's: the host's are macOS
+    # binaries and this container is Linux. Installing inside keeps the two
+    # apart, and an `npm install` on the host no longer breaks the container.
+    volumes:
+      - ./frontend:/app
+      - dev_node_modules:/app/node_modules
+    environment:
+      VITE_API_TARGET: http://backend:8080
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    ports:
+      - "127.0.0.1:${IM_MASTER_DEV_PORT:-5174}:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  dev_node_modules:
