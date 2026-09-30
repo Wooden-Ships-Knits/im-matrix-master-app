@@ -38,6 +38,41 @@ const cardWidthMm = (columns) =>
  */
 const LEGIBLE_PT = 6;
 
+// A4 landscape, less the sheet's 12mm/10mm padding and the header rule.
+const PAGE_HEIGHT_MM = 210 - 22 - 17;
+const MM_PER_PT = 25.4 / 72;
+const MM_PER_PX = 25.4 / 96;
+
+/**
+ * Roughly how tall one card comes out, in mm.
+ *
+ * An estimate, not a measurement: the colourway list and the attribute values
+ * vary per style. It is here to catch the case where a page is asked to hold
+ * two rows that cannot both fit — which prints the second row onto a sheet of
+ * its own and looks like the page was cut in half.
+ *
+ * The blocks are the ones stacked on every card, so the figure moves when the
+ * card does rather than being a number someone has to remember to update.
+ */
+const cardHeightMm = (columns, oneRow, type) => {
+  const width = cardWidthMm(columns);
+  const photo = width * (oneRow ? 3.6 / 3 : 3.4 / 3);
+  const stepRows = oneRow ? 10 : 2;      // one-row stacks the chips 1 per line
+  return photo
+    + type.chip * MM_PER_PT * 1.2 + MM_PER_PX          // number
+    + 32 * MM_PER_PX                                    // band, highlighter, circles
+    + type.body * MM_PER_PT * 1.3 + 3 * MM_PER_PX       // note line
+    + type.name * MM_PER_PT * 1.2 * (oneRow ? 4 : 3)    // name
+    + type.chip * MM_PER_PT * 1.2 + 3 * MM_PER_PX       // NEW / EXACT REPEAT
+    + 2 * (type.body * MM_PER_PT * 1.35 + 2 * MM_PER_PX)  // two colourways
+    + stepRows * (type.chip * MM_PER_PT * 1.35 + 2 * MM_PER_PX)
+    + 10 * (type.body * MM_PER_PT * 1.35);              // the ten attributes
+};
+
+/** How many rows of cards a page can actually hold. */
+const rowsThatFit = (columns, oneRow, type) => Math.max(
+  1, Math.floor((PAGE_HEIGHT_MM + 6) / (cardHeightMm(columns, oneRow, type) + 6)));
+
 const typeScale = (columns) => {
   const width = cardWidthMm(columns);
   // Roughly a point of type per 3mm of card, which keeps a two-word style
@@ -316,6 +351,12 @@ export default function PrintSheet() {
   const perPage = Number(params.get('per_page')) || PER_PAGE;
   const layout = params.get('layout') === 'row' ? 'row' : 'grid';
   const scale = typeScale(layout === 'row' ? perPage : 5);
+  // In one-row layout the page is one row by definition; in the grid it is
+  // five across, so asking for more than five means asking for more rows.
+  const columns = layout === 'row' ? perPage : 5;
+  const rowsAsked = layout === 'row' ? 1 : Math.ceil(perPage / 5);
+  const rowsFit = rowsThatFit(columns, layout === 'row', scale);
+  const overflows = rowsAsked > rowsFit;
   const [steps, setSteps] = useState([]);
   const [wide, setWide] = useState({});
 
@@ -430,6 +471,15 @@ export default function PrintSheet() {
             <option key={n} value={n}>{n} per page</option>
           ))}
         </select>
+
+        {overflows && (
+          <span className="sheet-warn-inline"
+            title="Estimated from the blocks every card carries; a style with many colourways runs taller still">
+            {perPage} per page needs {rowsAsked} rows — about
+            {' '}{Math.round(cardHeightMm(columns, layout === 'row', scale))}mm each,
+            and the page holds {rowsFit}. Try {rowsFit * 5} per page.
+          </span>
+        )}
 
         {layout === 'row' && !scale.legible && (
           <span className="sheet-warn-inline"

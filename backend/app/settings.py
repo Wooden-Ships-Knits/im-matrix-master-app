@@ -16,6 +16,13 @@ class Settings(BaseSettings):
     postgres_user: str = "im_master"
     postgres_password: str = ""
 
+    # Who may write. The password never reaches the browser — the browser
+    # sends a password and gets a token back, so changing it is an .env edit
+    # and a restart rather than a rebuild.
+    app_password: str = "operator123"
+    # How long a signed-in session lasts before it has to be entered again.
+    session_hours: int = 12
+
     max_upload_mb: int = 8
     upload_dir: str = "/app/data/uploads"
 

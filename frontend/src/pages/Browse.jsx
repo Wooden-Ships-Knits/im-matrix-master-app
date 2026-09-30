@@ -7,7 +7,14 @@ import { Field, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
 const fmt$ = (v) => (v == null ? '—' : `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
 const fmtKg = (v) => (v == null ? '—' : Number(v).toFixed(3));
 
-export default function Browse() {
+/**
+ * The style list.
+ *
+ * `readOnly` is what a guest sees: the same search and the same details, with
+ * nothing that changes anything. The API refuses a guest's writes anyway —
+ * this is so the screen does not offer a button that would only fail.
+ */
+export default function Browse({ readOnly = false }) {
   const navigate = useNavigate();
   const showToast = useToast();
 
@@ -63,10 +70,13 @@ export default function Browse() {
       <header className="band">
         <div className="band-row">
           <Link to="/" className="logo">IM Master</Link>
-          <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
-          <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
-          <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
-          <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          {!readOnly && (<>
+            <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
+            <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
+            <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
+            <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          </>)}
+          {readOnly && <span className="band-guest">Viewing as guest</span>}
         </div>
       </header>
 
@@ -137,16 +147,18 @@ export default function Browse() {
               <span className="acc-count">({s.colorway_count} colorway{s.colorway_count === 1 ? '' : 's'})</span>
               <span className="acc-actions" onClick={(e) => e.stopPropagation()}>
                 {s.status === 'draft' && <span className="badge-draft">DRAFT</span>}
-                <button type="button" className="icon-btn" title="Edit style"
-                  aria-label={`Edit ${s.name}`}
-                  onClick={() => navigate(`/edit/${s.id}`)}>
-                  <Pencil size={19} />
-                </button>
-                <button type="button" className="icon-btn danger" title="Delete style"
-                  aria-label={`Delete ${s.name}`}
-                  onClick={() => setToDelete(s)}>
-                  <Trash2 size={19} />
-                </button>
+                {!readOnly && (<>
+                  <button type="button" className="icon-btn" title="Edit style"
+                    aria-label={`Edit ${s.name}`}
+                    onClick={() => navigate(`/edit/${s.id}`)}>
+                    <Pencil size={19} />
+                  </button>
+                  <button type="button" className="icon-btn danger" title="Delete style"
+                    aria-label={`Delete ${s.name}`}
+                    onClick={() => setToDelete(s)}>
+                    <Trash2 size={19} />
+                  </button>
+                </>)}
               </span>
             </button>
 
