@@ -1802,3 +1802,38 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   .sheet-note-open, .sheet-note-panel { display: none !important; }
   .sheet-note { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+
+/* ===================== Signing in =====================
+   One password for the team, or no password and read-only. The password is
+   checked by the server — it is not in this bundle, and a guest is refused by
+   the API rather than by a hidden button. */
+.login-wrap {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+}
+.login-card {
+  width: 100%; max-width: 380px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.login-logo { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+.login-card .card-sub { margin: 0 0 8px; }
+.login-label { font-size: 0.82rem; font-weight: 700; }
+.login-go { justify-content: center; margin-top: 4px; }
+.login-guest { justify-content: center; }
+.login-error { color: #b91c1c; font-size: 0.84rem; margin: 0; }
+.login-note { font-size: 0.78rem; color: #777; margin: 2px 0 0; line-height: 1.4; }
+
+/* A rule with the word sitting in it, so the two ways in read as alternatives
+   rather than as a form with a stray button under it. */
+.login-or {
+  display: flex; align-items: center; gap: 10px; margin: 6px 0 2px;
+  color: #999; font-size: 0.76rem;
+}
+.login-or::before, .login-or::after {
+  content: ''; flex: 1; height: 1px; background: var(--border, #e2e2e2);
+}
+
+.band-guest {
+  font-size: 0.82rem; font-weight: 700; color: #777;
+  border: 1px solid var(--border, #ddd); border-radius: 999px; padding: 4px 11px;
+}

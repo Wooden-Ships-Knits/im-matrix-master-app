@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import ping, pool
+from .routers import auth as auth_routes
 from .routers import checklist, matrix, meta, reports, sales, styles, uploads
 from .settings import settings
 
@@ -49,6 +50,7 @@ async def validation_error(request: Request, exc: RequestValidationError):
                         content={"error": f"{where}: {msg}" if where else msg})
 
 
+app.include_router(auth_routes.router)
 app.include_router(meta.router)
 app.include_router(styles.router)
 app.include_router(reports.router)
@@ -56,6 +58,29 @@ app.include_router(sales.router)
 app.include_router(checklist.router)
 app.include_router(matrix.router)
 app.include_router(uploads.router)
+
+
+@app.middleware("http")
+async def guard_writes(request: Request, call_next):
+    """Anything that changes something needs an operator session.
+
+    Applied as middleware rather than per route: a dependency has to be
+    remembered on every new endpoint, and the one that gets forgotten is the
+    one that matters. Signing in is exempt, or there would be no way to start.
+    """
+    from .auth import WRITE_METHODS, read, OPERATOR
+
+    if request.method in WRITE_METHODS and request.url.path.startswith("/api/"):
+        if not request.url.path.startswith("/api/auth/"):
+            token = request.headers.get("authorization", "")
+            role = read(token.removeprefix("Bearer ").strip() or None)
+            if role is None:
+                return JSONResponse({"error": "Sign in to make changes"}, status_code=401)
+            if role != OPERATOR:
+                return JSONResponse(
+                    {"error": "Guests can look, but not change anything"},
+                    status_code=403)
+    return await call_next(request)
 
 # Photos. In production nginx proxies /uploads/ here (frontend/nginx.conf).
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")

@@ -1,7 +1,16 @@
+import { readSession } from './session.js';
+
 async function request(url, options = {}) {
+  // Every call carries the session if there is one. The server decides what
+  // it is allowed to do — this only saves it having to ask.
+  const token = readSession()?.token;
   const res = await fetch(url, {
-    headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
     ...options,
+    headers: {
+      ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
   });
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
@@ -12,6 +21,11 @@ async function request(url, options = {}) {
 }
 
 export const api = {
+  // One password for the team, or no password and read-only.
+  login: (password) =>
+    request('/api/auth/login', { method: 'POST', body: JSON.stringify({ password }) }),
+  guest: () => request('/api/auth/guest', { method: 'POST' }),
+
   meta: () => request('/api/meta'),
   addMeta: (type, name) =>
     request(`/api/meta/${type}`, { method: 'POST', body: JSON.stringify({ name }) }),
