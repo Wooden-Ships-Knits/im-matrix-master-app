@@ -2,7 +2,7 @@
 
 Read-only. Fetches a season through the existing Sales Report in web-apps —
 their clients, their credentials, nothing copied — and checks the rows against
-what IM Master holds.
+what PDM holds.
 
 The answer decides the shape of the integration. Salesforce, Shopify and the
 IM name colours independently, so the question is not whether some rows fail
@@ -38,7 +38,7 @@ def norm(value):
 
 
 def ours(season):
-    """{style name: {colour names}} from IM Master, for this season."""
+    """{style name: {colour names}} from PDM, for this season."""
     url = f"{API}/api/styles/matrix?" + urllib.parse.urlencode({"season": season})
     with urllib.request.urlopen(url, timeout=60) as r:
         rows = json.load(r)
@@ -97,7 +97,7 @@ def main():
 
     from reports.sales_report.run import run  # noqa: E402 — needs their cwd
 
-    print(f"IM Master styles for {args.season}: ", end="", flush=True)
+    print(f"PDM styles for {args.season}: ", end="", flush=True)
     styles = ours(args.season)
     print(f"{len(styles)}")
 

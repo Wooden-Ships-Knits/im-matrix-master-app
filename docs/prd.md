@@ -1,6 +1,6 @@
-# IM Master — Product Requirements
+# PDM — Product Requirements
 
-**Project:** IM Master — knitwear style master data for PT In Fashion
+**Project:** PDM (Product Data Management) — knitwear style master data for PT In Fashion
 **Repo folder:** `im-master-app`
 **Status:** Draft — pending discussion
 **Last updated:** 2026-09-10
@@ -24,7 +24,7 @@ Why rebuild rather than extend:
 - The old app is a single SQLite file on one machine. Two people editing at once
   is not a supported story, and the file is the backup strategy.
 - It does not deploy the way our other applications deploy. `wholesale-order-entry`
-  and `ymal-project` both run as Postgres + FastAPI + nginx on the VM. IM Master
+  and `ymal-project` both run as Postgres + FastAPI + nginx on the VM. PDM
   being the odd one out costs us every time it needs attention.
 - The Excel-derived schema was inherited wholesale. Some of it is real structure,
   some of it is spreadsheet layout that got promoted to columns by accident. A
@@ -207,7 +207,7 @@ real season entered by real staff.
    required nothing, so this has never been decided.
 5. Does anything downstream consume the Excel today — a costing sheet, a report,
    a macro? Those become integration requirements the day Excel stops updating.
-6. Does IM Master need to reach the Shopify catalog, or is it purely internal?
+6. Does PDM need to reach the Shopify catalog, or is it purely internal?
 7. Where does it run — the same VM as the other stacks, and on which port?
 8. Is per-user login needed for the change history to be worth anything, or is
    a shared login acceptable in v1?

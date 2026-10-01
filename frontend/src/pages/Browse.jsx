@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { CirclePlus, Play, Pencil, Trash2, Download, ClipboardList, Ruler,ListChecks } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
+import Wordmark from '../components/Wordmark.jsx';
 
 const fmt$ = (v) => (v == null ? '—' : `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
 const fmtKg = (v) => (v == null ? '—' : Number(v).toFixed(3));
@@ -69,7 +70,7 @@ export default function Browse({ readOnly = false }) {
     <>
       <header className="band">
         <div className="band-row">
-          <Link to="/" className="logo">IM Master</Link>
+          <Wordmark />
           {!readOnly && (<>
             <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
             <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>

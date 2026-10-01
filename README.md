@@ -1,4 +1,4 @@
-# IM Master
+# PDM — Product Data Management
 
 Knitwear style master data for PT In Fashion — the application replacing the
 `IM MASTER` Excel workbooks.

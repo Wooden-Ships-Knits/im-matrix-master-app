@@ -1,4 +1,4 @@
-# IM Master — Column List
+# PDM — Column List
 
 **Created 2026-09-11.** Build step `plan.md` §6.1. **No SQL written yet** — this
 list is for review first.

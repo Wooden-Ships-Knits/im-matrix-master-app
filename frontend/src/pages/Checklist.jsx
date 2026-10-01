@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { CirclePlus, ClipboardList, TextSearch, Check, Ruler} from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
+import Wordmark from '../components/Wordmark.jsx';
 
 // Who ticked it. The API records this against every tick; until there are
 // accounts, the browser remembers what was typed so it is not retyped daily.
@@ -135,7 +136,7 @@ export default function Checklist() {
     <>
       <header className="band">
         <div className="band-row">
-          <Link to="/" className="logo">IM Master</Link>
+          <Wordmark />
           <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
           <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
@@ -158,7 +159,7 @@ export default function Checklist() {
                 attached to is worth less than no grid at all. The browser
                 remembers it, so this is a one-off on most days. */}
             <Field label="Your name" hint="Recorded against each tick">
-              <input className="input" value={who} placeholder="e.g. Wayan"
+              <input className="input" value={who} placeholder="e.g. Putri"
                 required aria-required="true"
                 onChange={(e) => setWho(e.target.value)} />
             </Field>

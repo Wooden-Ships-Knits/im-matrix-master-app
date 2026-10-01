@@ -1,4 +1,4 @@
-# IM Master — End-to-End Flow
+# PDM — End-to-End Flow
 
 **Created 2026-09-10.** How data moves through the system, and where each kind of
 correctness is enforced.

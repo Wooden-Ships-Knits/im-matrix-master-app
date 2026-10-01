@@ -24,6 +24,12 @@ def highlights():
     return repo.HIGHLIGHT_COLOURS
 
 
+@router.get("/channels")
+def channels():
+    """The sell channels the number cell cycles through."""
+    return repo.WHS_CHANNELS
+
+
 @router.get("/ring-marks")
 def ring_marks():
     """The colours a ring round a next-season circle can be."""

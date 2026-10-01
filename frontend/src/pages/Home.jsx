@@ -1,11 +1,12 @@
 import { Link } from 'react-router-dom';
+import Wordmark from '../components/Wordmark.jsx';
 import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown} from 'lucide-react';
 
 export default function Home() {
   return (
     <>
       <header className="band home-band">
-        <div className="logo logo-center" style={{ display: 'block' }}>IM Master</div>
+        <Wordmark to={null} centred />
       </header>
 
       <main className="home-wrap">

@@ -261,7 +261,7 @@ def load_style(style_id: int) -> dict | None:
             return out
 
 
-def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
+def list_styles(season=None, q=None, color=None, size=None, limit=None) -> list[dict]:
     """The browse list: one row per style, newest season first.
 
     The colour and size filters are EXISTS rather than joins. Joining them
@@ -269,6 +269,10 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
     14,479 rows — and every one of those rows then ran the colourway count
     before DISTINCT threw the duplicates away. EXISTS filters without
     multiplying, so the count runs once per style and DISTINCT is not needed.
+
+    `limit` is for the typeahead in the editor header, which shows eight
+    hits. Without it a two-letter query matched 803 styles and sent all 803
+    — 109kB per pause in typing, to draw eight lines.
     """
     sql = """
         SELECT s.id, s.style_name AS name, s.status, s.photo_url AS image_path,
@@ -295,6 +299,8 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
         args.append(size)
     # Newest season first, so a repeated style's latest run leads.
     sql += " ORDER BY se.season_number DESC NULLS LAST, s.style_name"
+    if limit:
+        sql += " LIMIT %s"; args.append(int(limit))
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, args)
@@ -635,11 +641,49 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             return style_id
 
 
-def delete_style(style_id: int) -> bool:
+# Everything that goes when a style does. Eight tables cascade off styles, so
+# a delete is never only a row — and the counts are what make a confirmation
+# worth reading rather than a reflex to click through.
+_STYLE_CHILDREN = [
+    ("colourways", "SELECT count(*) FROM style_colorways WHERE style_id = %s"),
+    ("sizes", "SELECT count(*) FROM style_sizes WHERE style_id = %s"),
+    ("sales rows", "SELECT count(*) FROM style_sales WHERE style_id = %s"),
+    ("checklist ticks", "SELECT count(*) FROM style_steps WHERE style_id = %s"),
+    ("operations", "SELECT count(*) FROM style_operations WHERE style_id = %s"),
+    ("measurements", "SELECT count(*) FROM style_measurements WHERE style_id = %s"),
+    ("trims", "SELECT count(*) FROM style_trims WHERE style_id = %s"),
+    ("market prices", "SELECT count(*) FROM style_market_prices WHERE style_id = %s"),
+    # Not a child table, but it goes the same way: the yarn lines hang off the
+    # colourways, which hang off the style.
+    ("yarn lines",
+     "SELECT count(*) FROM colorway_yarns cy"
+     " JOIN style_colorways cw ON cw.id = cy.colorway_id WHERE cw.style_id = %s"),
+]
+
+
+def delete_style(style_id: int) -> dict | None:
+    """Remove a style, and say what went with it.
+
+    None when there was no such style, so the route can answer 404 rather
+    than reporting a delete that did not happen.
+    """
     with transaction() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT style_name FROM styles WHERE id = %s", (style_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            # Counted first: afterwards there is nothing left to count.
+            removed = {}
+            for label, sql in _STYLE_CHILDREN:
+                cur.execute(sql, (style_id,))
+                n = cur.fetchone()["count"]
+                if n:
+                    removed[label] = n
+
             cur.execute("DELETE FROM styles WHERE id = %s", (style_id,))
-            return cur.rowcount > 0
+            return {"name": row["style_name"], "removed": removed}
 
 
 def set_photo(style_id: int, path: str) -> None:
@@ -1189,7 +1233,15 @@ def meta() -> dict:
             }
 
 
-def add_meta(kind: str, name: str) -> None:
+def add_meta(kind: str, name: str, season: str | None = None) -> None:
+    """Add one entry to a reference list.
+
+    `season` is required for a collection and ignored by everything else.
+    collections.season_id is NOT NULL and this function used to insert without
+    it, so adding a collection raised a 500 — the only caller that worked was
+    save_style, which scopes it properly. A collection is per season by design:
+    S27's BEACH is a different run from S25's BEACH.
+    """
     targets = {
         "season": None,  # handled by _season_id
         "collection": ("collections", "name"),
@@ -1198,12 +1250,18 @@ def add_meta(kind: str, name: str) -> None:
     }
     if kind not in targets:
         raise ValueError("Unknown list")
+    if kind == "collection" and not _clean(season):
+        raise ValueError("A collection belongs to a season — choose one first")
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             if kind == "season":
                 _season_id(cur, name)
             elif kind == "sub_group":
                 pass  # learned from styles.sub_group; nothing to insert
+            elif kind == "collection":
+                get_or_create(
+                    cur, "collections", "name", name,
+                    scope={"season_id": _season_id(cur, season)})
             else:
                 table, column = targets[kind]
                 get_or_create(cur, table, column, name)
@@ -1399,8 +1457,19 @@ RING_KEYS = ("next_sy_mark", "next_000_mark")
 # The second bar. One colour today; a list so a second is CSS, not a migration.
 BAND_COLOURS = ["purple"]
 
+# Which channels a style sells through. The order is the order a click walks
+# through them on the Matrix card's number, so BOTH — the plain, unhighlighted
+# case — comes first.
+#
+# A style may also have no channel at all: 257 arrived from the workbook that
+# way and a blank is not the same as BOTH. Nothing here sets it back to blank,
+# because saying "sells through both" is an answer and leaving it empty is the
+# absence of one; the cycle only ever moves between answers.
+WHS_CHANNELS = ["BOTH", "000 ONLY", "SY ONLY"]
+
 _MATRIX_KEYS = ({f["key"] for f in MATRIX_FIELDS}
                 | {"matrix_highlight", "matrix_band", "needs_photo", "notes"}
+                | {"whs_channel"}
                 | set(RING_KEYS))
 
 _MATRIX_NUMERIC = {f["key"] for f in MATRIX_FIELDS if f.get("numeric")}
@@ -1495,6 +1564,12 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
             raise ValueError(
                 f"{text!r} is not a highlight colour"
                 f" — expected one of {', '.join(HIGHLIGHT_COLOURS)}")
+        # Checked, because this one is not decoration: the sell channel is read
+        # by the sales reports, the IM export and the checklist's price step.
+        if key == "whs_channel" and text and text not in WHS_CHANNELS:
+            raise ValueError(
+                f"{text!r} is not a sell channel"
+                f" — expected one of {', '.join(WHS_CHANNELS)}")
         if key in _MATRIX_NUMERIC:
             try:
                 args.append(int(float(text)))

@@ -17,8 +17,12 @@ def list_styles(
     q: str | None = Query(None),
     color: str | None = Query(None),
     size: str | None = Query(None),
+    # Only the typeahead passes this. Browse wants the whole list, so the
+    # default stays unlimited rather than silently truncating that page.
+    limit: int | None = Query(None, ge=1, le=500),
 ):
-    return repo.list_styles(season=season, q=q, color=color, size=size)
+    return repo.list_styles(
+        season=season, q=q, color=color, size=size, limit=limit)
 
 
 @router.get("/export.csv")
@@ -133,9 +137,11 @@ def update_style(style_id: int, payload: dict = Body(...)):
 
 @router.delete("/{style_id}")
 def delete_style(style_id: int):
-    if not repo.delete_style(style_id):
+    gone = repo.delete_style(style_id)
+    if gone is None:
         raise HTTPException(status_code=404, detail="Style not found")
-    return {"ok": True}
+    # What went with it, so the page can say so rather than a bare "deleted".
+    return {"ok": True, **gone}
 
 
 @router.get("/{style_id}/costing")

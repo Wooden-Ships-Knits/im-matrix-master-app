@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { LogIn, Eye } from 'lucide-react';
 import { api } from '../api.js';
 import { writeSession } from '../session.js';
+import { APP_NAME, APP_NAME_FULL } from '../components/Wordmark.jsx';
 
 /**
  * The way in. One password for the team, or look without one.
@@ -33,7 +34,8 @@ export default function Login({ onSignedIn }) {
         className="card card-pad login-card"
         onSubmit={(e) => { e.preventDefault(); enter(() => api.login(password)); }}
       >
-        <h1 className="login-logo">IM Master</h1>
+        <h1 className="login-logo">{APP_NAME}</h1>
+        <p className="login-expand">{APP_NAME_FULL}</p>
         <p className="card-sub">PT In Fashion — knitwear style master data</p>
 
         <label className="login-label" htmlFor="pw">Password</label>

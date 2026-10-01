@@ -1,4 +1,4 @@
-"""IM Master — API.
+"""PDM — API.
 
 Serves the endpoints the existing React client calls (frontend/src/api.js) on
 top of the v2 schema. The mapping between the client's field names and the
@@ -29,7 +29,7 @@ async def lifespan(app: FastAPI):
     pool.close()
 
 
-app = FastAPI(title="IM Master", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="PDM", version="0.2.0", lifespan=lifespan)
 
 # The client reads `error` from a failed response, not FastAPI's `detail`
 # (frontend/src/api.js), so errors are reshaped to match rather than silently

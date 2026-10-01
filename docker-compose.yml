@@ -1,4 +1,4 @@
-# IM Master — one compose for the whole project.
+# PDM — one compose for the whole project.
 #
 # Same shape as wholesale-order-entry, which already runs this on the VM:
 # Postgres, a FastAPI backend, and an nginx container that serves the built

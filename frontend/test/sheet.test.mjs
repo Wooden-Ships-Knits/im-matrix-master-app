@@ -233,5 +233,44 @@ is(holders.filter((selector) => {
   return /(^|[;{\s])color\s*:/.test(body);
 }), [], 'nothing pins the colour of a colourway name over its pen');
 
+// ---------------------------------------------------------------------------
+// The typeahead's limit has to survive the trip.
+//
+// StyleJump asked for eight and sliced to eight, but GET /api/styles took no
+// `limit` at all — so a two-letter query downloaded 803 styles (109kB) to draw
+// eight lines. The client was right and nothing told it otherwise, which is
+// the failure worth pinning: a query parameter FastAPI does not declare is
+// dropped in silence.
+const jump = fs.readFileSync('frontend/src/sections/StyleJump.jsx', 'utf8');
+const route = fs.readFileSync('backend/app/routers/styles.py', 'utf8');
+const repoSrc = fs.readFileSync('backend/app/repo.py', 'utf8');
+
+const asksFor = [...jump.matchAll(/api\.listStyles\(\s*\{([^}]*)\}/g)]
+  // `{ q, limit: 8 }` — shorthand and `key:` both count as asking for it.
+  .flatMap((m) => m[1].split(',').map((part) => part.split(':')[0].trim()))
+  .filter(Boolean)
+  .filter((k, i, all) => all.indexOf(k) === i)
+  .sort();
+is(asksFor, ['limit', 'q'], 'the typeahead asks for a query and a limit');
+
+const listRoute = route.slice(route.indexOf('def list_styles('));
+const declared = listRoute.slice(0, listRoute.indexOf('):'));
+is(asksFor.filter((k) => !new RegExp(`\\b${k}\\s*:`).test(declared)), [],
+   'the route declares every parameter the typeahead sends');
+
+// Declaring it is not enough — it has to be handed on, and then used.
+is(/repo\.list_styles\([^)]*limit=limit/.test(listRoute), true,
+   'the route passes the limit to the repo');
+const listRepo = repoSrc.slice(repoSrc.indexOf('def list_styles('));
+is(/\bif limit:\s*\n\s*sql \+= " LIMIT %s"/.test(listRepo), true,
+   'the repo turns the limit into a LIMIT clause');
+
+// Browse shares this endpoint and wants the whole list, so the limit must
+// stay optional: a default would truncate that page without saying so.
+is(/def list_styles\([^)]*\blimit=None\b/.test(listRepo), true,
+   'the limit is optional, so Browse still gets every row');
+is(/limit: int \| None = Query\(None/.test(declared), true,
+   'the route defaults the limit to none as well');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

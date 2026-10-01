@@ -1,4 +1,4 @@
-# IM Master — Build Plan
+# PDM — Build Plan
 
 **Created 2026-09-10.** Backend only. **Nothing here is built yet.**
 

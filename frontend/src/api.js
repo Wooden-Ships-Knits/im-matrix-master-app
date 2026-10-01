@@ -28,8 +28,12 @@ export const api = {
   guest: () => request('/api/auth/guest', { method: 'POST' }),
 
   meta: () => request('/api/meta'),
-  addMeta: (type, name) =>
-    request(`/api/meta/${type}`, { method: 'POST', body: JSON.stringify({ name }) }),
+  // `season` is only read when type is 'collection': a collection belongs to a
+  // season, and the table has required that all along.
+  addMeta: (type, name, season = null) =>
+    request(`/api/meta/${type}`, {
+      method: 'POST', body: JSON.stringify(season ? { name, season } : { name }),
+    }),
 
   listStyles: (filters = {}) => {
     const qs = new URLSearchParams(

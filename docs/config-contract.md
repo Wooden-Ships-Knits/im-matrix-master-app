@@ -1,4 +1,4 @@
-# IM Master — The Config Contract
+# PDM — The Config Contract
 
 **Created 2026-09-10.** The agreement between the three layers.
 

@@ -1,4 +1,4 @@
-# IM Master — Database Schema (v2)
+# PDM — Database Schema (v2)
 
 **Revised 2026-09-19** from the live `F26 IM MASTER.xlsx` (Google Sheets export
 saved into this folder today). Replaces v1, which is in git history

@@ -1,4 +1,4 @@
-# IM Master — Caveats
+# PDM — Caveats
 
 Things that could bite us. Assumptions not yet validated, platform limits,
 data-quality and organisational risks.
@@ -146,7 +146,7 @@ requires a restore drill performed by someone who did not write the procedure.
 ### Nobody but us can run it
 
 `docker compose up` is not an office skill. If the VM restarts and the stack does
-not come back on its own, IM Master is down until an engineer is available.
+not come back on its own, PDM is down until an engineer is available.
 
 Mitigation: `restart: unless-stopped` on every service, and a one-page runbook in
 the README covering start, stop, check, and restore. Written for someone who has

@@ -47,6 +47,23 @@ export const breakable = (text) => String(text ?? '').replace(/\//g, '/​');
 // workbook never filled it in, and that is not the same as "both".
 export const CHANNEL_MARK = { '000 ONLY': 'whs', 'SY ONLY': 'sy', BOTH: 'both' };
 
+// The order a click walks through, matching WHS_CHANNELS in repo.py. BOTH is
+// first because it is the uncoloured cell: white, then pink, then red.
+export const WHS_CHANNELS = ['BOTH', '000 ONLY', 'SY ONLY'];
+
+/**
+ * The channel one click along from this one.
+ *
+ * A style with no channel at all sits where BOTH sits — both cells are white —
+ * so it steps to 000 ONLY rather than to BOTH, which would spend a click
+ * changing nothing a person can see. The cost is that a blank, once clicked,
+ * has become an answer; that is the point of clicking it.
+ */
+export const nextChannel = (current) => {
+  const at = WHS_CHANNELS.indexOf(current);
+  return WHS_CHANNELS[(at < 0 ? 0 : at) + 1] || WHS_CHANNELS[0];
+};
+
 /**
  * Number a collection's cards the way the workbook does.
  *
@@ -231,6 +248,10 @@ export default function SheetCard({
   // Present alongside onEdit: a photo can be dropped or picked on the card,
   // rather than opening each style in the editor to add one.
   onPhoto = null,
+  // Present alongside onEdit: clicking the number cycles the sell channel the
+  // cell is coloured by. The colour was only ever a readout of whs_channel, so
+  // the cell that shows it is the natural place to change it.
+  onChannel = null,
   // Called on double-click, to open the style in its editor.
   onOpen = null,
   // Briefly marked when a link has brought the page to this style.
@@ -306,12 +327,24 @@ export default function SheetCard({
       {/* The channel is read off the number rather than given a badge of its
           own: the cell is already there, and a colour on it costs no height
           on a card that has to fit A4. */}
-      {index != null && (
-        <div className={`sheet-index${
-          CHANNEL_MARK[s.whs_channel] ? ` idx-${CHANNEL_MARK[s.whs_channel]}` : ''}`}>
-          {index}
-        </div>
-      )}
+      {index != null && (() => {
+        const tone = CHANNEL_MARK[s.whs_channel];
+        const className = `sheet-index${tone ? ` idx-${tone}` : ''}`;
+        // On paper, and on the sales sheet, it is a number. Only where the
+        // Matrix is being set up does it also set the channel.
+        if (!onChannel) return <div className={className}>{index}</div>;
+        return (
+          <button type="button" className={`${className} idx-click`}
+            title={`Sells through ${s.whs_channel || 'nothing recorded'}`
+                   + ` — click for ${nextChannel(s.whs_channel)}`}
+            onClick={() => onChannel(s, nextChannel(s.whs_channel))}>
+            {index}
+            <span className="sr-only">
+              {`, sells through ${s.whs_channel || 'nothing recorded'}`}
+            </span>
+          </button>
+        );
+      })()}
 
       {/* The hand-applied highlighter, under the number. Only interactive
           where editing is on; on paper it is just a band of colour. */}

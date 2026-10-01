@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus,
+  Trash2, Check, X,
 } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
@@ -9,6 +10,8 @@ import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 // The same card the printed sheet draws, so what is arranged here is
 // what comes out of the printer.
 import SheetCard, { numberCards } from '../sections/SheetCard.jsx';
+import AddStyle from '../sections/AddStyle.jsx';
+import Wordmark from '../components/Wordmark.jsx';
 
 /**
  * Matrix Master, as the team sets it up.
@@ -185,8 +188,12 @@ export default function Matrix() {
   const [newName, setNewName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const addStyle = async (collectionName) => {
-    const name = newName.trim();
+  // The collection is passed in rather than read from state: on the Layout
+  // tab it comes from the block the slot sits in, and on an empty season
+  // there is no block, so it has to be typed. Naming one that does not exist
+  // creates it — save_style does get_or_create on the collection.
+  const addStyle = async (collectionName, typed = null) => {
+    const name = (typed ?? newName).trim();
     if (!name || creating) return;
     setCreating(true);
     try {
@@ -346,6 +353,79 @@ export default function Matrix() {
     }
   };
 
+  // The style whose delete is waiting to be confirmed. One at a time: the
+  // confirm replaces that row's button, so two at once would be two rows
+  // asking the same question.
+  const [confirmDelete, setConfirmDelete] = useState(null);
+
+  // Adding a season. The server builds it from the code alone — season_number
+  // and the code itself are generated columns, and the new season inherits
+  // the previous one's rates, so a fresh season is not blank in the costing.
+  const [addingSeason, setAddingSeason] = useState(false);
+  const [newSeason, setNewSeason] = useState('');
+  const [addingCollection, setAddingCollection] = useState(false);
+  const [newCollection, setNewCollection] = useState('');
+
+  // Same shape as adding a season, against the collection picker. Scoped to
+  // the chosen season, which is why the control is only offered once there is
+  // one — a collection with no season has nowhere to go.
+  const addCollection = async () => {
+    const name = newCollection.trim().toUpperCase();
+    if (!name) {
+      toast?.('Give the collection a name', 'error');
+      return;
+    }
+    try {
+      await api.addMeta('collection', name, season);
+      const fresh = await api.meta();
+      setMeta(fresh);
+      setNewCollection('');
+      setAddingCollection(false);
+      setCollection(name);      // land on the collection that was just made
+      toast?.(`${name} added to ${season}`);
+    } catch (err) {
+      toast?.(err.message || 'Could not add that collection', 'error');
+    }
+  };
+
+  const addSeason = async () => {
+    const code = newSeason.trim().toUpperCase();
+    if (!/^[SF]\d{2}$/.test(code)) {
+      toast?.('A season code is S or F and two digits, like F29', 'error');
+      return;
+    }
+    try {
+      await api.addMeta('season', code);
+      const fresh = await api.meta();
+      setMeta(fresh);
+      setNewSeason('');
+      setAddingSeason(false);
+      setSeason(code);          // land on the season that was just made
+      toast?.(`${code} added`);
+    } catch (err) {
+      toast?.(err.message || 'Could not add that season', 'error');
+    }
+  };
+
+  // Deleting a style takes its colourways, sizes, sales, checklist ticks and
+  // yarn lines with it — eight tables cascade off styles. The server counts
+  // what went and the toast says so, because afterwards there is nothing
+  // left to look at.
+  const deleteStyle = async (style) => {
+    setConfirmDelete(null);
+    try {
+      const gone = await api.deleteStyle(style.id);
+      const also = Object.entries(gone?.removed || {})
+        .map(([what, n]) => `${n} ${what}`);
+      toast?.(`${style.name} removed`
+        + (also.length ? `, with ${also.join(', ')}` : ''));
+      setRows((prev) => prev.filter((r) => r.id !== style.id));
+    } catch (err) {
+      toast?.(err.message || 'Could not remove that style', 'error');
+      load();
+    }
+  };
+
   const resetOrder = async (group) => {
     try {
       await api.setMatrixOrder(group.items.map((r) => r.id), true);
@@ -362,7 +442,7 @@ export default function Matrix() {
     <>
       <header className="band">
         <div className="band-row">
-          <Link to="/" className="logo">IM Master</Link>
+          <Wordmark />
           <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
@@ -380,23 +460,84 @@ export default function Matrix() {
 
           <div className="chk-filters">
             <Field label="Season" hint="Required">
-              <select className="input" value={season} required
-                onChange={(e) => setSeason(e.target.value)}>
-                <option value="">Choose a season…</option>
-                {(meta?.seasons || []).map((s) => (
-                  <option key={s.code} value={s.code}>{s.code}</option>
-                ))}
-              </select>
+              <div className="mx-season-pick">
+                {addingSeason ? (
+                  <>
+                    <input className="input" autoFocus value={newSeason}
+                      placeholder="e.g. F29" aria-label="New season code"
+                      onChange={(e) => setNewSeason(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); addSeason(); }
+                        if (e.key === 'Escape') { setNewSeason(''); setAddingSeason(false); }
+                      }} />
+                    <button type="button" className="btn-chip" onClick={addSeason}>Add</button>
+                    <button type="button" className="btn-chip ghost"
+                      onClick={() => { setNewSeason(''); setAddingSeason(false); }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <select className="input" value={season} required
+                      onChange={(e) => setSeason(e.target.value)}>
+                      <option value="">Choose a season…</option>
+                      {(meta?.seasons || []).map((s) => (
+                        <option key={s.code} value={s.code}>{s.code}</option>
+                      ))}
+                    </select>
+                    {/* A button beside the picker, not an entry inside it —
+                        an "add" option in a select reads as a season right up
+                        until someone picks it by mistake. */}
+                    <button type="button" className="mx-season-add"
+                      title="Add a season" aria-label="Add a season"
+                      onClick={() => setAddingSeason(true)}>
+                      <Plus size={15} strokeWidth={2.6} />
+                    </button>
+                  </>
+                )}
+              </div>
             </Field>
             <Field label="Collection"
               hint={season ? `${collections.length} in ${season}` : 'Pick a season first'}>
-              <select className="input" value={collection} disabled={!season}
-                onChange={(e) => setCollection(e.target.value)}>
-                <option value="">
-                  {season ? `All collections in ${season}` : '—'}
-                </option>
-                {collections.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <div className="mx-season-pick">
+                {addingCollection ? (
+                  <>
+                    <input className="input" autoFocus value={newCollection}
+                      placeholder="e.g. CHRISTMAS COTTON" aria-label="New collection name"
+                      onChange={(e) => setNewCollection(e.target.value.toUpperCase())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); addCollection(); }
+                        if (e.key === 'Escape') { setNewCollection(''); setAddingCollection(false); }
+                      }} />
+                    <button type="button" className="btn-chip" onClick={addCollection}>Add</button>
+                    <button type="button" className="btn-chip ghost"
+                      onClick={() => { setNewCollection(''); setAddingCollection(false); }}>
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <select className="input" value={collection} disabled={!season}
+                      onChange={(e) => setCollection(e.target.value)}>
+                      <option value="">
+                        {season ? `All collections in ${season}` : '—'}
+                      </option>
+                      {collections.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                    {/* Hidden rather than disabled before a season is chosen:
+                        there is nothing to add it to yet, and a button that
+                        refuses every click is worse than no button. */}
+                    {season && (
+                      <button type="button" className="mx-season-add"
+                        title={`Add a collection to ${season}`}
+                        aria-label={`Add a collection to ${season}`}
+                        onClick={() => setAddingCollection(true)}>
+                        <Plus size={15} strokeWidth={2.6} />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
             </Field>
             {season && (
               <Link className="btn-chip" to={printHref}>
@@ -420,6 +561,14 @@ export default function Matrix() {
             job from the season and collection above: those decide what gets
             loaded at all. Hence its own bar, and only once there is something
             to search. */}
+        {tab === 'grid' && shown.length > 0 && (
+          <section className="card card-pad mx-empty" style={{ marginTop: 18 }}>
+            <AddStyle season={season} collections={collections}
+              collection={collection} busy={creating}
+              onAdd={(c, n) => addStyle(c, n)} />
+          </section>
+        )}
+        
         {season && rows?.length > 0 && (
           <section className="card card-pad mx-search">
             <Field label="Find a style" hint="Matches the name or the style code">
@@ -446,12 +595,24 @@ export default function Matrix() {
         )}
 
         {season && rows === null && <div className="spinner" aria-label="Loading" />}
+        {/* A season with nothing in it still needs a way in — otherwise the
+            first style of a new season has nowhere to be created. */}
         {rows?.length === 0 && (
-          <p className="result-count">No styles for this selection.</p>
+          <section className="card card-pad mx-empty">
+            <p className="card-sub">
+              Nothing in {collection || season} yet. Add the first style —
+              naming a collection that does not exist creates it.
+            </p>
+            <AddStyle season={season} collections={collections}
+              collection={collection} busy={creating}
+              onAdd={(c, n) => addStyle(c, n)} />
+          </section>
         )}
         {rows?.length > 0 && shown.length === 0 && (
           <p className="result-count">No style matches “{query}”.</p>
         )}
+
+
 
         {tab === 'grid' && shown.length > 0 && (
           <section className="card chk-card">
@@ -462,6 +623,7 @@ export default function Matrix() {
                     <th className="chk-style">Style</th>
                     <th>Weight S/M (kg)</th>
                     {fields.map((f) => <th key={f.key}>{f.label}</th>)}
+                    <th className="mx-del-col" aria-label="Remove" />
                   </tr>
                 </thead>
                 <tbody>
@@ -501,6 +663,37 @@ export default function Matrix() {
                           />
                         </td>
                       ))}
+
+                      {/* Removing a style takes its colourways, sizes, sales
+                          and checklist ticks with it, so it asks first. The
+                          confirm replaces the button on the row that asked,
+                          rather than a dialog that has to name the style
+                          again. */}
+                      <td className="mx-del-col">
+                        {confirmDelete === r.id ? (
+                          <span className="mx-del-gate">
+                            <button type="button" className="sheet-colour-yes"
+                              title={`Remove ${r.name} and everything filed under it`}
+                              aria-label={`Confirm removing ${r.name}`}
+                              onClick={() => deleteStyle(r)}>
+                              <Check size={12} strokeWidth={3} />
+                            </button>
+                            <button type="button" className="sheet-colour-no"
+                              title="Keep it"
+                              aria-label={`Keep ${r.name}`}
+                              onClick={() => setConfirmDelete(null)}>
+                              <X size={12} strokeWidth={3} />
+                            </button>
+                          </span>
+                        ) : (
+                          <button type="button" className="mx-del"
+                            title={`Remove ${r.name}`}
+                            aria-label={`Remove ${r.name}`}
+                            onClick={() => setConfirmDelete(r.id)}>
+                            <Trash2 size={15} />
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -533,6 +726,7 @@ export default function Matrix() {
                   steps={steps}
                   options={{ yarn_codes: yarnCodes }}
                   onEdit={(style, key, value) => save(style, key, value)}
+                  onChannel={(style, value) => save(style, 'whs_channel', value)}
                   onMarkColour={markColour}
                   onHighlightColour={highlightColour}
                   onRenameColour={renameColour}

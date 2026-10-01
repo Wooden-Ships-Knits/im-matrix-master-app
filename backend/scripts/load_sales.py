@@ -1,4 +1,4 @@
-"""Load a Sales Report run into IM Master.
+"""Load a Sales Report run into PDM.
 
 Salesforce fills WHS 000, Shopify fills SY. The fetching stays in
 web-apps/services; this only moves the rows across.
