@@ -19,6 +19,7 @@ import OperationsSection from '../sections/OperationsSection.jsx';
 import PastSeasons from '../sections/PastSeasons.jsx';
 import StyleJump from '../sections/StyleJump.jsx';
 import Wordmark from '../components/Wordmark.jsx';
+import NameHistory from '../sections/NameHistory.jsx';
 
 const SECTIONS = [
   { key: 'measurements', label: 'Matrix', icon: Ruler },
@@ -147,6 +148,14 @@ export default function StyleEditor() {
     () => (pendingImage ? URL.createObjectURL(pendingImage) : null), [pendingImage]);
   const fileRef = useRef(null);
   const nameRef = useRef(null);
+  // What this style has been called before. Loaded beside the style and taken
+  // again after every save: a save is when a rename is recorded, so the panel
+  // would otherwise show the state from before the change that just happened.
+  const [names, setNames] = useState([]);
+  const loadNames = (styleId) => {
+    if (!styleId) { setNames([]); return; }
+    api.nameHistory(styleId).then(setNames).catch(() => setNames([]));
+  };
 
   const snapshot = useRef('');
   const dirty = JSON.stringify(form) !== snapshot.current || !!pendingImage;
@@ -177,6 +186,7 @@ export default function StyleEditor() {
         hydrate(toForm(s), s.image_path);
         setLoading(false);
         api.costing(id).then(setCosting).catch(() => setCosting([]));
+        loadNames(id);
       })
       .catch((e) => { showToast(e.message, 'error'); navigate('/browse'); });
   }, [id]); // eslint-disable-line
@@ -238,6 +248,7 @@ export default function StyleEditor() {
         image = r.image_path;
       }
       hydrate(toForm(saved), image);
+      loadNames(saved.id);
       api.costing(saved.id).then(setCosting).catch(() => setCosting([]));
       showToast(asDraft ? 'Draft saved' : 'Style saved');
       if (!id) navigate(`/edit/${saved.id}`, { replace: true });
@@ -431,6 +442,8 @@ export default function StyleEditor() {
                       <LayoutGrid size={15} /> Show in Matrix
                     </Link>
                   )}
+                  {/* Only for a style that exists: a new one has no past. */}
+                  {id && <NameHistory rows={names} />}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

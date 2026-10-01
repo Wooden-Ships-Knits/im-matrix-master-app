@@ -335,5 +335,26 @@ is(/if \(res\.status === 204\) return null;/.test(apiSrc), true,
 is(/res\.status === 401 && !url\.startsWith\('\/api\/auth\/'\)/.test(apiSrc), true,
    'a 401 signs you out, except on the sign-in call itself');
 
+// A rename has to be written down in both places or they drift.
+//
+// The panel is what people read; product_identifiers and name_history are what
+// _sales_index reads. Recording one without the other is how a rename looks
+// handled and still loses its sales.
+const repoSrc2 = fs.readFileSync('backend/app/repo.py', 'utf8');
+is(/_record_rename\(cur, style_id, "style"/.test(repoSrc2), true,
+   'renaming a style is recorded');
+is(/_record_rename\(cur, style_id, "colorway"/.test(repoSrc2), true,
+   'renaming a colourway is recorded');
+is(/INSERT INTO product_identifiers[\s\S]{0,300}?'style_name'/.test(
+     repoSrc2.slice(repoSrc2.indexOf('def _record_rename'))), true,
+   'a style rename also files the old name as an identifier');
+is(/scope = 'colorway'/.test(repoSrc2.slice(repoSrc2.indexOf('def _sales_index'))), true,
+   'the matcher reads old colour names too');
+// Read the old name before the UPDATE, or there is nothing left to record.
+const saveBody = repoSrc2.slice(repoSrc2.indexOf('def save_style'));
+is(saveBody.indexOf('SELECT style_name FROM styles WHERE id') <
+   saveBody.indexOf('UPDATE styles SET'), true,
+   'the old name is read before it is overwritten');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

@@ -95,6 +95,12 @@ def related(style_id: int):
     return repo.related_styles(style_id)
 
 
+@router.get("/{style_id}/names")
+def name_history(style_id: int):
+    """What this style and its colourways have been called before."""
+    return repo.style_name_history(style_id)
+
+
 @router.post("/{style_id}/link")
 def link(style_id: int, payload: dict = Body(...)):
     """Declare this style and another the same garment."""

@@ -2081,3 +2081,49 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   color: var(--text);
   min-height: 1.25rem;
 }
+
+/* ---- Name history ----
+   Under the photo in the editor's left column. Every line is also a name the
+   sales matcher looks under, so this is a working record, not a log. */
+.name-history {
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  padding: 11px 12px;
+  background: #faf8f5;
+}
+.nh-title {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 0 8px;
+  font-size: 0.76rem; font-weight: 800;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--muted);
+}
+.nh-empty { margin: 0; font-size: 0.75rem; color: var(--muted); line-height: 1.45; }
+
+.nh-list { list-style: none; margin: 0; padding: 0; }
+.nh-list li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 7px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.nh-list li:first-child { border-top: 0; padding-top: 0; }
+
+.nh-tag {
+  grid-row: 1 / span 2;
+  align-self: start;
+  padding: 1px 6px; border-radius: 999px;
+  font-size: 0.62rem; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.nh-style    { background: #e4e9f7; color: #2a3f7a; }
+.nh-colorway { background: #f2e6f9; color: #6b2a84; }
+
+/* The two names stack: side by side they wrap mid-name at this width and the
+   arrow ends up on a line of its own. */
+.nh-names { display: flex; flex-direction: column; font-size: 0.76rem; }
+.nh-was { color: var(--muted); text-decoration: line-through; }
+.nh-arrow { display: none; }
+.nh-now { font-weight: 700; color: var(--text); }
+.nh-when { grid-column: 2; font-size: 0.68rem; color: var(--muted); }

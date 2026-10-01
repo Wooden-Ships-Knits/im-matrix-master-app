@@ -56,6 +56,8 @@ export const api = {
     return request(`/api/styles?${qs}`);
   },
   getStyle: (id) => request(`/api/styles/${id}`),
+  // Every name this style and its colourways have gone by.
+  nameHistory: (id) => request(`/api/styles/${id}/names`),
   costing: (id) => request(`/api/styles/${id}/costing`),
 
   // The same garment in other seasons, and the links that say so.

@@ -479,6 +479,50 @@ def _derive_channel(cur, style_id: int) -> None:
     """, (style_id,))
 
 
+def _record_rename(cur, style_id: int, scope: str, old: str, new: str) -> None:
+    """Note that something was called `old` and is now called `new`.
+
+    Nothing is written when the name has not really changed — case and stray
+    whitespace are not a rename, and a history full of them is one nobody
+    reads.
+
+    For a style the old name is also filed as a product identifier, because
+    that is what _sales_index matches on: the history is what people read, the
+    identifier is what the matcher reads, and both have to be written here or
+    they drift.
+    """
+    old_t, new_t = _clean(old), _clean(new)
+    if not old_t or not new_t or old_t.upper() == new_t.upper():
+        return
+
+    cur.execute(
+        "INSERT INTO name_history (style_id, scope, old_value, new_value)"
+        " VALUES (%s, %s, %s, %s)", (style_id, scope, old_t, new_t))
+
+    if scope != "style":
+        return
+    cur.execute("SELECT product_id, season_id FROM styles WHERE id = %s", (style_id,))
+    row = cur.fetchone()
+    if not row or not row["product_id"]:
+        return
+    cur.execute(
+        "INSERT INTO product_identifiers (product_id, kind, value, season_id)"
+        " VALUES (%s, 'style_name', %s, %s) ON CONFLICT DO NOTHING",
+        (row["product_id"], old_t, row["season_id"]))
+
+
+def style_name_history(style_id: int) -> list[dict]:
+    """Every recorded rename for this style, newest first."""
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT scope, old_value, new_value, changed_at
+                  FROM name_history WHERE style_id = %s
+                 ORDER BY changed_at DESC, id DESC
+            """, (style_id,))
+            return [dict(r) for r in cur.fetchall()]
+
+
 def _ensure_product(cur, style_id: int) -> None:
     """Give a style a product if it has none, reusing one with the same name.
 
@@ -589,6 +633,14 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                 raise ValueError("Style name is required")
 
             is_new = style_id is None
+            if style_id and values.get("style_name"):
+                # Read before the UPDATE below overwrites it — afterwards the
+                # old spelling is gone and there is nothing to record.
+                cur.execute("SELECT style_name FROM styles WHERE id = %s", (style_id,))
+                was = cur.fetchone()
+                if was:
+                    _record_rename(cur, style_id, "style",
+                                   was["style_name"], values["style_name"])
             if style_id:
                 sets = ", ".join(f"{k} = %s" for k in values)
                 cur.execute(
@@ -1060,6 +1112,34 @@ def _sales_index(cur, season_id):
         own = by_product.get(r["product_id"])
         if own and r["alias"] not in index:
             index[r["alias"]] = index[own]
+
+    # Third pass: colours this season's styles used to be called. Shopify and
+    # Salesforce keep selling under the old colour name just as they do with
+    # the style name, and until name_history existed there was nowhere to look
+    # it up — colour matching was exact-name only, so a renamed colourway lost
+    # its figures silently.
+    #
+    # Chained oldest to newest, so BLUE -> OCEAN BLUE -> DEEP OCEAN resolves
+    # from any of the three. Rows are applied in order and each one points at
+    # whatever its new name resolves to by then.
+    cur.execute("""
+        SELECT upper(btrim(s.style_name)) AS style,
+               upper(btrim(h.old_value))  AS was,
+               upper(btrim(h.new_value))  AS now
+          FROM name_history h
+          JOIN styles s ON s.id = h.style_id
+         WHERE h.scope = 'colorway' AND s.season_id = %s
+         ORDER BY h.changed_at, h.id
+    """, (season_id,))
+    for r in cur.fetchall():
+        colours = index.get(r["style"])
+        if not colours:
+            continue
+        target = colours.get(r["now"])
+        # Only fills a gap: a colour name in use today always wins over one
+        # that used to mean something else.
+        if target and r["was"] not in colours:
+            colours[r["was"]] = target
     return index
 
 
@@ -1945,6 +2025,10 @@ def rename_colorway(style_id: int, colour: str, name: str) -> dict:
                 if cur.fetchone():
                     raise ValueError(f"{new!r} is already a colourway of this style")
                 raise ValueError(f"{old!r} is not a colourway of style {style_id}")
+            # Only once the rename has actually happened — a failed one above
+            # raises, and a history of renames that did not occur is worse
+            # than none.
+            _record_rename(cur, style_id, "colorway", old, new)
             return dict(row)
 
 
