@@ -1,4 +1,4 @@
-import { readSession } from './session.js';
+import { readSession, writeSession, SESSION_EXPIRED } from './session.js';
 
 async function request(url, options = {}) {
   // Every call carries the session if there is one. The server decides what
@@ -12,11 +12,26 @@ async function request(url, options = {}) {
       ...(options.headers || {}),
     },
   });
+  // A 401 anywhere but the sign-in call itself means the token we sent is
+  // expired or no longer valid — the password may have changed under us. Drop
+  // it and tell the app, so it puts the login screen back instead of leaving
+  // a page that looks signed in and refuses every change.
+  //
+  // /api/auth/ is excluded because a wrong password is a 401 too, and
+  // "your session expired" is the wrong thing to say to someone mistyping it.
+  if (res.status === 401 && !url.startsWith('/api/auth/')) {
+    writeSession(null);
+    try { window.dispatchEvent(new Event(SESSION_EXPIRED)); } catch { /* no window */ }
+    throw new Error('Your session has expired — please sign in again');
+  }
   if (!res.ok) {
     let msg = `Request failed (${res.status})`;
     try { msg = (await res.json()).error || msg; } catch { /* keep default */ }
     throw new Error(msg);
   }
+  // 204 has no body, and asking for one throws. Handled here so a route that
+  // returns nothing cannot tempt the next caller into its own bare fetch.
+  if (res.status === 204) return null;
   return res.json();
 }
 
@@ -135,10 +150,11 @@ export const api = {
     request(`/api/reports/${id}/status`, {
       method: 'POST', body: JSON.stringify({ status, ...extra }),
     }),
-  deleteReport: (id) =>
-    fetch(`/api/reports/${id}`, { method: 'DELETE' }).then((r) => {
-      if (!r.ok) throw new Error(`Request failed (${r.status})`);
-    }),
+  // Through request(), like everything else. It used to call fetch directly
+  // and so sent no Authorization header at all — the guard on writes refused
+  // it every time, for everyone, which looked like a broken button rather
+  // than a missing token.
+  deleteReport: (id) => request(`/api/reports/${id}`, { method: 'DELETE' }),
 
   uploadImage: (id, file) => {
     const form = new FormData();

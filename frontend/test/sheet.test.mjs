@@ -318,5 +318,22 @@ is(/WHEN sell_sy AND sell_000 THEN 'BOTH'[\s\S]{0,200}?WHEN sell_000\s+THEN '000
    .test(repoChan), true,
    'the server derives the channel from the flags the same way');
 
+// Every call goes through request(), which is what attaches the token.
+//
+// deleteReport did not — it called fetch directly, sent no Authorization
+// header, and so was refused by the write guard every time, for everyone. It
+// read as a broken button. One bare fetch is all it takes.
+const apiSrc = fs.readFileSync('frontend/src/api.js', 'utf8');
+const bare = [...apiSrc.matchAll(/^.*\bfetch\(/gm)]
+  .map((m) => m[0].trim())
+  // The one inside request() is the real one; everything else is a bypass.
+  .filter((line) => !line.startsWith('const res = await fetch('));
+is(bare, [], 'nothing calls fetch directly — they would send no token');
+
+is(/if \(res\.status === 204\) return null;/.test(apiSrc), true,
+   'a 204 is handled, so a no-body route needs no bare fetch of its own');
+is(/res\.status === 401 && !url\.startsWith\('\/api\/auth\/'\)/.test(apiSrc), true,
+   'a 401 signs you out, except on the sign-in call itself');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

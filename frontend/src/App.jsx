@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './components/ui.jsx';
 import Home from './pages/Home.jsx';
@@ -9,11 +9,20 @@ import Checklist from './pages/Checklist.jsx';
 import Matrix from './pages/Matrix.jsx';
 import PrintSheet from './pages/PrintSheet.jsx';
 import Login from './pages/Login.jsx';
-import { readSession, isOperator } from './session.js';
+import { readSession, isOperator, SESSION_EXPIRED } from './session.js';
 import DevBanner from './components/DevBanner.jsx';
 
 export default function App() {
   const [session, setSession] = useState(readSession);
+
+  // The token can die while the tab is open — it is good for twelve hours and
+  // nobody closes a tab. api.js clears it and fires this; without it the page
+  // keeps offering buttons the server will refuse.
+  useEffect(() => {
+    const signedOut = () => setSession(null);
+    window.addEventListener(SESSION_EXPIRED, signedOut);
+    return () => window.removeEventListener(SESSION_EXPIRED, signedOut);
+  }, []);
 
   // Nothing is reachable without a session — not even the browse page, so
   // the app never renders a screen it would then have to take away.
