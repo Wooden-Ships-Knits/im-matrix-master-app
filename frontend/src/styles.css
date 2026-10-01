@@ -2068,3 +2068,16 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 /* The tick/cross gate on a tray chip, the same shape the colourway rows and
    the Attributes table use. */
 .tbd-gate { display: inline-flex; gap: 3px; flex: none; }
+
+/* The channel reads out the Sold through boxes rather than setting them, so it
+   is shaped like a field but is plainly not one to type in. */
+.chan-readout {
+  display: block;
+  padding: 9px 11px;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  background: #faf8f5;
+  font-weight: 700;
+  color: var(--text);
+  min-height: 1.25rem;
+}

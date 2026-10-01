@@ -458,6 +458,27 @@ def _append_to_matrix_order(cur, style_id: int) -> None:
     """, (style_id, style_id))
 
 
+def _derive_channel(cur, style_id: int) -> None:
+    """Write whs_channel from the two sell flags.
+
+    The tick boxes are the fact; the channel is how the IM writes it down. It
+    used to be editable in its own right, which meant one garment could say
+    "000 ONLY" in the dropdown and have both boxes ticked — and one did.
+
+    Done in SQL off the row's own columns so it needs neither flag passed in:
+    a payload that sets only one of them still lands on the right channel.
+    """
+    cur.execute("""
+        UPDATE styles SET whs_channel = CASE
+            WHEN sell_sy AND sell_000 THEN 'BOTH'
+            WHEN sell_000            THEN '000 ONLY'
+            WHEN sell_sy             THEN 'SY ONLY'
+            ELSE NULL
+        END
+        WHERE id = %s
+    """, (style_id,))
+
+
 def _ensure_product(cur, style_id: int) -> None:
     """Give a style a product if it has none, reusing one with the same name.
 
@@ -599,6 +620,12 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             # Matched on the name the same way the script does, so creating
             # F27's MAUI V CHUNKY COTTON where F26 already has one joins them
             # without anybody pressing Link.
+            # The channel follows the tick boxes whenever they are written,
+            # so the editor's read-only display cannot be contradicted by
+            # anything that reaches this function another way.
+            if "sell_sy" in values or "sell_000" in values:
+                _derive_channel(cur, style_id)
+
             _ensure_product(cur, style_id)
             if is_new:
                 if payload.get("matrix_parked"):
@@ -1577,6 +1604,17 @@ BAND_COLOURS = ["purple"]
 # absence of one; the cycle only ever moves between answers.
 WHS_CHANNELS = ["BOTH", "000 ONLY", "SY ONLY"]
 
+# The same fact written twice: the channel is what the IM calls it, the two
+# flags are the tick boxes in the editor. They are not independent, and the
+# workbook never disagreed with itself — 1,207 imported styles map exactly
+# this way. So setting one sets the other, or the card and the editor show
+# contradictory things about the same garment.
+CHANNEL_SELLS = {
+    "BOTH":     (True,  True),
+    "000 ONLY": (False, True),
+    "SY ONLY":  (True,  False),
+}
+
 _MATRIX_KEYS = ({f["key"] for f in MATRIX_FIELDS}
                 | {"matrix_highlight", "matrix_band", "needs_photo", "notes"}
                 | {"whs_channel"}
@@ -1680,6 +1718,13 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
             raise ValueError(
                 f"{text!r} is not a sell channel"
                 f" — expected one of {', '.join(WHS_CHANNELS)}")
+        if key == "whs_channel" and text:
+            # The tick boxes follow. Done here rather than left to the client
+            # so it holds whoever writes the channel — the Matrix card's
+            # number, the style editor, or an import.
+            sy, whs = CHANNEL_SELLS[text]
+            sets.append("sell_sy = %s"); args.append(sy)
+            sets.append("sell_000 = %s"); args.append(whs)
         if key in _MATRIX_NUMERIC:
             try:
                 args.append(int(float(text)))

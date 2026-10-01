@@ -272,5 +272,51 @@ is(/def list_styles\([^)]*\blimit=None\b/.test(listRepo), true,
 is(/limit: int \| None = Query\(None/.test(declared), true,
    'the route defaults the limit to none as well');
 
+// ---------------------------------------------------------------------------
+// The channel and the two tick boxes are one fact written twice.
+//
+// Clicking the card's number set whs_channel and left sell_sy/sell_000 alone,
+// so the card said "000 ONLY" while the editor showed both boxes ticked. The
+// backend now derives the pair; what must not drift is the set of channels
+// the card offers and the set the mapping covers.
+const repoChan = fs.readFileSync('backend/app/repo.py', 'utf8');
+const mapped = [...repoChan.matchAll(/^\s*"([^"]+)":\s*\((True|False),\s*(True|False)\),/gm)]
+  .map((m) => m[1]);
+is(mapped, ['BOTH', '000 ONLY', 'SY ONLY'],
+   'every channel has a tick-box pair, in the cycle order');
+
+const offered = /WHS_CHANNELS = \[([^\]]*)\]/.exec(repoChan)[1]
+  .split(',').map((x) => x.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
+is(offered.filter((c) => !mapped.includes(c)), [],
+   'no channel can be set that the tick boxes do not know about');
+is(mapped.filter((c) => !offered.includes(c)), [],
+   'and nothing is mapped that cannot be set');
+
+// The pairs themselves, as 1,207 imported styles have them.
+const pairs = Object.fromEntries(
+  [...repoChan.matchAll(/^\s*"([^"]+)":\s*\((True|False),\s*(True|False)\),/gm)]
+    .map((m) => [m[1], [m[2] === 'True', m[3] === 'True']]));
+is(pairs['BOTH'], [true, true], 'BOTH sells through both');
+is(pairs['000 ONLY'], [false, true], '000 ONLY sells through 000 alone');
+is(pairs['SY ONLY'], [true, false], 'SY ONLY sells through SY alone');
+
+// Writing the channel has to write the flags in the same statement.
+is(/if key == "whs_channel" and text:[\s\S]{0,400}?sell_sy = %s[\s\S]{0,200}?sell_000 = %s/
+   .test(repoChan), true,
+   'setting the channel sets both flags');
+
+// The Channel is a readout now, not a second way to set the same fact.
+const editor = fs.readFileSync('frontend/src/pages/StyleEditor.jsx', 'utf8');
+is(/whs_channel: v,/.test(editor), false,
+   'nothing in the editor sets the channel directly any more');
+is(/<Field label="Channel"[\s\S]{0,400}?chan-readout/.test(editor), true,
+   'the Channel field renders a readout');
+is(/channelOf\(form\.sell_sy, form\.sell_000\)/.test(editor), true,
+   'and derives it from the tick boxes on screen');
+// The server has the same rule, so a row written another way still agrees.
+is(/WHEN sell_sy AND sell_000 THEN 'BOTH'[\s\S]{0,200}?WHEN sell_000\s+THEN '000 ONLY'[\s\S]{0,200}?WHEN sell_sy\s+THEN 'SY ONLY'/
+   .test(repoChan), true,
+   'the server derives the channel from the flags the same way');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

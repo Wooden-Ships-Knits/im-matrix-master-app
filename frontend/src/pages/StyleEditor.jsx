@@ -295,14 +295,13 @@ export default function StyleEditor() {
 
   // The checkboxes and the channel say the same thing, so one edit writes
   // both. Otherwise a style could claim SY ONLY with 000 ticked.
+  // What the IM calls a pair of tick boxes. The boxes are the fact; this is
+  // how it gets written down.
+  const channelOf = (sy, thousand) => (
+    sy && thousand ? 'BOTH' : sy ? 'SY ONLY' : thousand ? '000 ONLY' : '');
+
   const setChannel = (sy, thousand) =>
-    update({
-      sell_sy: sy,
-      sell_000: thousand,
-      whs_channel: sy && thousand ? 'BOTH'
-        : sy ? 'SY ONLY'
-          : thousand ? '000 ONLY' : '',
-    });
+    update({ sell_sy: sy, sell_000: thousand, whs_channel: channelOf(sy, thousand) });
 
   const sectionProps = { form, update, meta, costing };
   const Body = {
@@ -529,21 +528,18 @@ export default function StyleEditor() {
                         onChange={(v) => setChannel(form.sell_sy, v)} />
                     </div>
                     <div className="chan-row">
-                      <Field label="Channel" hint="As the IM writes it">
-                        <select className="input" value={form.whs_channel || ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            update({
-                              whs_channel: v,
-                              sell_sy: v !== '000 ONLY',
-                              sell_000: v !== 'SY ONLY',
-                            });
-                          }}>
-                          <option value="">Not set</option>
-                          <option value="SY ONLY">SY ONLY</option>
-                          <option value="000 ONLY">000 ONLY</option>
-                          <option value="BOTH">BOTH</option>
-                        </select>
+                      {/* Read-only: it is the tick boxes above, written the
+                          way the IM writes them. It used to be a second way to
+                          set the same thing, which meant the two could — and
+                          did — end up disagreeing on the same garment.
+
+                          Derived at render rather than read from the stored
+                          column, so it always matches the boxes on screen. */}
+                      <Field label="Channel" hint="From Sold through, above">
+                        <output className="chan-readout"
+                          aria-live="polite">
+                          {channelOf(form.sell_sy, form.sell_000) || 'Not set'}
+                        </output>
                       </Field>
                       <Field label="Finishing" hint="At factory or taken home">
                         <select className="input" value={form.finishing_location || ''}
