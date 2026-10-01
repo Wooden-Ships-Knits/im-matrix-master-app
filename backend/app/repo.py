@@ -422,6 +422,81 @@ def link_styles(style_id: int, other_id: int) -> None:
             """, (keep,))
 
 
+def _append_to_matrix_order(cur, style_id: int) -> None:
+    """Put a new style at the end of its collection on the Matrix sheet.
+
+    The sheet orders by `matrix_order NULLS LAST, style_name`, so a new style
+    only lands last when the rest of its collection already has explicit
+    positions. In a collection nobody has dragged yet every position is NULL,
+    they are all sorted by name, and the new one appears wherever its name
+    falls — which looks random to someone who just typed it into the slot at
+    the end.
+
+    Writing the whole collection's positions is what makes "last" mean last.
+    Numbering only the new style cannot work: any number it took would sort
+    *before* the NULLs it is supposed to follow.
+
+    Reversible — "Reset order" sets them all back to NULL.
+    """
+    cur.execute("""
+        WITH me AS (
+            SELECT season_id, collection_id FROM styles WHERE id = %s
+        ), ordered AS (
+            SELECT s.id,
+                   row_number() OVER (
+                       -- false sorts before true, so the new style goes last
+                       -- while everything else keeps the order it is shown in.
+                       ORDER BY (s.id = %s),
+                                s.matrix_order NULLS LAST,
+                                s.style_name) AS ord
+              FROM styles s, me
+             WHERE s.season_id IS NOT DISTINCT FROM me.season_id
+               AND s.collection_id IS NOT DISTINCT FROM me.collection_id
+        )
+        UPDATE styles t SET matrix_order = ordered.ord
+          FROM ordered WHERE t.id = ordered.id
+    """, (style_id, style_id))
+
+
+def _ensure_product(cur, style_id: int) -> None:
+    """Give a style a product if it has none, reusing one with the same name.
+
+    Case- and whitespace-insensitive, matching link_products.py — `Maui V` and
+    `MAUI V ` are the same garment, and two products for one garment is the
+    thing this whole table exists to prevent.
+
+    The name is also recorded in product_identifiers, because that is what a
+    sales feed looks up: sales arrive under whatever the source calls it.
+    """
+    cur.execute("SELECT style_name, season_id, product_id FROM styles WHERE id = %s",
+                (style_id,))
+    row = cur.fetchone()
+    if not row or row["product_id"] is not None:
+        return
+    name = _clean(row["style_name"])
+    if not name:
+        return
+
+    cur.execute(
+        "SELECT id FROM products"
+        " WHERE upper(btrim(display_name)) = upper(btrim(%s)) LIMIT 1", (name,))
+    found = cur.fetchone()
+    if found:
+        product_id = found["id"]
+    else:
+        cur.execute(
+            "INSERT INTO products (display_name, first_season_id)"
+            " VALUES (%s, %s) RETURNING id", (name, row["season_id"]))
+        product_id = cur.fetchone()["id"]
+
+    cur.execute("UPDATE styles SET product_id = %s WHERE id = %s",
+                (product_id, style_id))
+    cur.execute(
+        "INSERT INTO product_identifiers (product_id, kind, value, season_id)"
+        " VALUES (%s, 'style_name', %s, %s) ON CONFLICT DO NOTHING",
+        (product_id, name, row["season_id"]))
+
+
 def unlink_style(style_id: int) -> None:
     """Split a style back out onto a product of its own."""
     with transaction() as conn:
@@ -492,6 +567,7 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             if not values.get("style_name"):
                 raise ValueError("Style name is required")
 
+            is_new = style_id is None
             if style_id:
                 sets = ", ".join(f"{k} = %s" for k in values)
                 cur.execute(
@@ -509,6 +585,34 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                     list(values.values()),
                 )
                 style_id = cur.fetchone()["id"]
+
+            # Every style needs a product, from the moment it exists.
+            #
+            # Products used to be handed out only by scripts/link_products.py,
+            # run by hand after a workbook import — so a style created in the
+            # app never got one, and a style with no product cannot be linked
+            # to another season ("Both styles need a product first"), shows no
+            # related seasons, and is invisible to sales matching, which joins
+            # on the product. The app could create styles it could never
+            # finish.
+            #
+            # Matched on the name the same way the script does, so creating
+            # F27's MAUI V CHUNKY COTTON where F26 already has one joins them
+            # without anybody pressing Link.
+            _ensure_product(cur, style_id)
+            if is_new:
+                if payload.get("matrix_parked"):
+                    # Created into the tray: no position yet, and it must not
+                    # be numbered or it would be on the sheet as well.
+                    cur.execute(
+                        "UPDATE styles SET matrix_parked = true,"
+                        " matrix_order = NULL WHERE id = %s", (style_id,))
+                else:
+                    # Last on the sheet, not wherever its name happens to fall.
+                    # Only on creation: re-running this on every save would
+                    # shove a style to the end of its collection each time
+                    # anyone corrected a typo on it.
+                    _append_to_matrix_order(cur, style_id)
 
             # Children are replaced, not diffed (flow.md §3).
             #
@@ -736,7 +840,8 @@ def lookup_products(q=None, limit: int = 40) -> list[dict]:
 
 
 def matrix_rows(season=None, collection=None, q=None,
-                start_date=None, end_date=None) -> list[dict]:
+                start_date=None, end_date=None,
+                include_parked=False) -> list[dict]:
     """One row per style, with what a printed review sheet shows.
 
     Grouped by collection because that is how the sheet is worked through, one
@@ -790,7 +895,7 @@ def matrix_rows(season=None, collection=None, q=None,
                s.print_placement, s.total_ends,
                s.bottom_type, s.bottom_rib, s.distressed,
                s.sleeve_category, s.sleeve_length, s.length_category,
-               s.similar_style_past, s.yarn_type,
+               s.similar_style_past, s.yarn_type, s.matrix_parked,
                -- The S/M weight is what the workbook shows; the others are
                -- graded from it.
                (SELECT ss.finished_wt_kg FROM style_sizes ss
@@ -873,6 +978,11 @@ def matrix_rows(season=None, collection=None, q=None,
     # Placeholders bind in the order they appear, and all five are in the
     # SELECT: the checklist's AUTO_STEPS, then the four sales dates.
     args: list = [AUTO_STEPS, start_date, start_date, end_date, end_date]
+    # A parked style has no place in the running order, so it stays off the
+    # sheet and out of the print. Only the Matrix screen asks for them, to
+    # fill its tray.
+    if not include_parked:
+        sql += " AND NOT s.matrix_parked"
     if season:
         sql += " AND se.code = %s"; args.append(season)
     if collection:
@@ -1616,8 +1726,11 @@ def set_matrix_order(style_ids: list[int]) -> int:
         return 0
     with transaction() as conn:
         with conn.cursor() as cur:
+            # matrix_parked is cleared here rather than by its own call:
+            # being given a position IS being placed, and a style that was
+            # both numbered and parked would show in two places at once.
             cur.execute("""
-                UPDATE styles s SET matrix_order = pos.ord
+                UPDATE styles s SET matrix_order = pos.ord, matrix_parked = false
                   FROM unnest(%s::bigint[]) WITH ORDINALITY AS pos(id, ord)
                  WHERE s.id = pos.id
             """, (ids,))

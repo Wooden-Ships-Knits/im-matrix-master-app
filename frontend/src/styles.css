@@ -1985,3 +1985,86 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   text-transform: uppercase;
   color: var(--muted);
 }
+
+/* ---- The TBD tray ----
+   Styles that exist but have no place on the sheet yet. Fixed to the viewport,
+   because the whole point is that the drop target is one short drag away
+   wherever you have scrolled to. */
+.tbd-tray {
+  position: fixed;
+  top: 84px;
+  right: 18px;
+  z-index: 40;
+  width: 236px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.13);
+  font-size: 0.82rem;
+  overflow: hidden;
+}
+/* Collapsed it is just the bar, so it stops covering the page it floats over. */
+.tbd-tray.shut { width: 150px; }
+
+.tbd-head {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; padding: 9px 11px;
+  background: var(--band, #ece7e1); border: 0;
+  font: inherit; font-weight: 700; color: var(--text);
+  cursor: pointer; text-align: left;
+}
+.tbd-head:hover { background: rgba(63, 67, 69, 0.1); }
+.tbd-title { flex: 1; letter-spacing: 0.04em; }
+.tbd-count {
+  background: #3f4345; color: #fff;
+  border-radius: 999px; padding: 1px 7px;
+  font-size: 0.72rem; font-variant-numeric: tabular-nums;
+}
+
+.tbd-body { padding: 10px 11px 12px; }
+.tbd-add { display: flex; gap: 6px; }
+.tbd-add .input { flex: 1; min-width: 0; font-size: 0.8rem; padding: 6px 8px; }
+.tbd-note, .tbd-empty {
+  margin: 8px 0 0; font-size: 0.74rem; color: var(--muted); line-height: 1.45;
+}
+.tbd-empty { margin-top: 10px; }
+
+.tbd-list { list-style: none; margin: 10px 0 0; padding: 0; }
+.tbd-list li { display: flex; align-items: center; gap: 4px; margin-bottom: 5px; }
+
+/* The chip is the draggable thing, not the row — the delete button sits
+   outside it, or picking a style up would be one pixel from deleting it. */
+.tbd-chip {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 7px;
+  background: #faf8f5;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  cursor: grab;
+}
+.tbd-chip:active { cursor: grabbing; }
+.tbd-chip:hover { border-color: #9a9a9a; background: #fff; }
+.tbd-name {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600; font-size: 0.76rem;
+}
+.tbd-bin {
+  flex: none; background: none; border: 0; padding: 3px;
+  color: var(--muted); cursor: pointer; border-radius: 6px;
+}
+.tbd-bin:hover { color: #b91c1c; background: rgba(185, 28, 28, 0.08); }
+
+/* It is a working tool, not part of the sheet. */
+@media print { .tbd-tray { display: none; } }
+
+/* Narrow screens have no room beside the grid, so it goes to the bottom
+   corner where it overlaps least. */
+@media (max-width: 900px) {
+  .tbd-tray { top: auto; bottom: 14px; right: 14px; width: 200px; }
+}
+
+/* The tick/cross gate on a tray chip, the same shape the colourway rows and
+   the Attributes table use. */
+.tbd-gate { display: inline-flex; gap: 3px; flex: none; }

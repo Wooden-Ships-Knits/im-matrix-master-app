@@ -14,102 +14,158 @@ PostgreSQL 16 · FastAPI · React 18 + Vite · Docker Compose, the same shape as
 
 ## Running it
 
-You need Docker Desktop running, and a `.env` — copy `.env.example` and set
-`POSTGRES_PASSWORD`.
+Two stacks, from the same compose file. The difference is one extra `-f`.
+
+| | command | serves | banner |
+|---|---|---|---|
+| **Development** | `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build` | **:5174** (Vite) | red DEVELOPMENT band |
+| **Production** | `docker compose --profile web up -d --build` | **:8086** (nginx) | none |
+
+`docker compose up -d` on its own starts only the database and the API — no
+website. The dev file has to be named explicitly, so a production machine
+cannot pick it up by accident, and nginx sits behind a profile so a bare
+`up -d` never serves a stale bundle.
+
+### First time on a machine
 
 ```bash
-docker compose up -d                  # database + API
-docker compose --profile web up -d    # + the built frontend
+cp .env.example .env
 ```
 
-| | where | notes |
-|---|---|---|
-| Built app | http://localhost:8086 | what other people would see |
-| API | http://localhost:8085 | loopback only |
-| Dev server | http://localhost:5173 | `cd frontend && npm run dev` |
+Then set these by hand — the app will not start without the first, and will
+not let anyone in without the second:
 
-### Everything in Docker
+| | |
+|---|---|
+| `POSTGRES_PASSWORD` | anything, it is internal to the compose network |
+| `APP_PASSWORD` | the team password typed on the login page |
 
-If you would rather not have Node on the machine at all:
+The Salesforce and Shopify keys are only needed to pull sales figures. Leave
+them blank and everything else works.
+
+---
+
+### Development
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-That adds two things to the normal stack: the backend reloads on a `.py`
-change (no `--build` after every edit), and Vite runs in a container on
-**http://localhost:5174**. It also sets `APP_DEV=true`, which puts a red
-DEVELOPMENT band across the top of every page — the dev and live sites look
-identical otherwise, and only one of them holds data anyone relies on.
+Open **http://localhost:5174**.
 
-`docker compose up -d` on its own is the production stack and shows no band.
-The dev file has to be named explicitly, so the VM cannot pick it up by
-accident.
+Starts `db`, `backend` and `web`. Three things differ from production:
 
-### Day to day: the dev server
+- **the backend reloads** — `./backend` is bind-mounted and uvicorn runs with
+  `--reload`, so editing `repo.py` takes effect in a second or two with no
+  rebuild
+- **Vite runs in a container**, so no Node is needed on the machine. Its
+  `node_modules` is a named volume, not the host's: the host's are macOS
+  binaries and the container is Linux
+- **`APP_DEV=true`**, which draws the DEVELOPMENT band across every page. The
+  two sites are identical to look at and only one of them holds data anyone
+  relies on
 
-From nothing — Docker Desktop closed, no terminals open:
+nginx is not involved. Vite proxies `/api` and `/uploads` to the backend
+itself.
+
+If you would rather run Vite from your own Node:
 
 ```bash
-open -a Docker                        # wait for the whale icon to settle
-cd "<this folder>"
-docker compose up -d                  # database + API
+docker compose up -d                  # database + API only
 cd frontend && npm run dev            # http://localhost:5173
 ```
 
-Leave `npm run dev` running in its own terminal; Ctrl-C stops it. That is the
-whole loop for frontend work — the page reloads as you save, and the dev
-server proxies `/api` and `/uploads` to the backend on 8085, so you never need
-the nginx container while developing.
+Same result on a different port. Leave it running in its own terminal.
 
-Check what is already up before starting anything:
+---
+
+### Production — the main server
 
 ```bash
-docker info >/dev/null 2>&1 && echo "docker up" || echo "docker closed"
-lsof -nP -iTCP:5173 -sTCP:LISTEN >/dev/null && echo "dev server up"
+docker compose --profile web up -d --build
+```
+
+Open **http://localhost:8086**, or whatever `IM_MASTER_WEB_PORT` says.
+
+`--profile web` is what adds nginx. Without it you get the API and no site,
+which is the single most common way to think the deploy failed when it did
+not. The frontend is built inside its image, so **the site only changes when
+that image is rebuilt** — `--build` is not optional after a frontend edit.
+
+On the VM, nginx on the host reverse-proxies the public name to that port and
+certbot holds the certificate. The container stack itself is identical to the
+one above; nothing in this repo knows the domain.
+
+Check what you actually got:
+
+```bash
 docker compose ps
+curl -s localhost:8085/api/health      # {"status":"ok","dev":false,...}
 ```
 
-### Showing it to someone else
+`"dev": true` on a machine you think is production means the dev file was
+left in the command.
+
+---
+
+### Rebuilding, and when you need to
+
+| changed | needed |
+|---|---|
+| `backend/app/**` in **dev** | nothing — it reloads |
+| `backend/app/**` in **production** | `docker compose up -d --build backend` |
+| `frontend/src/**` in **dev** | nothing — Vite reloads |
+| `frontend/src/**` in **production** | `docker compose --profile web up -d --build nginx` |
+| a migration | restart the backend; `alembic upgrade head` runs at start |
+| `.env` | `docker compose up -d` (recreates the containers) |
+
+**Backend code is baked into its production image.** Restarting is not
+enough — it will keep running the old copy and look like your edit did
+nothing. In dev this cannot happen, because the source is mounted.
+
+### When it is behaving oddly
 
 ```bash
-cloudflared tunnel --url http://localhost:5173
+docker compose exec backend grep -c "<something you just typed>" /app/app/repo.py
 ```
 
-It prints a `https://….trycloudflare.com` address. **Public and
-unauthenticated** — anyone with the link is in — and a new address every time.
-`allowedHosts: ['.trycloudflare.com']` is already in `vite.config.js`; without
-it Vite refuses the request outright. Hot reload will not work for the person
-opening the link (Vite points their browser at port 5173, which is not on the
-tunnel), so they reload the page by hand.
+`0` means the container is running baked-in code, not your working tree — the
+stack was started without the dev file. Bring it up again with both `-f`s.
 
-To tunnel the built app instead, rebuild nginx first or you will be showing
-them a stale bundle:
+A white screen on :8086 after a rebuild is usually a cached `index.html`
+asking for a hashed asset that no longer exists. Hard-reload once;
+`nginx.conf` already sends `no-store` for `index.html` and 404s a missing
+asset rather than serving the SPA fallback in its place.
+
+### Showing it to someone outside
 
 ```bash
-docker compose --profile web up -d --build nginx
-cloudflared tunnel --url http://localhost:8086
+cloudflared tunnel --url http://localhost:5174
 ```
 
-### Rebuilding
+It prints a `https://….trycloudflare.com` address, new every time.
+**Public** — but the login page still stands in front of it, so they need the
+password or the guest link. `allowedHosts: ['.trycloudflare.com']` is already
+in `vite.config.js`; without it Vite refuses the request outright.
 
-Work on the frontend through the dev server — it reloads as you save and
-proxies `/api` to the backend. The built copy on 8086 only changes when its
-image is rebuilt:
+### Ports
 
-```bash
-docker compose --profile web up -d --build nginx
-```
+Set in `.env`. 8085/8086 rather than the usual 8080/8084 because both were
+taken on the development machine.
 
-**Backend code is baked into its image.** After editing anything under
-`backend/app/`, restarting is not enough:
+| | |
+|---|---|
+| 5174 | Vite, in the dev stack |
+| 5173 | Vite, run from your own Node |
+| 8085 | the API — loopback only |
+| 8086 | the built site behind nginx |
 
-```bash
-docker compose up -d --build backend
-```
+### Getting in
 
-Ports are 8085/8086 rather than the usual 8080/8084 because both were already
-taken on the development machine. They are set in `.env`.
+Every page but the login needs a session. One team password, set as
+`APP_PASSWORD`; **Continue as guest** gives a read-only Browse. The check is
+on the server — guests are refused by the API, not by a hidden button.
+
 
 ---
 
@@ -118,11 +174,13 @@ taken on the development machine. They are set in `.env`.
 ```
 backend/
   app/            FastAPI: routers, repo.py (all the SQL), settings
-  migrations/     Alembic, 0001..0009
+  migrations/     Alembic, 0001..0020
   scripts/        importers and one-off seeds
 frontend/src/
-  pages/          Home, Browse, StyleEditor, Report, PrintSheet
-  sections/       the style editor's tabs
+  pages/          Home, Login, Browse, StyleEditor, Matrix, Checklist,
+                  Report, PrintSheet
+  sections/       the style editor's tabs, and SheetCard — the one card
+                  the Matrix screen and the printed sheet share
 docs/             the reasoning — start with schema.md and identity.md
 *.xlsx            the five source workbooks (gitignored)
 ```
@@ -138,10 +196,11 @@ Loaded from the five workbooks in the project root:
 
 | | |
 |---|---|
-| Styles | 1,462 across S25, F25, S26, F26, S27 |
-| Colourways | 3,577 |
+| Styles | 1,465 across S25, F25, S26, F26, S27 |
+| Colourways | 3,578 |
 | BOM lines | 8,461 |
 | Operation minutes | 5,592 |
+| Sales rows | 4,186, pulled from Salesforce and Shopify |
 | Products (the cross-season identity) | 1,049, of which 267 run in more than one season |
 
 To reload after editing a workbook:
@@ -159,13 +218,17 @@ Python on the development machine has a broken `pyexpat`.
 
 ### Not loaded
 
-- **Photos.** 0 of 1,462. The print sheet is laid out for them.
+- **Photos.** 0 of 1,465. The print sheet is laid out for them, and the
+  Matrix screen can take one by drag-and-drop onto a card.
 - **Yarn prices per style.** 1 style is linked to a material, so
   `v_sku_costing` returns nulls for everything downstream of raw material
   cost. Weights, labour, admin, duty and freight all compute.
-- **Sales figures.** The Sales History sheet is built and empty. The numbers
-  exist in `web-apps/services` report type `sales`.
-- **Season rates** beyond the weight rates: only S27 is fully seeded.
+- **Season rates.** S27 onward are seeded; **S25, F25, S26 and F26 have
+  none**, so costing returns nulls for those four seasons however complete
+  the style is.
+- **The eleven Matrix attribute columns** — they are editable on the Matrix
+  screen but were never imported, so most cards print mostly blank rows.
+- **Measurements and trims.** Both tables exist and both are empty.
 
 ---
 
@@ -201,7 +264,8 @@ columns, because S27 has two called `FINAL RETAIL PRICE` that disagree on
 
 ## Conventions
 
-- **Commit, never push.** There is no remote configured, deliberately.
+- **Commit, never push** without being asked. Two remotes are configured:
+  `origin` and `backup`. See `docs/github_SOP.md`.
 - Migrations are explicit SQL, numbered, and never edited once applied.
 - Calculated values live in `v_sku_costing`, never in a column. Change a rate
   on the season and every style follows.

@@ -12,6 +12,7 @@ import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 import SheetCard, { numberCards } from '../sections/SheetCard.jsx';
 import AddStyle from '../sections/AddStyle.jsx';
 import Wordmark from '../components/Wordmark.jsx';
+import TbdTray from '../sections/TbdTray.jsx';
 
 /**
  * Matrix Master, as the team sets it up.
@@ -69,7 +70,9 @@ export default function Matrix() {
   const load = () => {
     if (!season) { setRows(null); return; }
     setRows(null);
-    api.matrix({ season, collection }).then(setRows).catch(() => setRows([]));
+    // include_parked: this is the only screen with somewhere to show them.
+    api.matrix({ season, collection, include_parked: true })
+      .then(setRows).catch(() => setRows([]));
   };
   useEffect(load, [season, collection]);
 
@@ -102,11 +105,20 @@ export default function Matrix() {
     return () => clearTimeout(t);
   }, [focused]);
 
+  const matches = (r, q) => `${r.name} ${r.style_code || ''}`.toLowerCase().includes(q);
+
+  // The grid is the running order, so a parked style is not in it. It is in
+  // the tray instead, until someone drops it onto a card.
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows || [];
-    return (rows || []).filter(
-      (r) => `${r.name} ${r.style_code || ''}`.toLowerCase().includes(q));
+    const placed = (rows || []).filter((r) => !r.matrix_parked);
+    return q ? placed.filter((r) => matches(r, q)) : placed;
+  }, [rows, query]);
+
+  const parked = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const waiting = (rows || []).filter((r) => r.matrix_parked);
+    return q ? waiting.filter((r) => matches(r, q)) : waiting;
   }, [rows, query]);
 
   // Collections keep server order; only the cards inside one are arrangeable,
@@ -162,13 +174,26 @@ export default function Matrix() {
     const ids = group.items.map((r) => r.id);
     const from = ids.indexOf(fromId);
     const to = ids.indexOf(toId);
-    if (from < 0 || to < 0) return;
-    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    if (to < 0) return;
+    if (from < 0) {
+      // Dragged out of the tray: it has no position to move from, so it is
+      // inserted rather than shuffled. setMatrixOrder clears matrix_parked
+      // for everything it numbers, which is what takes it out of the tray.
+      const incoming = (rows || []).find((r) => r.id === fromId);
+      if (!incoming) return;
+      ids.splice(to, 0, fromId);
+    } else {
+      ids.splice(to, 0, ids.splice(from, 1)[0]);
+    }
 
     // Shown straight away, then confirmed. The whole block is sent, so the
     // server never has to work out what the screen meant by "third".
-    const byId = new Map(group.items.map((r) => [r.id, r]));
-    const reordered = ids.map((id) => byId.get(id));
+    // From every row, not just this block's: a style coming out of the tray
+    // is not in group.items yet, and byId.get would hand back undefined.
+    const byId = new Map((rows || []).map((r) => [r.id, r]));
+    // matrix_parked is cleared here as well as on the server: leaving it set
+    // would draw the style in the grid and in the tray at the same time.
+    const reordered = ids.map((id) => ({ ...byId.get(id), matrix_parked: false }));
     setRows((prev) => {
       const others = prev.filter((r) => (r.collection || 'No collection') !== collectionName);
       return [...others, ...reordered].sort(
@@ -209,7 +234,32 @@ export default function Matrix() {
       });
       setNewName('');
       setAdding(null);
-      load();          // it sorts to the end of its block, where it was added
+      // save_style numbers the collection so this lands last, which is
+      // where the slot that created it sits. It used to be left unordered
+      // and fell wherever its name happened to sort.
+      load();
+    } catch (err) {
+      toast?.(err.message || 'Could not add that style', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  // A style with no position yet. Created into the collection on screen, so
+  // it knows where it belongs even though it does not know where it sits.
+  const addParked = async (typed) => {
+    const name = (typed || '').trim();
+    if (!name || !collection || creating) return;
+    setCreating(true);
+    try {
+      await api.createStyle({
+        name,
+        season,
+        collection,
+        status: 'active',
+        matrix_parked: true,
+      });
+      load();
     } catch (err) {
       toast?.(err.message || 'Could not add that style', 'error');
     } finally {
@@ -803,6 +853,25 @@ export default function Matrix() {
             </div>
           </section>
         ))}
+
+        {/* Only on the Layout tab, and only once a collection is chosen —
+            a parked style has to know which block it belongs to, and the
+            tray is for arranging, which is what that tab is for. */}
+        {tab === 'layout' && season && (
+          <TbdTray
+            items={parked}
+            collection={collection}
+            season={season}
+            busy={creating || !collection}
+            onAdd={addParked}
+            // Deletes for real — the tray asks first, in the tray. Routing
+            // this through confirmDelete pointed it at a confirm that only
+            // the Attributes table can draw.
+            onDelete={deleteStyle}
+            onDragStart={setDragging}
+            onDragEnd={() => { setDragging(null); setOver(null); }}
+          />
+        )}
 
       </main>
     </>

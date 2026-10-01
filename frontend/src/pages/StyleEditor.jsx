@@ -453,9 +453,13 @@ export default function StyleEditor() {
                   </div>
 
                   <Field label="Style">
+                    {/* Upper-cased as it is typed, like the colourway names and
+                        the Matrix page's add-a-style box. Style names are the
+                        key sales data is matched on, so one typed in lower case
+                        is a second name for the same garment. */}
                     <input ref={nameRef} className="input" value={form.name}
                       placeholder="e.g. MAUI CHUNKY CREW COTTON"
-                      onChange={(e) => update({ name: e.target.value })} />
+                      onChange={(e) => update({ name: e.target.value.toUpperCase() })} />
                   </Field>
                   {/* <Field label="Color" hint="First colorway — add more in the BOM section below">
                     <Combo value={primaryColor} onChange={setPrimaryColor}

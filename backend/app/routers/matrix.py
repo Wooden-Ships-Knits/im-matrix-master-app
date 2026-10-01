@@ -48,9 +48,13 @@ def rows(
     season: str | None = Query(None),
     collection: str | None = Query(None),
     q: str | None = Query(None),
+    # Only the Matrix screen wants these — it has a tray to put them in. The
+    # printed sheet asks without it and never sees a style with no position.
+    include_parked: bool = Query(False),
 ):
     """The same rows the printed sheet uses, so both read one query."""
-    return repo.matrix_rows(season=season, collection=collection, q=q)
+    return repo.matrix_rows(season=season, collection=collection, q=q,
+                            include_parked=include_parked)
 
 
 @router.patch("/{style_id}")

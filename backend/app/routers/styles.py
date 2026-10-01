@@ -67,13 +67,18 @@ def matrix(
     q: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
+    # Only the Matrix screen asks for these — it has a tray to show them in.
+    # The printed sheet and the sales report leave it off and never see a
+    # style that has no position.
+    include_parked: bool = Query(False),
 ):
     """The styles a printed review sheet covers, grouped by collection.
 
     Declared before /{style_id}, which would otherwise read "matrix" as an id.
     """
     return repo.matrix_rows(season=season, collection=collection, q=q,
-                            start_date=start_date, end_date=end_date)
+                            start_date=start_date, end_date=end_date,
+                            include_parked=include_parked)
 
 
 @router.get("/{style_id}")
