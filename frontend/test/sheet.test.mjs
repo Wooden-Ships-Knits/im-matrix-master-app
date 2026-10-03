@@ -30,7 +30,7 @@ const slice = (from, to) => cut(src, from, to);
 const { verdict, byManualOrder, cutPages, breakable, numberCards,
         nextHighlight, HIGHLIGHTS,
         nextColorwayMark, COLORWAY_MARKS,
-        nextRingMark, RING_MARKS,
+        RING_MARKS,
         nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf } = await import(
   'data:text/javascript,' + encodeURIComponent(
     slice('const verdict =', 'const legendFor')
@@ -49,7 +49,7 @@ const { verdict, byManualOrder, cutPages, breakable, numberCards,
     + '\nexport { verdict, byManualOrder, cutPages, breakable, numberCards,'
     + '          nextHighlight, HIGHLIGHTS,'
     + '          nextColorwayMark, COLORWAY_MARKS,'
-    + '          nextRingMark, RING_MARKS,'
+    + '          RING_MARKS,'
     + '          nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf };'));
 
 let fails = 0;
@@ -147,18 +147,45 @@ for (let i = 0; i < 4; i += 1) { walk.push(at || 'none'); at = nextHighlight(at)
 is(walk, ['none', 'green', 'amber', 'blue'], 'four clicks return to where it started');
 
 console.log('\n-- the colourway pen --');
-is(COLORWAY_MARKS, ['green', 'red', 'purple', 'magenta', 'blue'], 'five pens, in order');
-is(nextColorwayMark(''), 'green', 'unmarked goes to the first pen');
-is(nextColorwayMark('green'), 'red', 'and on through the list');
-is(nextColorwayMark('blue'), '', 'the last clears it, so a click can undo');
-is(nextColorwayMark(undefined), 'green', 'never set behaves as unmarked');
-is(nextColorwayMark('chartreuse'), 'green', 'a pen no longer in the palette restarts');
-const pens = [];
-let pen = '';
-for (let i = 0; i < COLORWAY_MARKS.length + 1; i += 1) {
-  pens.push(pen || 'none'); pen = nextColorwayMark(pen);
+is(COLORWAY_MARKS, ['red', 'purple', 'magenta', 'blue'], 'four pens, in order');
+// The palette depends on the band, because the two lower bands are the two
+// channels: a pen should mean the same thing wherever it appears rather than
+// depending on which half of the card you are looking at.
+is(nextColorwayMark('', 'main'), 'magenta', 'between the lines, the first pen is pink');
+is(nextColorwayMark('magenta', 'main'), 'purple', 'then purple');
+is(nextColorwayMark('purple', 'main'), '', 'then back to the automatic colour');
+is(nextColorwayMark('', 'extra'), 'red', 'below the red line, the first pen is red');
+is(nextColorwayMark('red', 'extra'), 'blue', 'then blue');
+is(nextColorwayMark('blue', 'extra'), '', 'then back to the automatic colour');
+is(nextColorwayMark('red', 'main'), 'magenta',
+   'a pen the band does not offer restarts rather than cycling from nowhere');
+is(nextColorwayMark(undefined, 'extra'), 'red', 'never set behaves as unpenned');
+// Green left the palette: it is now read off the data, not chosen.
+is(COLORWAY_MARKS.includes('green'), false, 'green cannot be applied by hand');
+is(/new_colorways/.test(card), true, 'the card reads which colours are new');
+is(/new_colorways \|\| \[\]\)\.includes\(colour\) \? 'green' : ''/.test(card),
+   true, 'and falls back to green only for those');
+// A hand pen has to win, or a deliberate mark would be overwritten by a rule —
+// but only where its band offers it, or a red name would appear in a band
+// whose palette cannot produce one.
+is(/const hand = style\?\.colorway_marks\?\.\[colour\]/.test(card), true,
+   'a hand-applied pen is read first');
+is(/if \(hand && pensFor\(band\)\.includes\(hand\)\) return hand;/.test(card), true,
+   'and drawn only where its band offers it');
+const repoPens = fs.readFileSync('backend/app/repo.py', 'utf8');
+is(/COLORWAY_MARKS = \["red", "purple", "magenta", "blue"\]/.test(repoPens), true,
+   'the server stopped accepting green too');
+is(/\) AS new_colorways/.test(repoPens), true, 'and computes which colours are new');
+// One click per pen the BAND offers, then back to the automatic colour.
+for (const [band, offered] of [['main', ['magenta', 'purple']],
+                               ['extra', ['red', 'blue']]]) {
+  const pens = [];
+  let pen = '';
+  for (let i = 0; i < offered.length + 1; i += 1) {
+    pens.push(pen || 'none'); pen = nextColorwayMark(pen, band);
+  }
+  is(pens, ['none', ...offered], `${band}: one click per pen, then back to none`);
 }
-is(pens, ['none', ...COLORWAY_MARKS], 'one click per pen, then back to none');
 
 // The card decides the next pen; the server decides which it will accept. If
 // those lists drift, a click is refused with no way for the operator to tell
@@ -173,12 +200,25 @@ const css = fs.readFileSync('frontend/src/styles.css', 'utf8');
 is(COLORWAY_MARKS.filter((m) => !css.includes(`.pen-${m}`)), [],
    'every pen has a colour to render in');
 
-console.log('\n-- the ring round a next-season circle --');
+console.log('\n-- the ring round a past-season circle --');
 is(RING_MARKS, ['yellow', 'orange'], 'two rings');
-is(nextRingMark(''), 'yellow', 'unringed goes to yellow');
-is(nextRingMark('yellow'), 'orange', 'then orange');
-is(nextRingMark('orange'), '', 'then off again');
-is(nextRingMark(undefined), 'yellow', 'never set behaves as unringed');
+// The ring stopped being something you click. Orange is read off the season
+// links; a circle that could also be clicked would let a hand-set ring sit
+// under a derived one with nothing to say which was showing.
+is(/repeats_two_past \? ' ring-orange' : ''/.test(card), true,
+   'orange is derived from the links');
+is(/nextRingMark/.test(card), false, 'nothing cycles a ring any more');
+is(/sheet-next-dot[\s\S]{0,400}?<button/.test(card), false,
+   'the circles are not buttons');
+// Yellow has no rule to fire on yet, and must not be drawn by guesswork.
+is(/ring-yellow/.test(card), false,
+   'yellow is reserved, not drawn — its rule is still open');
+// The backend must not accept one either.
+const repoRings = fs.readFileSync('backend/app/repo.py', 'utf8');
+is(/RING_KEYS/.test(repoRings.replace(/#[^\n]*/g, '')), false,
+   'the API no longer takes a written ring');
+is(/\) AS repeats_two_past/.test(repoRings), true,
+   'and computes the two-season repeat instead');
 
 const ringBackend = fs.readFileSync('backend/app/repo.py', 'utf8')
   .match(/RING_MARKS = \[([^\]]*)\]/)[1]
@@ -355,6 +395,29 @@ const saveBody = repoSrc2.slice(repoSrc2.indexOf('def save_style'));
 is(saveBody.indexOf('SELECT style_name FROM styles WHERE id') <
    saveBody.indexOf('UPDATE styles SET'), true,
    'the old name is read before it is overwritten');
+
+// Cards sit side by side in a row, so the colourway list has to cost the same
+// height for the same content — otherwise the attribute table, the steps and
+// the weight below it stop lining up across the row.
+//
+// An add bar and a colour row are the same height, and the sample band shows
+// its colour OR its add bar and never both, so a sample colour is free.
+is(/\.mx-sheet \.sheet-colours li \{[^}]*min-height/.test(css), true,
+   'every row in the list has the same minimum height');
+// Three things can fill a row and all three must be the same height, or the
+// rules sit at different heights from card to card. The name field is the one
+// that was deciding it: font: inherit at 0.72rem x 1.35 is taller than either
+// button.
+is(['sheet-colour-name', 'sheet-colour-add button', 'sheet-colour-pad']
+   .filter((sel) => !new RegExp(
+     `\\.mx-sheet \\.${sel.replace(' ', ' .?')} \\{[^}]*height: 1[46]px`).test(css)),
+   [], 'the field, the add button and a spacer are all pinned to one height');
+// The rule that used to reserve height for an empty band is gone, because a
+// band is never empty while editing — it has its add bar.
+is(/sheet-colours\.band-[a-z]+:empty/.test(css), false,
+   'nothing reserves height for a band that cannot be empty');
+is(/export const ZONE_LIMIT = \{ sample: 1 \}/.test(card), true,
+   'the sample band holds one colour, which is what makes it free');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

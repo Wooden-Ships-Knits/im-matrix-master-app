@@ -2127,3 +2127,111 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .nh-arrow { display: none; }
 .nh-now { font-weight: 700; color: var(--text); }
 .nh-when { grid-column: 2; font-size: 0.68rem; color: var(--muted); }
+
+
+/* ---- The three colourway bands ----
+   Each is its own list so an empty one is still something to drop into. */
+.sheet-colours.band-sample,
+.sheet-colours.band-main,
+.sheet-colours.band-extra { margin: 0; }
+
+
+/* The band under the pointer, so a drop lands where it looks like it will. */
+.sheet-colours.drop-here {
+  outline: 1.5px dashed var(--pen-blue, #2A64F6);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.sheet-colours li.dragging { opacity: 0.4; }
+.sheet-colours li[draggable="true"] { cursor: grab; }
+.sheet-colours li[draggable="true"]:active { cursor: grabbing; }
+
+/* The rules between the bands. Drawn as their own elements now, because the
+   bands are separate lists and a border on a row cannot sit between them. */
+.sheet-colour-rule { height: 0; margin: 2px 0; }
+.sheet-colour-rule.black { border-top: 1px solid #1b1b1b; }
+.sheet-colour-rule.red   { border-top: 1px solid var(--pen-red, #EA3323); }
+
+@media print {
+  .sheet-colour-rule {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  .sheet-colours:empty { min-height: 0; }
+}
+
+/* ---- One height for every row in the colourway list ----
+   A card's lower half starts wherever its colourway list ends, so if an add
+   bar is a different height from a colour row, two cards side by side with
+   the same number of colours still drift apart — and the attribute table,
+   the steps and the weight below them stop lining up across the row.
+
+   Each band contributes the same number of slots whichever state it is in:
+   the sample band shows its one colour OR its add bar, never both. So making
+   a row and an add bar the same height is enough to keep the row aligned;
+   what is left is genuine, a card with more colours than its neighbour.
+
+   Screen only. The printed sheet has no add bars at all, so its rows are
+   already uniform, and its density is set to fit A4. */
+.mx-sheet .sheet-colours li {
+  /* A row is as tall as its tallest control: the A / swatch / x buttons are
+     12px square inside a 1px border, so 14px. The li's own 1px padding makes
+     16px. Stated rather than left to the content, because the two rules only
+     line up across cards if every row costs the same. */
+  min-height: 16px;
+  box-sizing: border-box;
+}
+/* Everything that can sit in a row is pinned to the same 14px, so the row is
+   16px whatever it holds. Three different things were setting it before:
+   
+     - the name field, font: inherit at 0.72rem x 1.35 line-height, ~17.5px
+       with its border — the tallest, and the one actually deciding a colour
+       row's height
+     - the A / swatch / x buttons, 12px square in a 1px border, 14px
+     - the add button, an 11px icon in 1px padding inside a 1px dashed
+       border, 15px
+
+   So a row holding a name was taller than one holding the +, and the black
+   rule sat lower on every card whose sample band was empty.
+
+   Safe to fix the field's height here because on this screen it is an <input>,
+   which never wraps. The printed sheet renders the name as text, which does
+   wrap, and is left alone. */
+.mx-sheet .sheet-colour-name {
+  height: 14px;
+  line-height: 1;
+  box-sizing: border-box;
+}
+.mx-sheet .sheet-colour-add button {
+  height: 14px;
+  padding: 0;
+  box-sizing: border-box;
+}
+.mx-sheet .sheet-colour-pad { height: 16px; }
+
+/* A blank row holding the main band open to the block's tallest, so the red
+   rule beneath it is straight across the sheet. Same height as a real row and
+   nothing else — no rule, no hover, nothing to click. */
+.sheet-colours li.sheet-colour-pad {
+  border-top: 0;
+  pointer-events: none;
+}
+
+/* ---- A colourway in the wrong band for its channel ----
+   Between the rules is WHS 000, below the red rule is SY. A style that sells
+   through one channel only cannot take a colour in the other band — but one
+   may already be there, from before the channel was set or from the workbook.
+   Faded, not hidden: it is really there, and someone has to see it to move it. */
+.sheet-colours li.off-channel { opacity: 0.38; }
+.sheet-colours li.off-channel .sheet-colour-name { text-decoration: line-through; }
+
+/* The add button in a band this style does not sell through. Still occupying
+   its row — taking it away would shorten the band and the rules would stop
+   lining up across the block. */
+.mx-sheet .sheet-colour-add button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-style: dotted;
+}
+.mx-sheet .sheet-colour-add button:disabled:hover {
+  border-color: #c4c4c4; color: #8a8a8a;
+}

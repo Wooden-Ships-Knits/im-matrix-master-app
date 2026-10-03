@@ -9,7 +9,7 @@ import { api } from '../api.js';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 // The same card the printed sheet draws, so what is arranged here is
 // what comes out of the printer.
-import SheetCard, { numberCards } from '../sections/SheetCard.jsx';
+import SheetCard, { numberCards, mainRowCount } from '../sections/SheetCard.jsx';
 import AddStyle from '../sections/AddStyle.jsx';
 import Wordmark from '../components/Wordmark.jsx';
 import TbdTray from '../sections/TbdTray.jsx';
@@ -67,14 +67,27 @@ export default function Matrix() {
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
   }, [season, collection, tab]);
 
-  const load = () => {
+  const load = (quiet = false) => {
     if (!season) { setRows(null); return; }
-    setRows(null);
+    // Blanking unmounts every card. The page then collapses to the height of
+    // a spinner, the browser clamps the scroll to the new maximum, and when
+    // the rows come back you are at the top — so adding a style to a long
+    // sheet threw you back to the start of it.
+    //
+    // Only a change of season or collection blanks, because that genuinely is
+    // different content and the top is where you want to be. Everything else
+    // refreshes in place.
+    if (!quiet) setRows(null);
     // include_parked: this is the only screen with somewhere to show them.
     api.matrix({ season, collection, include_parked: true })
       .then(setRows).catch(() => setRows([]));
   };
-  useEffect(load, [season, collection]);
+
+  // Refetch without taking the page away. The scroll position is kept by
+  // simply never removing what holds it up.
+  const refresh = () => load(true);
+
+  useEffect(() => { load(); }, [season, collection]); // eslint-disable-line
 
   // Only this season's blocks. A collection carried over from the previous
   // season would silently match nothing, so it is dropped when the season
@@ -133,7 +146,18 @@ export default function Matrix() {
     }
     // Numbered here so it happens once per collection rather than once per
     // card, and so the S sequence is counted over the whole block.
-    return out.map((g) => ({ ...g, numbers: numberCards(g.items) }));
+    //
+    // mainRows is the tallest main colourway band in the block. Every card is
+    // given it, so the red rule under that band sits at one height all the way
+    // across — a card cannot work this out alone, because it is a fact about
+    // its neighbours. Measured over the whole block rather than a visual row:
+    // the grid rewraps with the window, and a rule that realigned itself on
+    // resize would be worse than one that is simply straight.
+    return out.map((g) => ({
+      ...g,
+      numbers: numberCards(g.items),
+      mainRows: g.items.reduce((most, r) => Math.max(most, mainRowCount(r)), 0),
+    }));
   }, [shown]);
 
   // Saved on blur rather than per keystroke: a cell is a thought, not a
@@ -204,7 +228,7 @@ export default function Matrix() {
       await api.setMatrixOrder(ids);
     } catch (err) {
       toast?.(err.message || 'Could not save the order', 'error');
-      load();
+      refresh();
     }
   };
 
@@ -237,7 +261,7 @@ export default function Matrix() {
       // save_style numbers the collection so this lands last, which is
       // where the slot that created it sits. It used to be left unordered
       // and fell wherever its name happened to sort.
-      load();
+      refresh();
     } catch (err) {
       toast?.(err.message || 'Could not add that style', 'error');
     } finally {
@@ -259,7 +283,7 @@ export default function Matrix() {
         status: 'active',
         matrix_parked: true,
       });
-      load();
+      refresh();
     } catch (err) {
       toast?.(err.message || 'Could not add that style', 'error');
     } finally {
@@ -301,6 +325,27 @@ export default function Matrix() {
     }
   };
 
+  // Moving a colourway between the bands, or within one. Shown straight away
+  // and confirmed after — the row is rebuilt from what was dropped, so the
+  // card does not blink while the server agrees.
+  const arrangeColours = async (style, items) => {
+    const before = {
+      colorways: style.colorways,
+      colorway_zones: style.colorway_zones,
+    };
+    patchRow(style.id, (r) => ({
+      ...r,
+      colorways: items.map((x) => x.color),
+      colorway_zones: Object.fromEntries(items.map((x) => [x.color, x.zone])),
+    }));
+    try {
+      await api.arrangeColorways(style.id, items);
+    } catch (err) {
+      patchRow(style.id, (r) => ({ ...r, ...before }));
+      toast?.(err.message || 'Could not move that colourway', 'error');
+    }
+  };
+
   // The background behind a colourway name. Same shape as the pen above it,
   // against a different field.
   const highlightColour = async (style, colour, value) => {
@@ -323,9 +368,9 @@ export default function Matrix() {
   // Renaming and adding change the list itself, so both take the row back
   // from the server rather than guessing — the name is the key the pen, the
   // background and the sales figures are all filed under.
-  // Rewrite one row in place rather than reloading the season. load() blanks
-  // the grid while it refetches, which reads as the page reloading every time
-  // a name is saved — and the other forty cards did not change.
+  // Rewrite one row in place rather than refetching the season at all. Even a
+  // quiet refresh replaces every row object and re-renders forty cards that
+  // did not change; this touches the one that did.
   const patchRow = (id, fn) => setRows(
     (prev) => prev.map((r) => (r.id === id ? fn(r) : r)));
 
@@ -352,17 +397,23 @@ export default function Matrix() {
       }));
     } catch (err) {
       toast?.(err.message || 'Could not rename that colourway', 'error');
-      load();          // the typed name is wrong; take the row back as stored
+      refresh();          // the typed name is wrong; take the row back as stored
     }
   };
 
   // The name comes from the field on the card now, not a dialog.
-  const addColour = async (style, name) => {
+  const addColour = async (style, name, zone = 'main') => {
     try {
-      const saved = await api.addColorway(style.id, name);
+      const saved = await api.addColorway(style.id, name, zone);
       const added = saved?.color || name.toUpperCase();
       // Appended, which is where the server puts it: sort_order is max + 1.
-      patchRow(style.id, (r) => ({ ...r, colorways: [...r.colorways, added] }));
+      // The band has to be recorded here too, or the new colour renders in
+      // the middle band until the next load whichever button was pressed.
+      patchRow(style.id, (r) => ({
+        ...r,
+        colorways: [...r.colorways, added],
+        colorway_zones: { ...(r.colorway_zones || {}), [added]: saved?.zone || zone },
+      }));
     } catch (err) {
       toast?.(err.message || 'Could not add that colourway', 'error');
     }
@@ -472,14 +523,14 @@ export default function Matrix() {
       setRows((prev) => prev.filter((r) => r.id !== style.id));
     } catch (err) {
       toast?.(err.message || 'Could not remove that style', 'error');
-      load();
+      refresh();
     }
   };
 
   const resetOrder = async (group) => {
     try {
       await api.setMatrixOrder(group.items.map((r) => r.id), true);
-      load();
+      refresh();
     } catch (err) {
       toast?.(err.message || 'Could not reset the order', 'error');
     }
@@ -779,6 +830,8 @@ export default function Matrix() {
                   onChannel={(style, value) => save(style, 'whs_channel', value)}
                   onMarkColour={markColour}
                   onHighlightColour={highlightColour}
+                  onArrange={arrangeColours}
+                  minMainRows={g.mainRows}
                   onRenameColour={renameColour}
                   onAddColour={addColour}
                   onDeleteColour={deleteColour}

@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { Fragment, useId, useRef, useState } from 'react';
 import { GripVertical, Shirt, ImagePlus, Star, Plus, X, Check, StickyNote } from 'lucide-react';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 
@@ -89,9 +89,6 @@ export const HIGHLIGHTS = ['green', 'amber', 'blue'];
 // colour, so one click both marks and unmarks.
 // Kept in step with COLORWAY_MARKS in backend/app/repo.py — this decides
 // which pen comes next, that decides which the server accepts.
-// The ring round a next-season circle. Kept in step with RING_MARKS in
-// backend/app/repo.py — this decides which ring comes next, that decides which
-// the server accepts.
 // The second bar. One colour today; kept as a list so adding another is a
 // line of CSS rather than a change of shape.
 export const BAND_COLOURS = ['purple'];
@@ -101,12 +98,12 @@ export const nextBand = (current) => {
   return at === BAND_COLOURS.length - 1 ? '' : BAND_COLOURS[at + 1];
 };
 
+// The ring round a past-season circle. Not a pen any more: orange is derived
+// from the season links (ran in the two previous seasons) and nothing cycles
+// through these. Yellow is reserved — it is meant to mean "ran before, but
+// that past season is not confirmed", and what confirms a season is still open
+// (docs/caveats.md §10). Kept in step with RING_MARKS in backend/app/repo.py.
 export const RING_MARKS = ['yellow', 'orange'];
-
-export const nextRingMark = (current) => {
-  const at = RING_MARKS.indexOf(current);
-  return at === RING_MARKS.length - 1 ? '' : RING_MARKS[at + 1];
-};
 
 // The background behind a colourway name, as opposed to the pen it is
 // written in. Kept in step with COLORWAY_HIGHLIGHTS in backend/app/repo.py.
@@ -124,11 +121,124 @@ export const litOf = (stored) => (
 export const nextColorwayHighlight = (current) => (
   litOf(current) === 'grey' ? 'yellow' : 'grey');
 
-export const COLORWAY_MARKS = ['green', 'red', 'purple', 'magenta', 'blue'];
+// The pens a person can apply by hand. Green is NOT among them any more: it
+// means "this colour is new this season", which the app works out from the
+// earlier seasons of the same garment, so it is not something to choose.
+// Black — no pen at all — means the colour was carried over.
+// The three bands of the colourway list, top to bottom. Matches
+// COLORWAY_ZONES in backend/app/repo.py.
+export const COLORWAY_ZONES = ['sample', 'main', 'extra'];
 
-export const nextColorwayMark = (current) => {
-  const at = COLORWAY_MARKS.indexOf(current);
-  return at === COLORWAY_MARKS.length - 1 ? '' : COLORWAY_MARKS[at + 1];
+export const zoneOf = (style, colour) => {
+  const z = style?.colorway_zones?.[colour];
+  return COLORWAY_ZONES.includes(z) ? z : 'main';
+};
+
+/**
+ * Whether a colourway may live in this band, given what the style sells
+ * through.
+ *
+ * The two lower bands are the two channels: between the rules is WHS 000,
+ * below the red rule is SY. A style that sells through one channel only has
+ * one band it can put a colour in.
+ *
+ * A blank channel allows both. "Not recorded" is not "neither", and 257
+ * styles came from the workbook without one — locking their colourways away
+ * behind a field nobody has filled in would be wrong.
+ */
+export const allowsZone = (style, zone) => {
+  const channel = style?.whs_channel;
+  if (zone === 'main') return channel !== 'SY ONLY';
+  if (zone === 'extra') return channel !== '000 ONLY';
+  return true;                       // the sample band is not a channel
+};
+
+// The sample band holds one colour: the one the garment is shown in. A
+// second would not be a sample of anything.
+export const ZONE_LIMIT = { sample: 1 };
+
+// How many rows a style's main band needs. The page asks every card in a
+// block and passes the largest back down as `minMainRows`, so the red rule
+// lands at the same height across the block — see the prop.
+export const mainRowCount = (style) => byZone(style).main.length;
+
+export const zoneIsFull = (bands, zone) => (
+  ZONE_LIMIT[zone] != null && (bands[zone] || []).length >= ZONE_LIMIT[zone]);
+
+// The two bands that keep themselves in alphabetical order. The sample band
+// does not: it is the colour the garment is shown in, and where it sits is a
+// decision rather than a letter.
+export const SORTED_ZONES = ['main', 'extra'];
+
+// localeCompare, not <, so AP·RÈS files under A with the rest of the As
+// instead of after Z — a plain comparison sorts by code point.
+const alphabetical = (a, b) => String(a).localeCompare(String(b));
+
+/**
+ * A style's colourways split into the three bands.
+ *
+ * The main and extra bands come back sorted A–Z, so a colour dropped into one
+ * lands where the alphabet puts it and there is no second, invisible order to
+ * disagree with. Sorting on the way out as well as on the way in means a row
+ * stored out of order — by an import, or by an older version of this code —
+ * still reads correctly.
+ *
+ * Anything with no band recorded falls into 'main', so a row the server has
+ * not told us about appears somewhere rather than vanishing between the rules.
+ */
+export const byZone = (style) => {
+  const out = { sample: [], main: [], extra: [] };
+  for (const c of style?.colorways || []) out[zoneOf(style, c)].push(c);
+  for (const z of SORTED_ZONES) out[z].sort(alphabetical);
+  return out;
+};
+
+export const COLORWAY_MARKS = ['red', 'purple', 'magenta', 'blue'];
+
+/**
+ * Which pens a band offers, in the order a click walks through them.
+ *
+ * The two lower bands are the two channels, and each has its own pair — so a
+ * pen means the same thing wherever you see it rather than depending on which
+ * half of the card you are looking at. The sample band is not a channel and
+ * keeps all four.
+ *
+ * The base underneath is not in here: it is black when the colour ran before
+ * and green when it is new, which is read off the data, not chosen.
+ */
+export const ZONE_PENS = {
+  sample: COLORWAY_MARKS,
+  main: ['magenta', 'purple'],
+  extra: ['red', 'blue'],
+};
+
+export const pensFor = (zone) => ZONE_PENS[zone] || COLORWAY_MARKS;
+
+/**
+ * The pen a colourway's name is written in.
+ *
+ * A hand-applied pen wins, because someone meant it. Otherwise the name is
+ * green when the colour is new to this garment and plain black when it ran
+ * before — the two states that are read off the data rather than chosen.
+ */
+export const penOf = (style, colour, zone = null) => {
+  const band = zone || zoneOf(style, colour);
+  const hand = style?.colorway_marks?.[colour];
+  // A hand pen shows only where its band offers it. A colour marked red below
+  // the red rule and then dragged into the middle band would otherwise be the
+  // one red name in a band that cannot produce one. The mark is kept, not
+  // cleared — drag it back and the red returns — but it is not drawn here.
+  if (hand && pensFor(band).includes(hand)) return hand;
+  return (style?.new_colorways || []).includes(colour) ? 'green' : '';
+};
+
+export const nextColorwayMark = (current, zone = 'sample') => {
+  const pens = pensFor(zone);
+  const at = pens.indexOf(current);
+  // A pen this band does not offer — because the colour was marked in the
+  // other band and dragged across — restarts rather than cycling from a
+  // position it does not have.
+  return at === pens.length - 1 ? '' : pens[at + 1] || pens[0];
 };
 
 export const nextHighlight = (current) => {
@@ -241,6 +351,14 @@ export default function SheetCard({
   // Present alongside onEdit: the swatch at the row's right edge cycles the
   // background behind the name.
   onHighlightColour = null,
+  // Present alongside onEdit: drag a colourway between the three bands, and
+  // reorder within one. Given the whole list, in the order it should end up.
+  onArrange = null,
+  // How many rows the main band should occupy, whatever this style has in it.
+  // The block's tallest main band, so the red rule beneath it sits at one
+  // height across every card — a line that steps up and down from card to
+  // card reads as a mistake rather than as a boundary.
+  minMainRows = 0,
   // Present alongside onEdit: rename a colourway, add one, remove one.
   onRenameColour = null,
   onAddColour = null,
@@ -284,16 +402,70 @@ export default function SheetCard({
   // else to do, and it is the biggest thing to aim at.
   const open = onOpen ? () => onOpen(s) : undefined;
 
-  // Whether there is a next-season version at all. Two hollow circles would
-  // say "decided against both channels", which is not the same as "nothing
-  // there yet", so with no next-season style the row stays empty.
-  const hasNext = s.next_sells_sy != null || s.next_sells_000 != null;
+  // Whether this garment ran in the previous season at all — the circles say
+  // where it came FROM, not where it is going. Two hollow circles would read
+  // as "ran, but sold through neither channel", which is not the same as a
+  // style that is new, so a style with no past-season version gets no row.
+  const hasPast = s.prev_sells_sy != null || s.prev_sells_000 != null;
 
   // Adding a colourway happens in the list itself rather than in a dialog:
   // a card usually gains several at once, so the field stays open and clears
   // between them.
+  // Which add-a-colourway bar is open, or false. There is one under each of
+  // the two lower bands, and a shared boolean would open both at once.
   const [adding, setAdding] = useState(false);
   const [newColour, setNewColour] = useState('');
+
+  // Dragging a colourway between the bands. The colour being dragged, and the
+  // band the pointer is over — the second only so the target can show itself,
+  // because an empty band is otherwise a few pixels of nothing to aim at.
+  const [dragColour, setDragColour] = useState(null);
+  const [dropZone, setDropZone] = useState(null);
+
+  const bands = byZone(s);
+
+  /**
+   * Drop the colour being dragged into `zone`.
+   *
+   * Which band is the only decision: main and extra sort themselves A–Z, so
+   * there is no position to aim for inside them — dropping anywhere in a band
+   * means the same thing, which is why the whole band lights up rather than a
+   * line between two rows.
+   *
+   * The whole list is rebuilt and sent, not the one move, so the server has
+   * nothing to work out and the order on screen is the order stored.
+   */
+  const dropOn = (zone) => {
+    const moving = dragColour;
+    setDragColour(null);
+    setDropZone(null);
+    if (!moving || !onArrange) return;
+    // A full band refuses the drop. Dropping the colour already in it back
+    // onto itself is not a second one, so it is allowed through to the
+    // no-op check below.
+    if (zoneIsFull(bands, zone) && !bands[zone].includes(moving)) return;
+    // And a band this style does not sell through refuses it too — dragging
+    // is the other way in, and a button that says no while a drag says yes
+    // would be worse than either.
+    if (!allowsZone(s, zone)) return;
+
+    const next = { sample: [], main: [], extra: [] };
+    for (const z of COLORWAY_ZONES) {
+      for (const c of bands[z]) {
+        if (c !== moving) next[z].push(c);     // lifted out of wherever it was
+      }
+    }
+    next[zone].push(moving);
+    for (const z of SORTED_ZONES) next[z].sort(alphabetical);
+
+    const items = COLORWAY_ZONES.flatMap(
+      (z) => next[z].map((color) => ({ color, zone: z })));
+    // Nothing actually moved — dropped back where it came from.
+    const was = COLORWAY_ZONES.flatMap(
+      (z) => bands[z].map((c) => `${z}:${c}`)).join('|');
+    if (items.map((x) => `${x.zone}:${x.color}`).join('|') === was) return;
+    onArrange(s, items);
+  };
   // The colourway whose delete is waiting to be confirmed. One at a time:
   // the confirm replaces that row's controls, so two at once would be two
   // rows asking the same question.
@@ -302,8 +474,11 @@ export default function SheetCard({
   const submitColour = async () => {
     const name = newColour.trim();
     if (!name) { setAdding(false); return; }
+    // Kept open for the next one; the bar that was open stays the open one.
     setNewColour('');
-    await onAddColour?.(s, name);
+    // `adding` holds which band's button is open, which is the band the
+     // colour belongs in.
+    await onAddColour?.(s, name, adding || 'main');
   };
 
   const fileId = useId();
@@ -433,9 +608,11 @@ export default function SheetCard({
         </div>
       ) : (
         <div className="sheet-next" aria-hidden={onEdit ? undefined : "true"}
-          title={hasNext
-            ? `Next season — SY: ${s.next_sells_sy ? 'yes' : 'no'},`
-              + ` WHS 000: ${s.next_sells_000 ? 'yes' : 'no'}`
+          title={hasPast
+            ? `Repeat of last season — SY: ${s.prev_sells_sy ? 'yes' : 'no'},`
+              + ` WHS 000: ${s.prev_sells_000 ? 'yes' : 'no'}`
+              + (s.past_seasons ? ` · ran in ${s.past_seasons} earlier season`
+                  + `${s.past_seasons === 1 ? '' : 's'}` : '')
             : undefined}>
           {onEdit && (
             <button type="button" className="sheet-next-hit"
@@ -444,27 +621,26 @@ export default function SheetCard({
               onClick={(e) => { e.stopPropagation(); onEdit(s, 'needs_photo', 'true'); }}
               onDoubleClick={(e) => e.stopPropagation()} />
           )}
-          {hasNext && [
-            ['sy', 'next_sy_mark', s.next_sells_sy, 'SY'],
-            ['whs', 'next_000_mark', s.next_sells_000, 'WHS 000'],
-          ].map(([channel, key, on, label]) => {
-            const ring = s[key] || '';
+          {/* The ring is read off the season links, not clicked on. It says
+              the garment ran in BOTH of the two previous seasons, which is a
+              fact about the links — so there is nothing to set, and no way for
+              a hand-applied ring to disagree with the data under it.
+
+              Both circles take the same ring: running two seasons back is a
+              property of the garment, not of one channel.
+
+              Yellow is not drawn. It is meant to mean "ran before, but that
+              past season is not confirmed", and what makes a season confirmed
+              is still open (docs/caveats.md §10). */}
+          {hasPast && [
+            ['sy', s.prev_sells_sy, 'SY'],
+            ['whs', s.prev_sells_000, 'WHS 000'],
+          ].map(([channel, on, label]) => {
             const className = `sheet-next-dot ${channel}${on ? ' on' : ''}`
-              + (ring ? ` ring-${ring}` : '');
-            const title = `Next season, ${label}: ${on ? 'yes' : 'no'}`
-              + (onEdit
-                ? ` — ${ring ? `ringed ${ring}, click for the next` : 'click to ring it'}`
-                : '');
-            if (!onEdit) return <i key={key} className={className} title={title} />;
-            return (
-              <button key={key} type="button" className={className} title={title}
-                aria-label={title}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEdit(s, key, nextRingMark(ring));
-                }}
-                onDoubleClick={(e) => e.stopPropagation()} />
-            );
+              + (s.repeats_two_past ? ' ring-orange' : '');
+            const title = `Last season, ${label}: ${on ? 'yes' : 'no'}`
+              + (s.repeats_two_past ? ' — ran in the two previous seasons' : '');
+            return <i key={channel} className={className} title={title} />;
           })}
         </div>
       )}
@@ -602,8 +778,7 @@ export default function SheetCard({
                     a name written in red there that is black here would read
                     as two different things. */}
                 <th scope="row"
-                  className={s.colorway_marks?.[c]
-                    ? `pen-${s.colorway_marks[c]}` : undefined}>
+                  className={penOf(s, c) ? `pen-${penOf(s, c)}` : undefined}>
                   {breakable(c)}
                 </th>
                 <td>{cell(qty(s, c, 'whs_000'))}</td>
@@ -636,18 +811,88 @@ export default function SheetCard({
           {s.last_season ? 'EXACT REPEAT' : 'NEW'}
         </div>
 
-        <ul className="sheet-colours">
-          {s.colorways.map((c) => {
-            const mark = s.colorway_marks?.[c] || '';
-            const lit = litOf(s.colorway_highlights?.[c]);
-            // Three things on one row, so three targets. The name is text to
-            // be typed in; the pen and the background each get a swatch at the
-            // right edge. Cycling the pen by clicking the name stopped being
-            // possible the moment the name had to be editable.
-            const className = [mark && `pen-${mark}`, `lit-${lit}`]
-              .filter(Boolean).join(' ');
-            return (
-              <li key={c} className={className}>
+        {/* Three bands, ruled apart: the sample colour, the main list, and
+            a third below the red rule. The band is stored per colourway, so a
+            colour is dragged between them rather than being wherever it
+            happens to sit in one long list.
+
+            Each band is its own <ul> so an EMPTY one can still be dropped
+            into — a single list would have no target to aim at once the last
+            colour had been dragged out of a band. */}
+        {COLORWAY_ZONES.map((zone, zi) => {
+          const colours = bands[zone];
+          // The rule above this band. The first band has nothing above it.
+          const rule = zi === 0 ? null : (zi === 1 ? 'black' : 'red');
+          // On paper a rule separating nothing from nothing is a stray line;
+          // while editing it is the boundary you drag across, so it stays.
+          const showRule = rule && (onEdit
+            || (colours.length && (bands[COLORWAY_ZONES[zi - 1]].length
+                                   || zi === 2)));
+          return (
+            <Fragment key={zone}>
+              {showRule && (
+                <div className={`sheet-colour-rule ${rule}`} aria-hidden="true" />
+              )}
+              <ul
+                className={`sheet-colours band-${zone}`
+                  + (dropZone === zone ? ' drop-here' : '')}
+                data-zone={zone}
+                onDragOver={onArrange ? (e) => {
+                  if (!dragColour) return;
+                  // A full band does not light up — it would be offering a
+                  // drop it is about to refuse.
+                  if (zoneIsFull(bands, zone) && !bands[zone].includes(dragColour)) return;
+                  if (!allowsZone(s, zone)) return;   // nothing to light up
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDropZone(zone);
+                } : undefined}
+                onDragLeave={onArrange ? () => setDropZone(null) : undefined}
+                onDrop={onArrange ? (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  dropOn(zone);
+                } : undefined}
+              >
+                {colours.map((c) => {
+                  const lit = litOf(s.colorway_highlights?.[c]);
+                  // Two different things: `mark` is what someone applied by
+                  // hand, which is what the pen cycles through; `pen` is what
+                  // the name is actually written in, which falls back to green
+                  // for a colour new this season.
+                  const mark = s.colorway_marks?.[c] || '';
+                  const pen = penOf(s, c, zone);
+                  const className = [pen && `pen-${pen}`, `lit-${lit}`,
+                    dragColour === c && 'dragging',
+                    // Faded rather than removed: the colour is really there,
+                    // and someone has to be able to drag it where it belongs.
+                    !allowsZone(s, zone) && 'off-channel']
+                    .filter(Boolean).join(' ');
+                  return (
+                    <li key={c} className={className}
+                      draggable={onArrange ? true : undefined}
+                      onDragStart={onArrange ? (e) => {
+                        // Stops the CARD being dragged instead of the row:
+                        // the card is draggable too, for the grid.
+                        e.stopPropagation();
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', c);
+                        setDragColour(c);
+                      } : undefined}
+                      onDragEnd={onArrange ? () => {
+                        setDragColour(null); setDropZone(null);
+                      } : undefined}
+                      onDragOver={onArrange ? (e) => {
+                        if (!dragColour || dragColour === c) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDropZone(zone);
+                      } : undefined}
+                      onDrop={onArrange ? (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropOn(zone);
+                      } : undefined}>
                 {onRenameColour ? (
                   <input
                     className="sheet-colour-name"
@@ -675,14 +920,14 @@ export default function SheetCard({
 
                 {onMarkColour && confirming !== c && (
                   <button type="button" className={`sheet-colour-pen-dot ${
-                    mark ? `pen-${mark}` : 'none'}`}
-                    title={mark
-                      ? `Written in ${mark} — click for the next pen`
+                    pen ? `pen-${pen}` : 'none'}`}
+                    title={pen
+                      ? `Written in ${pen} — click for the next pen`
                       : 'Click to colour this name'}
                     aria-label={`Pen for ${c}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onMarkColour(s, c, nextColorwayMark(mark));
+                      onMarkColour(s, c, nextColorwayMark(mark, zone));
                     }}
                     onDoubleClick={(e) => e.stopPropagation()}>A</button>
                 )}
@@ -734,44 +979,64 @@ export default function SheetCard({
                     <X size={10} strokeWidth={2.6} />
                   </button>
                 ))}
-              </li>
-            );
-          })}
-          {/* {s.colorways.length === 0 && !onAddColour && (
-            <li className="none">no colourways</li>
-          )} */}
-          {onAddColour && (
-            <li className="sheet-colour-add">
-              {adding ? (
-                <input
-                  className="sheet-colour-name"
-                  autoFocus
-                  value={newColour}
-                  placeholder="Colourway name"
-                  aria-label={`New colourway for ${s.name}`}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setNewColour(e.target.value.toUpperCase())}
-                  // Enter keeps the field open for the next one; a card
-                  // usually gains several colours in one sitting. Escape or
-                  // clicking away closes it.
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); submitColour(); }
-                    if (e.key === 'Escape') { setNewColour(''); setAdding(false); }
-                  }}
-                  onBlur={() => { if (!newColour.trim()) setAdding(false); }}
-                />
-              ) : (
-                <button type="button"
-                  title={`Add a colourway to ${s.name}`}
-                  aria-label={`Add a colourway to ${s.name}`}
-                  onClick={(e) => { e.stopPropagation(); setAdding(true); }}
-                  onDoubleClick={(e) => e.stopPropagation()}>
-                  <Plus size={11} strokeWidth={2.6} />
-                </button>
-              )}
-            </li>
-          )}
-        </ul>
+                    </li>
+                  );
+                })}
+                {/* One add bar under every band, each adding into the band
+                    it sits under — including the sample band, above the black
+                    rule. */}
+                {onAddColour && !zoneIsFull(bands, zone) && (
+                <li className={`sheet-colour-add ${zone}`}>
+                  {adding === zone ? (
+              <input
+                className="sheet-colour-name"
+                autoFocus
+                value={newColour}
+                placeholder="Colourway name"
+                aria-label={`New colourway for ${s.name}`}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setNewColour(e.target.value.toUpperCase())}
+                // Enter keeps the field open for the next one; a card
+                // usually gains several colours in one sitting. Escape or
+                // clicking away closes it.
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); submitColour(); }
+                  if (e.key === 'Escape') { setNewColour(''); setAdding(false); }
+                }}
+                onBlur={() => { if (!newColour.trim()) setAdding(false); }}
+              />
+            ) : (
+              <button type="button"
+                disabled={!allowsZone(s, zone)}
+                title={allowsZone(s, zone)
+                  ? `Add a colourway to ${s.name}`
+                  : `${s.name} sells through ${s.whs_channel} — a colourway`
+                    + ' here would be on the other channel'}
+                aria-label={`Add a colourway to ${s.name}`}
+                onClick={(e) => { e.stopPropagation(); setAdding(zone); }}
+                onDoubleClick={(e) => e.stopPropagation()}>
+                <Plus size={11} strokeWidth={2.6} />
+              </button>
+            )}
+                </li>
+                )}
+
+                {/* Blank rows LAST, so the add bar sits directly under the
+                    colours — at the top of the band when there are none —
+                    rather than being pushed to the bottom by the padding.
+                    Only the main band: the sample band is one row by
+                    definition, and below the red rule a card is free to be
+                    whatever height its content makes it. */}
+                {zone === 'main' && Array.from(
+                  { length: Math.max(0, minMainRows - colours.length) },
+                  (_, i) => (
+                    <li key={`pad-${i}`} className="sheet-colour-pad"
+                      aria-hidden="true" />
+                  ))}
+              </ul>
+            </Fragment>
+          );
+        })}
 
         {/* What has been prepared. Filled means done, the way the workbook
             greys a row in. */}

@@ -80,9 +80,10 @@ export const api = {
     request(`/api/matrix/${styleId}/colorway`, {
       method: 'PATCH', body: JSON.stringify({ color, mark }),
     }),
-  addColorway: (styleId, color) =>
+  // `zone` is the band it lands in — there is an add button under each.
+  addColorway: (styleId, color, zone = 'main') =>
     request(`/api/matrix/${styleId}/colorway`, {
-      method: 'POST', body: JSON.stringify({ color }),
+      method: 'POST', body: JSON.stringify({ color, zone }),
     }),
   deleteColorway: (styleId, color) =>
     request(`/api/matrix/${styleId}/colorway?color=${encodeURIComponent(color)}`,
@@ -125,6 +126,12 @@ export const api = {
       Object.entries(filters).filter(([, v]) => v !== '' && v != null));
     return request(`/api/styles/matrix?${qs}`);
   },
+
+  // Place a style's colourways: which band each sits in, and in what order.
+  arrangeColorways: (styleId, colorways) =>
+    request(`/api/matrix/${styleId}/colorways/arrange`, {
+      method: 'POST', body: JSON.stringify({ colorways }),
+    }),
 
   // One row per garment: the seasons it ran in, under whatever names.
   lookup: (q) => request(`/api/styles/lookup?q=${encodeURIComponent(q || '')}`),
