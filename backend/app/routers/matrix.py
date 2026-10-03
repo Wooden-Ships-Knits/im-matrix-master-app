@@ -82,9 +82,28 @@ def colorway_highlights():
 def add_colorway(style_id: int, payload: dict = Body(...)):
     """Add a colourway to this style, at the end of its list."""
     try:
-        return repo.add_colorway(style_id, payload.get("color"))
+        return repo.add_colorway(style_id, payload.get("color"),
+                                 payload.get("zone") or "main")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/{style_id}/colorways/arrange")
+def arrange_colorways(style_id: int, payload: dict = Body(...)):
+    """Place this style's colourways: band and order, the whole list at once."""
+    items = payload.get("colorways")
+    if not isinstance(items, list):
+        raise HTTPException(400, "colorways must be a list")
+    try:
+        return {"moved": repo.arrange_colorways(style_id, items)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/colorway-zones")
+def colorway_zones():
+    """The bands a colourway can sit in, top to bottom."""
+    return list(repo.COLORWAY_ZONES)
 
 
 @router.patch("/{style_id}/colorway")

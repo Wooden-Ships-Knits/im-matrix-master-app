@@ -706,7 +706,8 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             # row id that this rewrite destroys, so restoring it would either
             # dangle or fail the constraint.
             cur.execute("""
-                SELECT ws_tag_color, mark, product_colorway_id, whs_channel,
+                SELECT ws_tag_color, mark, highlight, zone,
+                       product_colorway_id, whs_channel,
                        reps_color, color_sequence, sell_restriction,
                        subbed_on, sub_reason
                   FROM style_colorways WHERE style_id = %s
@@ -930,6 +931,26 @@ def matrix_rows(season=None, collection=None, q=None,
     earlier season, which the product link already answers.
     """
     sql = """
+        -- Every name a colourway on a style has been called, so a colour that
+        -- was carried over and then renamed is still recognised as carried
+        -- over. The team adds it under last season's name and renames it,
+        -- which is what leaves the trail this walks.
+        --
+        -- Recursive so a colour renamed twice still reaches its original.
+        -- Seeded from name_history rather than from every colourway, because
+        -- that table is small and the join only expands where a rename exists.
+        WITH RECURSIVE colour_was AS (
+            SELECT style_id,
+                   upper(btrim(new_value)) AS now_name,
+                   upper(btrim(old_value)) AS was_name
+              FROM name_history WHERE scope = 'colorway'
+            UNION
+            SELECT c.style_id, c.now_name, upper(btrim(h.old_value))
+              FROM colour_was c
+              JOIN name_history h
+                ON h.style_id = c.style_id AND h.scope = 'colorway'
+               AND upper(btrim(h.new_value)) = c.was_name
+        )
         SELECT s.id, s.style_name AS name, s.ply, s.photo_url AS image_path,
                se.code AS season, col.name AS collection,
                s.gauge_detail, s.whs_channel,
@@ -946,6 +967,33 @@ def matrix_rows(season=None, collection=None, q=None,
                ARRAY(SELECT cw.ws_tag_color FROM style_colorways cw
                       WHERE cw.style_id = s.id
                       ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways,
+               -- Which of those colours are NEW — written in green on the
+               -- card, where a carried-over colour is plain black.
+               --
+               -- "Carried over" means the colour ran in ANY earlier season of
+               -- this garment, not only the one before: a colour that sits out
+               -- a season and comes back was still not invented this season.
+               --
+               -- A style with no earlier season at all matches nothing here,
+               -- so every one of its colours is new. That is intended — a new
+               -- style's colours are all new.
+               ARRAY(
+                   SELECT cw.ws_tag_color FROM style_colorways cw
+                    WHERE cw.style_id = s.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM styles o
+                            JOIN seasons se2 ON se2.id = o.season_id
+                            JOIN style_colorways pcw ON pcw.style_id = o.id
+                           WHERE o.product_id = s.product_id
+                             AND se2.season_number < se.season_number
+                             AND (upper(btrim(pcw.ws_tag_color))
+                                    = upper(btrim(cw.ws_tag_color))
+                                  OR upper(btrim(pcw.ws_tag_color)) IN (
+                                       SELECT w.was_name FROM colour_was w
+                                        WHERE w.style_id = s.id
+                                          AND w.now_name
+                                                = upper(btrim(cw.ws_tag_color)))))
+                    ORDER BY cw.sort_order, cw.ws_tag_color) AS new_colorways,
                -- The pen colour on a colourway's name, keyed by the name
                -- rather than folded into the array above: the sales table
                -- looks its quantities up by that name, and turning the list
@@ -956,6 +1004,13 @@ def matrix_rows(season=None, collection=None, q=None,
                      FROM style_colorways cw
                     WHERE cw.style_id = s.id AND cw.mark IS NOT NULL
                ), '{}'::jsonb) AS colorway_marks,
+               -- Which band of the ruled list each colour sits in. Keyed by
+               -- name like the pen and the background, for the same reason.
+               coalesce((
+                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.zone)
+                     FROM style_colorways cw
+                    WHERE cw.style_id = s.id
+               ), '{}'::jsonb) AS colorway_zones,
                coalesce((
                    SELECT jsonb_object_agg(cw.ws_tag_color, cw.highlight)
                      FROM style_colorways cw
@@ -967,7 +1022,7 @@ def matrix_rows(season=None, collection=None, q=None,
                -- gauge is listed here as well as inside the style_code concat
                -- above: used there it builds a string, and a column that is
                -- only ever concatenated never reaches the sheet.
-               s.matrix_highlight, s.next_sy_mark, s.next_000_mark,
+               s.matrix_highlight, s.past_sy_mark, s.past_000_mark,
                s.matrix_band, s.needs_photo, s.notes,
                s.gauge, s.gauge_detail, s.matrix_construction,
                s.construction, s.based_body,
@@ -1036,6 +1091,47 @@ def matrix_rows(season=None, collection=None, q=None,
                  WHERE o.product_id = s.product_id
                    AND se2.season_number = se.season_number + 2
                  ORDER BY o.id LIMIT 1) AS next_sells_000,
+               -- The circles above the photo. A repeat is the same half of
+               -- the year one year earlier, so the previous season is
+               -- season_number - 2: F26 (57) repeats F25 (55).
+               --
+               -- NULL where this garment did not run then, which is what the
+               -- card reads to decide whether to draw the circles at all —
+               -- a NEW style has no past-season row and gets none.
+               (SELECT o.sell_sy FROM styles o
+                  JOIN seasons se2 ON se2.id = o.season_id
+                 WHERE o.product_id = s.product_id
+                   AND se2.season_number = se.season_number - 2
+                 ORDER BY o.id LIMIT 1) AS prev_sells_sy,
+               (SELECT o.sell_000 FROM styles o
+                  JOIN seasons se2 ON se2.id = o.season_id
+                 WHERE o.product_id = s.product_id
+                   AND se2.season_number = se.season_number - 2
+                 ORDER BY o.id LIMIT 1) AS prev_sells_000,
+               -- How many earlier seasons this garment ran in. Not used to
+               -- colour anything yet: orange is meant to mean "ran in the two
+               -- previous seasons" and yellow "ran before but unconfirmed",
+               -- and what makes a past season confirmed is still open
+               -- (docs/caveats.md). Shown on the circles' tooltip so the
+               -- person applying the ring by hand can see it.
+               (SELECT count(DISTINCT o.season_id) FROM styles o
+                  JOIN seasons se2 ON se2.id = o.season_id
+                 WHERE o.product_id = s.product_id
+                   AND se2.season_number < se.season_number) AS past_seasons,
+               -- The orange ring: ran in BOTH of the two previous seasons.
+               -- F26 (57) wants F25 (55) and F24 (53) — same half of the year,
+               -- one and two years back. Computed, not stored: it is a fact
+               -- about the links, and a stored copy would be a second answer
+               -- to the same question.
+               (EXISTS (SELECT 1 FROM styles o
+                          JOIN seasons se2 ON se2.id = o.season_id
+                         WHERE o.product_id = s.product_id
+                           AND se2.season_number = se.season_number - 2)
+                AND EXISTS (SELECT 1 FROM styles o
+                              JOIN seasons se2 ON se2.id = o.season_id
+                             WHERE o.product_id = s.product_id
+                               AND se2.season_number = se.season_number - 4)
+               ) AS repeats_two_past,
                -- {colourway: {whs_000: n, sy: n}} for the period asked for.
                -- Absent rather than zero when nothing was fetched: a blank
                -- cell means "not known", a 0 means "sold none".
@@ -1665,11 +1761,12 @@ MATRIX_FIELDS = [
 # it is writable through the same endpoint.
 HIGHLIGHT_COLOURS = ["green", "amber", "blue"]
 
-# The ring round a next-season circle. Same idea as the highlighter: a pen,
-# not a fact about the garment. Kept in step with RING_MARKS in
-# frontend/src/sections/SheetCard.jsx; frontend/test compares the two.
+# The ring round a past-season circle. Unlike the highlighter this is NOT a
+# pen: orange is derived from the season links (repeats_two_past) and nothing
+# writes it. Yellow is reserved for "ran before but unconfirmed", pending a
+# definition of confirmed — docs/caveats.md §10. Kept in step with RING_MARKS
+# in frontend/src/sections/SheetCard.jsx; frontend/test compares the two.
 RING_MARKS = ["yellow", "orange"]
-RING_KEYS = ("next_sy_mark", "next_000_mark")
 
 # The second bar. One colour today; a list so a second is CSS, not a migration.
 BAND_COLOURS = ["purple"]
@@ -1695,10 +1792,14 @@ CHANNEL_SELLS = {
     "SY ONLY":  (True,  False),
 }
 
+# RING_KEYS is deliberately NOT here any more. The circle rings are computed
+# from the season links (repeats_two_past), so accepting a written one would
+# put a hand-set value underneath a derived one with nothing to say which the
+# card was showing. The columns stay for now — the yellow rule is still open
+# and may want somewhere to record a confirmation — but nothing writes them.
 _MATRIX_KEYS = ({f["key"] for f in MATRIX_FIELDS}
                 | {"matrix_highlight", "matrix_band", "needs_photo", "notes"}
-                | {"whs_channel"}
-                | set(RING_KEYS))
+                | {"whs_channel"})
 
 _MATRIX_NUMERIC = {f["key"] for f in MATRIX_FIELDS if f.get("numeric")}
 
@@ -1784,10 +1885,6 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
             raise ValueError(
                 f"{text!r} is not a band colour"
                 f" — expected one of {', '.join(BAND_COLOURS)}")
-        if key in RING_KEYS and text and text not in RING_MARKS:
-            raise ValueError(
-                f"{text!r} is not a ring colour"
-                f" — expected one of {', '.join(RING_MARKS)}")
         if key == "matrix_highlight" and text and text not in HIGHLIGHT_COLOURS:
             raise ValueError(
                 f"{text!r} is not a highlight colour"
@@ -1905,7 +2002,10 @@ def yarn_codes(min_colours: int = 5) -> list[str]:
 # Kept in step with COLORWAY_MARKS in frontend/src/sections/SheetCard.jsx —
 # the card decides which pen comes next, this decides which it will accept, and
 # a list that drifts means a click the server refuses. frontend/test does check.
-COLORWAY_MARKS = ["green", "red", "purple", "magenta", "blue"]
+# Green is gone from this list on purpose: it means "new this season",
+# which matrix_rows works out (new_colorways), so nothing writes it.
+# Black — no mark — means the colour was carried over.
+COLORWAY_MARKS = ["red", "purple", "magenta", "blue"]
 
 # The background behind a colourway name, as opposed to the pen it is
 # written in. Yellow first because that is the one reached for; grey is
@@ -1962,8 +2062,18 @@ def _set_colorway(style_id: int, colour: str, column: str, value: str,
             return dict(row)
 
 
-def add_colorway(style_id: int, name: str) -> dict:
-    """Add a colourway to a style, at the end of its list.
+# The bands of the ruled colourway list, top to bottom. Matches
+# COLORWAY_ZONES in frontend/src/sections/SheetCard.jsx.
+COLORWAY_ZONES = ("sample", "main", "extra")
+
+
+def add_colorway(style_id: int, name: str, zone: str = "main") -> dict:
+    """Add a colourway to a style, at the end of its band.
+
+    `zone` is the band it lands in — there is an add button under each one,
+    and a colour typed into the third band's button belongs in the third band.
+    Without it every button added to the middle one and the colour appeared
+    somewhere the person was not looking.
 
     The unique index on (style_id, ws_tag_color) does the duplicate check, so
     two people adding the same colour at once get one row and one error rather
@@ -1975,22 +2085,66 @@ def add_colorway(style_id: int, name: str) -> dict:
     colour = (name or "").strip().upper()
     if not colour:
         raise ValueError("a colourway needs a name")
+    band = (zone or "main").strip() or "main"
+    if band not in COLORWAY_ZONES:
+        raise ValueError(
+            f"{band!r} is not a band — expected one of "
+            f"{', '.join(COLORWAY_ZONES)}")
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("SELECT 1 FROM styles WHERE id = %s", (style_id,))
             if not cur.fetchone():
                 raise ValueError(f"no style {style_id}")
             cur.execute("""
-                INSERT INTO style_colorways (style_id, ws_tag_color, sort_order)
-                SELECT %s, %s, coalesce(max(sort_order) + 1, 0)
+                INSERT INTO style_colorways (style_id, ws_tag_color, zone, sort_order)
+                SELECT %s, %s, %s, coalesce(max(sort_order) + 1, 0)
                   FROM style_colorways WHERE style_id = %s
                 ON CONFLICT (style_id, ws_tag_color) DO NOTHING
-             RETURNING ws_tag_color AS color, sort_order
-            """, (style_id, colour, style_id))
+             RETURNING ws_tag_color AS color, zone, sort_order
+            """, (style_id, colour, band, style_id))
             row = cur.fetchone()
             if not row:
                 raise ValueError(f"{colour!r} is already a colourway of this style")
             return dict(row)
+
+
+def arrange_colorways(style_id: int, items: list[dict]) -> int:
+    """Place a style's colourways: which band each is in, and in what order.
+
+    The whole list is sent, not a move, for the same reason set_matrix_order
+    takes a whole block — the server never has to work out what the screen
+    meant by "third", and there are no gaps to run out of.
+
+    A colour the caller leaves out is left exactly as it is rather than being
+    deleted or pushed to the end: dropping a row is what delete_colorway is
+    for, and a partial list arriving from a stale screen must not quietly
+    rearrange what it did not mention.
+    """
+    rows = []
+    for i, item in enumerate(items or []):
+        colour = _clean((item or {}).get("color"))
+        zone = _clean((item or {}).get("zone")) or "main"
+        if not colour:
+            continue
+        if zone not in COLORWAY_ZONES:
+            raise ValueError(
+                f"{zone!r} is not a band — expected one of "
+                f"{', '.join(COLORWAY_ZONES)}")
+        rows.append((colour, zone, i))
+    if not rows:
+        raise ValueError("nothing to arrange")
+
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            moved = 0
+            for colour, zone, order in rows:
+                cur.execute("""
+                    UPDATE style_colorways SET zone = %s, sort_order = %s
+                     WHERE style_id = %s
+                       AND upper(btrim(ws_tag_color)) = upper(btrim(%s))
+                """, (zone, order, style_id, colour))
+                moved += cur.rowcount
+            return moved
 
 
 def rename_colorway(style_id: int, colour: str, name: str) -> dict:
