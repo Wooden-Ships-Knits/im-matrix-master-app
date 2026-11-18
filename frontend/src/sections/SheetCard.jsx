@@ -811,6 +811,70 @@ export default function SheetCard({
           {s.last_season ? 'EXACT REPEAT' : 'NEW'}
         </div>
 
+        {/* What the names below are naming. The workbook prints "TAG: C1" —
+            one yarn colour per garment — or "TAG: C1/C2" where a name like
+            "BLUE GLEN/CASHEW" is two, or "TAG: C1 STRIPE". Without it a
+            two-colour name is indistinguishable from a colour called
+            "BLUE GLEN/CASHEW", and the difference decides how many yarns
+            get ordered.
+
+            Always rendered, blank when unset, so the rule beneath the sample
+            band sits at one height across the block. The label only appears
+            once there is something to label — a printed sheet of bare "TAG:"
+            lines would be noise. */}
+        <div className={`sheet-tag${s.colorway_tag ? '' : ' empty'}`}>
+          {onEdit ? (
+            <>
+              <span className="sheet-tag-label" aria-hidden="true">TAG:</span>
+              <input
+                className="sheet-tag-input"
+                // Keyed on the stored value so a save made elsewhere — or one
+                // the server normalised — reaches an uncontrolled field.
+                key={s.colorway_tag || ''}
+                defaultValue={s.colorway_tag || ''}
+                aria-label={`Colourway tag of ${s.name}`}
+                placeholder="C1"
+                // A list, not a <select>: the five known schemes are offered
+                // and filtered as it is typed, but a sixth can still be typed
+                // straight in — and once it is, the server hands it back to
+                // everyone's list. A closed menu would send the first new
+                // scheme into the notes instead.
+                list="colorway_tags-list"
+                title={'How this style\u2019s colourways are named'
+                  + ' \u2014 C1, C1/C2, C1 STRIPE'}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+                onInput={(e) => {
+                  // Same as the colourway names: upper-cased as it is typed so
+                  // the field shows what will be stored, caret left alone.
+                  const at = e.target.selectionStart;
+                  e.target.value = e.target.value.toUpperCase();
+                  e.target.setSelectionRange(at, at);
+                }}
+                // On blur, not per keystroke — a tag is a thought, and a
+                // request per character would race itself.
+                onBlur={(e) => {
+                  const next = e.target.value.trim().toUpperCase();
+                  if (next === (s.colorway_tag || '')) return;
+                  onEdit(s, 'colorway_tag', next);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.target.blur();
+                  if (e.key === 'Escape') {
+                    e.target.value = s.colorway_tag || '';
+                    e.target.blur();
+                  }
+                }}
+              />
+            </>
+          ) : s.colorway_tag ? (
+            <span className="sheet-tag-value">
+              <span className="sheet-tag-label">TAG:</span>
+              {' '}{breakable(s.colorway_tag)}
+            </span>
+          ) : null}
+        </div>
+
         {/* Three bands, ruled apart: the sample colour, the main list, and
             a third below the red rule. The band is stored per colourway, so a
             colour is dragged between them rather than being wherever it

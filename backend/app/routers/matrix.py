@@ -66,6 +66,35 @@ def update(style_id: int, payload: dict = Body(...)):
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.get("/design")
+def design(
+    season: str | None = Query(None),
+    collection: str | None = Query(None),
+    style_id: int | None = Query(None),
+):
+    """The design sheets: slot by colourway, one sheet per style."""
+    return repo.design_rows(season=season, collection=collection,
+                            style_id=style_id)
+
+
+@router.put("/design/{style_id}/marks")
+def design_marks(style_id: int, payload: dict = Body(...)):
+    """Place this style's slot markers on its photo. The whole map at once."""
+    try:
+        return repo.set_design_marks(style_id, payload.get("marks") or {})
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/colorway-tags")
+def colorway_tags():
+    """The colourway naming schemes the TAG field offers. Not a closed list —
+    the field takes anything typed, and what is typed joins the list."""
+    return repo.colorway_tags()
+
+
 @router.get("/colorway-marks")
 def colorway_marks():
     """The pen colours a colourway name can be written in."""

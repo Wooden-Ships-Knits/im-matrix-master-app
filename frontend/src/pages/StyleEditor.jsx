@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer,
-  ClipboardList,ListChecks, LayoutGrid,
-} from 'lucide-react';
+import { Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer, ClipboardList, ListChecks, LayoutGrid, Palette } from 'lucide-react';
 import { api } from '../api.js';
 import { roundFixed } from '../format.js';
 import {
@@ -142,6 +139,11 @@ export default function StyleEditor() {
   const [costing, setCosting] = useState([]);
   const [preview, setPreview] = useState('');
 
+  // Raised on the Matrix layout, shown here. Kept out of `form` on purpose:
+  // the editor never writes it, and anything in `form` counts towards the
+  // unsaved-changes prompt, which this must not.
+  const [needsPhoto, setNeedsPhoto] = useState(false);
+
   const [serverImage, setServerImage] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
   const previewUrl = useMemo(
@@ -184,6 +186,7 @@ export default function StyleEditor() {
     api.getStyle(id)
       .then((s) => {
         hydrate(toForm(s), s.image_path);
+        setNeedsPhoto(!!s.needs_photo);
         setLoading(false);
         api.costing(id).then(setCosting).catch(() => setCosting([]));
         loadNames(id);
@@ -248,6 +251,9 @@ export default function StyleEditor() {
         image = r.image_path;
       }
       hydrate(toForm(saved), image);
+      // The save answers with the stored row, so a flag raised on the Matrix
+      // while this was open shows up rather than staying as it was on load.
+      setNeedsPhoto(!!saved.needs_photo);
       loadNames(saved.id);
       api.costing(saved.id).then(setCosting).catch(() => setCosting([]));
       showToast(asDraft ? 'Draft saved' : 'Style saved');
@@ -333,6 +339,7 @@ export default function StyleEditor() {
           <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link> 
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
 
           {/* Straight to another style without going back to Browse. It
               leaves through leaveTo, so unsaved work still prompts. */}
@@ -411,6 +418,16 @@ export default function StyleEditor() {
                       </ul>
                     )}
                   </div>
+                  {/* Set on the Matrix layout, where the sheet being handed
+                      to the photographer is read. Shown here so somebody who
+                      opens the style knows a new picture is wanted before
+                      they look at the old one. Read-only: the Matrix raises
+                      and clears it, and the link below goes straight there. */}
+                  {needsPhoto && (
+                    <p className="ed-needs-photo" role="status">
+                      <Camera size={15} aria-hidden="true" /> NEED NEW PHOTO
+                    </p>
+                  )}
                   <div className="style-photo">
                     {imgSrc ? (
                       <img src={imgSrc} alt={form.name || 'Style photo'} />

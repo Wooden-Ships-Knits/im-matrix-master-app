@@ -828,6 +828,11 @@ select.input {
 
 /* ================= Report tabs & lookup ================= */
 .rep-tabs { display: flex; gap: 22px; flex-wrap: wrap; border-bottom: 1px solid var(--border); }
+
+/* The two sheets over one season. Reuses .card-title.tab below, so the
+   switch reads as the same kind of control as Attributes/Layout — which it
+   is, one level up. */
+.mx-sheets { display: flex; gap: 22px; flex-wrap: wrap; align-items: baseline; }
 .card-title.tab {
   background: none; border: 0; padding: 0 0 8px; cursor: pointer;
   color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px;
@@ -1404,6 +1409,103 @@ select.sheet-attr-input:hover { background: rgba(255, 255, 255, 0.45); }
 .mx-add-input:focus { outline: none; border-color: #1b1b1b; }
 .mx-add-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* The second way to fill the slot. Set below the Add row and quieter than
+   it, because typing a name is the common case and importing is the one you
+   go looking for — but it is a real button, not a hint, because it is the
+   only route to a linked repeat. */
+.mx-add-import {
+  margin-top: 2px; width: 100%; padding: 6px 4px; cursor: pointer;
+  border: 1px dashed var(--border, #d4d4d4); border-radius: 6px;
+  background: transparent; color: #6f6f6f;
+  font: inherit; font-size: 0.68rem; font-weight: 700; line-height: 1.25;
+}
+.mx-add-import:hover { border-color: #1b1b1b; color: #1b1b1b; background: #fafafa; }
+.mx-add-import:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 1px; }
+
+/* ---- Import an existing style ----
+   Taller than a confirm dialog because it holds a list, and capped so a long
+   result set scrolls inside it rather than running off the screen. */
+.import-dialog { max-width: 560px; }
+.import-dialog h3 { margin-bottom: 4px; }
+.import-sub { margin: 0 0 16px !important; font-size: 0.9rem !important; }
+
+.import-search {
+  display: flex; align-items: center; gap: 8px;
+  border: 1px solid var(--border, #d4d4d4); border-radius: 9px;
+  padding: 0 10px; color: #8a8a8a;
+}
+.import-search:focus-within { border-color: #1b1b1b; color: #1b1b1b; }
+.import-search .input {
+  border: 0; padding: 10px 0; flex: 1; min-width: 0; font-size: 0.95rem;
+}
+.import-search .input:focus { outline: none; }
+
+/* One fixed height for the list and for the panel that replaces it, so the
+   dialog does not jump when a style is picked. */
+.import-results, .import-chosen { margin-top: 14px; min-height: 248px; }
+.import-results { max-height: 248px; overflow-y: auto; }
+.import-results ul { list-style: none; margin: 0; padding: 0; }
+.import-hint { margin: 10px 2px !important; font-size: 0.88rem !important; }
+
+.import-hit {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 8px; border: 0; border-radius: 8px; background: transparent;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.import-hit:hover, .import-hit:focus-visible {
+  background: #f4f4f4; outline: none;
+}
+.import-thumb {
+  flex: 0 0 auto; width: 30px; height: 36px; border-radius: 4px;
+  background: #f1f1f1; color: #9a9a9a;
+  display: flex; align-items: center; justify-content: center; overflow: hidden;
+}
+.import-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.import-hit-name {
+  flex: 1; min-width: 0; font-size: 0.86rem; font-weight: 700;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.import-hit-meta {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+  font-size: 0.74rem; color: var(--muted, #6f6f6f);
+}
+.import-hit-meta .none { color: #c06; }
+.import-season {
+  display: inline-block; padding: 1px 6px; border-radius: 4px;
+  background: #ececec; color: #4a4a4a; font-size: 0.72rem; font-weight: 800;
+}
+/* The Enter glyph appears on the row being aimed at, so the list reads as
+   pickable rather than as a report. */
+.import-pick { opacity: 0; flex: 0 0 auto; color: #8a8a8a; }
+.import-hit:hover .import-pick, .import-hit:focus-visible .import-pick { opacity: 1; }
+
+.import-chosen { display: flex; flex-direction: column; gap: 14px; }
+.import-chosen-head {
+  display: flex; align-items: center; gap: 9px; flex-wrap: wrap;
+  font-size: 0.95rem;
+}
+.import-chosen-head strong { flex: 1; min-width: 0; }
+.import-rename { display: flex; flex-direction: column; gap: 5px; }
+.import-rename span { font-size: 0.8rem; font-weight: 700; color: var(--muted, #6f6f6f); }
+.import-rename .input { font-weight: 700; }
+
+.import-carries { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.import-carries li {
+  position: relative; padding-left: 20px;
+  font-size: 0.82rem; line-height: 1.35; color: var(--muted, #6f6f6f);
+}
+.import-carries li::before {
+  position: absolute; left: 0; top: 0; font-weight: 800;
+}
+.import-carries .yes::before { content: '✓'; color: #1a7f45; }
+.import-carries .no::before { content: '×'; color: #b4383c; }
+
+.import-error {
+  margin: 0 !important; color: #b4383c; font-size: 0.85rem !important;
+  font-weight: 600;
+}
+.import-chosen .dialog-actions { margin-top: auto; }
+
 /* The search bar sits between choosing what to load and the sheet itself, so
    it reads as narrowing rather than as another filter to fill in. */
 .mx-search {
@@ -1800,6 +1902,42 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 }
 .mx-sheet .sheet-repeat { font-size: 0.62rem; }
 .sheet-grid.one-row .sheet-repeat { font-size: var(--chip-pt, 4.5pt); }
+
+/* ---- The colourway naming scheme ----
+   "TAG: C1" under the repeat line, left-aligned the way the workbook writes
+   it. The height is reserved whether or not the style has one: most do not
+   yet, and a line that appeared on some cards and not others would step the
+   rule under the sample band up and down across a block.
+
+   One owner for that height — this rule. The input below fills it rather
+   than setting its own, so a card being edited is exactly as tall as one
+   being read. */
+.sheet-tag {
+  display: flex; align-items: center; gap: 3px;
+  height: 8pt; margin-top: 2px; overflow: hidden;
+  font-size: 5.5pt; font-weight: 700; letter-spacing: 0.03em;
+  color: #1b1b1b; text-align: left;
+}
+.sheet-tag-label { font-weight: 800; }
+.sheet-tag-value { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.mx-sheet .sheet-tag { height: 15px; font-size: 0.58rem; }
+.sheet-grid.one-row .sheet-tag { font-size: var(--chip-pt, 4.5pt); }
+
+/* The field IS the row: flat and frameless, because a bordered box on every
+   column of a mostly-empty sheet reads as 60 things to fill in. It shows
+   itself on hover and focus instead. */
+.sheet-tag-input {
+  flex: 1 1 auto; min-width: 0; width: 100%; height: 100%;
+  padding: 0; border: 0; border-radius: 2px; background: transparent;
+  font: inherit; color: inherit; text-transform: uppercase;
+}
+.sheet-tag-input:hover { background: #f1f1f1; }
+.sheet-tag-input:focus { outline: none; background: #fff8c5; }
+.sheet-tag-input::placeholder { color: #c4c4c4; font-weight: 500; }
+/* Nothing typed yet: the label is as faint as the placeholder beside it, so
+   an empty row reads as empty rather than as a tag called nothing. */
+.sheet-tag.empty .sheet-tag-label { color: #c4c4c4; }
 
 /* ---- The note on a style ----
    The button sits top-left of the photo, opposite the Add photo control, and
@@ -2235,3 +2373,287 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .mx-sheet .sheet-colour-add button:disabled:hover {
   border-color: #c4c4c4; color: #8a8a8a;
 }
+
+
+/* ---- The Pricing Matrix ----
+   The same block shape as the layout sheet, because a price is looked up by
+   where the garment sits and two sheets with different columns would mean
+   counting twice. Twelve to a block, as F27 MATRIX PRICING has them, rather
+   than the layout sheet's five: there is no colourway list here, so the
+   column is narrow and twelve fit across a page.
+
+   Proportions come from the workbook's own rows: a 12-row photo under a
+   30pt number, a 57.75pt name (two lines at 10pt), then 30pt rows. */
+.price-grid {
+  display: grid; grid-template-columns: repeat(12, 1fr);
+  gap: 6mm 2mm; align-content: start;
+}
+@media (max-width: 1500px) { .price-grid { grid-template-columns: repeat(8, 1fr); } }
+@media (max-width: 1100px) { .price-grid { grid-template-columns: repeat(6, 1fr); } }
+@media (max-width: 760px)  { .price-grid { grid-template-columns: repeat(3, 1fr); } }
+
+.price-card {
+  display: flex; flex-direction: column; gap: 3px;
+  min-width: 0; overflow: hidden;
+}
+.price-index {
+  height: 18px; display: flex; align-items: center; justify-content: center;
+  font-size: 0.8rem; font-weight: 800; color: #1b1b1b;
+}
+.price-photo {
+  aspect-ratio: 3 / 3.4; border: 1px solid var(--border, #ddd); border-radius: 3px;
+  background: #fafafa; color: #c4c4c4; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.price-photo img { width: 100%; height: 100%; object-fit: cover; }
+/* Two lines of name, always — the workbook gives the row 57.75pt whatever
+   the name is, so the rows below it start at one height across a block. */
+.price-name {
+  height: 2.7em; overflow: hidden;
+  font-size: 0.68rem; font-weight: 800; line-height: 1.35; text-align: center;
+  color: #1b1b1b;
+}
+
+.price-rows { margin: 0; display: flex; flex-direction: column; }
+.price-row {
+  display: flex; align-items: center; gap: 4px;
+  min-height: 19px; padding: 1px 2px;
+  border-top: 1px solid #e4e4e4;
+  font-size: 0.66rem;
+}
+.price-row dt {
+  flex: 0 0 auto; font-weight: 700; color: #8a8a8a;
+  text-transform: uppercase; letter-spacing: 0.02em; font-size: 0.6rem;
+}
+.price-row dd { margin: 0; flex: 1; min-width: 0; text-align: right; }
+/* The two rows the workbook sets at 16pt, which is what makes them read as
+   the answer and the rest as working. */
+.price-row.big { min-height: 23px; }
+.price-row.big dd, .price-row.big .price-input { font-size: 0.86rem; font-weight: 800; }
+.price-row.note {
+  border-top: 0; justify-content: center;
+  font-size: 0.6rem; font-weight: 700; color: #b4383c;
+  letter-spacing: 0.03em;
+}
+.price-row.note dd { text-align: center; }
+
+/* Frameless, like the TAG field: a bordered box on every row of every column
+   of a mostly-unpriced sheet reads as hundreds of things to fill in. */
+.price-input {
+  width: 100%; height: 100%; min-height: 15px; padding: 0; border: 0;
+  border-radius: 2px; background: transparent;
+  font: inherit; color: inherit; text-align: right;
+}
+.price-input:hover { background: #f1f1f1; }
+.price-input:focus { outline: none; background: #fff8c5; }
+.price-row.empty dt { color: #c4c4c4; }
+
+@media print {
+  .price-grid { grid-template-columns: repeat(12, 1fr); }
+  .price-card { break-inside: avoid; }
+  .price-input { background: transparent !important; }
+}
+
+/* ---- The design sheets ----
+   The workbook's shape: slots down the side, colourways across, photo under.
+   One card per style so a sheet is a sheet, and so a print breaks between
+   them rather than through one. */
+.design-sheet { margin-top: 18px; break-inside: avoid; }
+.design-title {
+  margin: 0 0 12px; font-size: 1.02rem; font-weight: 800;
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+}
+.design-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem; color: var(--muted, #6f6f6f); font-weight: 700;
+}
+.design-open { margin-left: auto; }
+.design-empty { margin: 0; color: var(--muted, #6f6f6f); font-size: 0.9rem; }
+
+/* A style can use 17 slots across 4 colourways. The table scrolls rather
+   than the page, so the filters above stay put. */
+.design-scroll { overflow-x: auto; }
+.design-table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+.design-table th, .design-table td {
+  border: 1px solid #d0d0d0; padding: 4px 8px; text-align: left;
+  vertical-align: middle; white-space: nowrap;
+}
+.design-table th[scope="row"] {
+  font-weight: 800; background: #f1f1f1; position: sticky; left: 0;
+  min-width: 86px;
+}
+/* The ply row is the quieter of the pair — it is a number qualifying the
+   yarn under it, not a fact of its own. */
+.design-ply th[scope="row"], .design-ply td {
+  background: #ececec; font-size: 0.78rem; color: #4a4a4a;
+}
+.design-yarn td { font-weight: 600; }
+.design-yarn td.blank { background: repeating-linear-gradient(
+  45deg, transparent, transparent 5px, #f6f6f6 5px, #f6f6f6 10px); }
+/* The colourway's own name, which is built from the C rows above it — that
+   is what the TAG on the Matrix card is counting. */
+.design-tag th[scope="row"], .design-tag td {
+  background: #d9d9d9; font-weight: 800; border-top: 2px solid #1b1b1b;
+}
+
+.design-photo {
+  margin-top: 14px; display: flex; justify-content: center;
+}
+
+.design-nophoto {
+  display: flex; align-items: center; gap: 8px; color: #b4b4b4;
+  font-size: 0.85rem; padding: 26px;
+}
+.design-print { margin-top: 14px; }
+
+@media print {
+  .band, .chk-filters, .design-print, .design-open, .card-sub { display: none !important; }
+  .design-sheet { break-after: page; border: 0; box-shadow: none; padding: 0; }
+  .design-scroll { overflow: visible; }
+  .design-table th[scope="row"] { position: static; }
+}
+/* A trim sitting in a yarn slot. Marked rather than hidden: it is really in
+   the bill of materials, and the PLY above it counts fastenings, not
+   strands (docs/yarn-split.md §5). */
+.design-yarn td.is-trim { color: #6f6f6f; font-weight: 500; }
+.design-trim {
+  margin-left: 6px; padding: 0 5px; border-radius: 3px;
+  background: #ececec; color: #8a6f3d;
+  font-size: 0.68rem; font-weight: 800; letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ---- Placing the slot markers on the photo ----
+   The workbook draws an arrow from C1 to the body and C2 to the yoke. These
+   are those arrows: one label per slot, dragged onto the part of the garment
+   that uses it, and dragged off again to put it back in the tray. */
+.design-place {
+  margin-top: 14px; display: flex; gap: 20px;
+  align-items: flex-start; justify-content: center; flex-wrap: wrap;
+}
+.design-photo-wrap { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+/* The window onto the photo. Scrolls itself rather than the page, so zooming
+   in to place a label does not move the sheet out from under you. */
+.design-photo-box {
+  max-width: 340px; max-height: 440px; overflow: auto;
+  border: 1px solid var(--border, #ddd); border-radius: 4px;
+  background: #fafafa;
+}
+/* The drop target, so it has to be the positioning context for the markers
+   sitting on it — their coordinates are fractions of this box, which is why
+   they stay on the right part of the garment at any zoom. */
+.design-photo { position: relative; width: 320px; }
+.design-photo img {
+  display: block; width: 100%; height: auto;
+  user-select: none; -webkit-user-drag: none;
+}
+
+.design-zoom { display: flex; align-items: center; gap: 6px; justify-content: center; }
+.design-zoom-at {
+  min-width: 52px; padding: 3px 6px; cursor: pointer;
+  border: 1px solid transparent; border-radius: 6px; background: transparent;
+  font: inherit; font-size: 0.76rem; font-weight: 700; color: var(--muted, #6f6f6f);
+}
+.design-zoom-at:hover:not(:disabled) { border-color: var(--border, #d4d4d4); color: #1b1b1b; }
+.design-zoom-at:disabled { cursor: default; }
+
+.design-tray {
+  flex: 0 1 300px; min-width: 190px; align-self: stretch;
+  border: 1px dashed var(--border, #d4d4d4); border-radius: 8px;
+  padding: 12px 14px; background: #fcfcfc;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.design-tray-title {
+  font-size: 0.72rem; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted, #6f6f6f);
+}
+.design-tray-slots { display: flex; flex-wrap: wrap; gap: 8px; }
+.design-tray-hint {
+  margin: auto 0 0; font-size: 0.78rem; line-height: 1.4;
+  color: var(--muted, #6f6f6f);
+}
+
+.design-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 38px; height: 28px; padding: 0 9px;
+  border: 0; background: transparent; color: #1b1b1b;
+  font: inherit; font-size: 0.9rem; font-weight: 800; letter-spacing: 0.02em;
+  /* A white outline rather than a frame, so the label stays readable over a
+     dark garment without putting a box on the photograph. Eight shadows
+     rather than -webkit-text-stroke, which strokes INSIDE the glyph and
+     thins the letters instead of surrounding them. */
+  text-shadow:
+    -1.5px -1.5px 0 #fff,  1.5px -1.5px 0 #fff,
+    -1.5px  1.5px 0 #fff,  1.5px  1.5px 0 #fff,
+    -1.5px  0     0 #fff,  1.5px  0     0 #fff,
+     0     -1.5px 0 #fff,  0      1.5px 0 #fff;
+  cursor: grab; touch-action: none;       /* the pointer drag owns the gesture */
+}
+.design-mark:disabled { cursor: default; }
+.design-mark.in-tray { position: static; }
+/* Placed: the coordinates are the label's CENTRE, so it points at the spot
+   rather than hanging below and right of it. */
+.design-photo .design-mark {
+  position: absolute; transform: translate(-50%, -50%); z-index: 2;
+}
+.design-mark.dragging { opacity: 0.3; cursor: grabbing; }
+/* Says the drop will land, while it is in the air. Inset so it does not
+   change the photo's size and shift everything beside it. */
+.design-photo.drop-here { outline: 2px solid #1b1b1b; outline-offset: -2px; }
+/* While a label is in the air nothing else should claim the pointer — a
+   half-selected table behind the drag is what makes one feel broken. */
+.design-place:has(.design-mark.dragging) { user-select: none; }
+.design-mark.ghost {
+  position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none;
+  /* No transform here: the drag writes one straight to the element every
+     pointermove, and a rule would be overwritten on the first move and
+     fight it on the frame before. */
+  opacity: 0.95; cursor: grabbing;
+}
+
+@media print {
+  .design-tray, .design-zoom { display: none; }
+  .design-place { justify-content: center; }
+  /* Printed at rest whatever the screen is showing: a page is not scrollable
+     and a zoomed photo would simply be cropped. */
+  .design-photo-box {
+    max-width: none; max-height: none; overflow: visible; border: 0;
+  }
+  .design-photo { width: 320px !important; }
+}
+
+/* ---- NEED NEW PHOTO, on the style editor ----
+   The same flag the Matrix layout raises, in the same red, above the picture
+   it is about. A readout here: the Matrix sets and clears it, and Show in
+   Matrix sits directly below. */
+.ed-needs-photo {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  margin: 0 0 8px; padding: 7px 10px; border-radius: 6px;
+  background: var(--chan-sy); color: #fff;
+  font-size: 0.78rem; font-weight: 800; letter-spacing: 0.05em;
+}
+
+/* The last three of the style code, at the right of a linked-season row.
+   Tabular figures so the numbers line up down the column. */
+.past-sku {
+  flex: 0 0 auto; margin-left: auto; padding: 1px 7px; border-radius: 4px;
+  background: #f1f1f1; color: #4a4a4a;
+  font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.past-sku.none { color: #b4b4b4; font-weight: 600; }
+
+/* A linked season and the way to detach just that one. Side by side, because
+   a button inside a button is not valid markup. */
+.past-row-wrap { display: flex; align-items: stretch; gap: 6px; }
+.past-row-wrap .past-row { flex: 1 1 auto; min-width: 0; }
+.past-unlink {
+  flex: 0 0 auto; width: 30px; cursor: pointer;
+  border: 1px solid var(--border, #ddd); border-radius: 8px;
+  background: #fff; color: #9a9a9a;
+  display: flex; align-items: center; justify-content: center;
+}
+/* Quiet until aimed at: breaking a link is not the common thing to do with
+   a row, and a red cross on every row reads as a list of mistakes. */
+.past-row-wrap:hover .past-unlink { color: #6f6f6f; }
+.past-unlink:hover { border-color: #b4383c; color: #b4383c; background: #fff6f6; }
+.past-unlink:focus-visible { outline: 2px solid #b4383c; outline-offset: 1px; }

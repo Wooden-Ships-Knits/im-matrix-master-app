@@ -67,6 +67,12 @@ export const api = {
       method: 'POST', body: JSON.stringify({ style_id: styleId }),
     }),
   unlinkStyle: (id) => request(`/api/styles/${id}/unlink`, { method: 'POST' }),
+  // Copy an existing style into a season as the same garment. `id` is the
+  // style being imported FROM; the copy comes back.
+  importStyle: (id, data) =>
+    request(`/api/styles/${id}/import`, {
+      method: 'POST', body: JSON.stringify(data),
+    }),
   createStyle: (data) =>
     request('/api/styles', { method: 'POST', body: JSON.stringify(data) }),
   updateStyle: (id, data) =>
@@ -76,6 +82,19 @@ export const api = {
   // Matrix Master: what the garment is, and how the sheet is laid out.
   matrixFields: () => request('/api/matrix/fields'),
   yarnCodes: () => request('/api/matrix/yarn-codes'),
+  colorwayTags: () => request('/api/matrix/colorway-tags'),
+  // The design sheets: which yarn sits in each knit slot, per colourway.
+  // Where the C1/C2/C3 markers sit on a style's photo. The whole map goes
+  // at once: dragging one is a change to the arrangement, not to a field.
+  setDesignMarks: (styleId, marks) =>
+    request(`/api/matrix/design/${styleId}/marks`, {
+      method: 'PUT', body: JSON.stringify({ marks }),
+    }),
+  design: (filters = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(filters).filter(([, v]) => v !== '' && v != null));
+    return request(`/api/matrix/design?${qs}`);
+  },
   markColorway: (styleId, color, mark) =>
     request(`/api/matrix/${styleId}/colorway`, {
       method: 'PATCH', body: JSON.stringify({ color, mark }),

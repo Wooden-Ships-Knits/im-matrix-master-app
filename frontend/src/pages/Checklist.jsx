@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, Check, Ruler} from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, Check, Ruler, Palette } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
 import Wordmark from '../components/Wordmark.jsx';
@@ -141,6 +141,7 @@ export default function Checklist() {
           <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
         </div>
       </header>
 

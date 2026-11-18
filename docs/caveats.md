@@ -274,7 +274,7 @@ A colour already sitting in a band its channel does not allow is **faded and
 struck through, not removed**. It is really there, and somebody has to be able
 to see it to drag it where it belongs. The add button in such a band is
 disabled rather than hidden, because removing it would take a row out of the
-band and the rules would stop lining up across the block (§12).
+band and the rules would stop lining up across the block.
 
 ### The pens each band offers
 
@@ -305,9 +305,255 @@ but it is blank on all 3,580 rows, so there is nothing to derive it from. If
 that column is ever populated the pink could become automatic the way green
 did for a new colour.
 
+### The TAG line
+
+Under the repeat line each column of the layout sheet carries a short code —
+`TAG: C1`, `TAG: C1/C2`, `TAG: C1 STRIPE`. It says how many yarn colours the
+names below it are naming, which is the difference between a colourway called
+`BLUE GLEN/CASHEW` and a two-colour garment whose colours are `BLUE GLEN` and
+`CASHEW`. Read wrong, it is the wrong number of yarns ordered.
+
+Stored as free text on the style (`styles.colorway_tag`), upper-cased by the
+server. The field **offers** a list and **accepts** anything: five schemes are
+suggested and filtered as it is typed, and a sixth can be typed straight in.
+Deliberately open, for the same reason the Yarn field is — the scheme somebody
+needs is the one that is not on the list yet, and a field that refuses it
+sends them to the notes, where nothing can read it.
+
+The list grows by itself (`repo.colorway_tags`): the seed, then every tag any
+style already carries, so one person typing `C1/C2 STRIPE` puts it on
+everybody's list. **That is the only way the vocabulary grows — there is no
+second source to read it from.**
+
+### Where the five came from
+
+The team gave C1, C1/C2, C1/C2/C3, C1 MARL and C1 STRIPE. The imported data
+agrees with all five and adds nothing, which is worth recording because it
+means the list is short by evidence rather than by omission:
+
+| | |
+|---|---|
+| Splitting 3,580 colourway names on `/` | 1 colour on 1,848, 2 on 1,610, 3 on 122, **4 on none** |
+| Qualifier words in style names | STRIPE 106, MARL 28, JACQUARD 1, INTARSIA 0, OMBRE 0 |
+
+So `C1/C2/C3` is the ceiling because the data has no fourth colour, and MARL
+and STRIPE are the qualifiers because they are the only two that exist.
+
+What the counts do NOT settle is whether the qualifiers combine with the
+colour counts — 62 STRIPE styles have two-colour names and 22 have three, so
+`C1/C2 STRIPE` is very likely real. It is not in the seed list because nobody
+has said it is a tag; the day someone types it, it is on the list.
+
+### Nothing to backfill from
+
+**Every style starts blank.** The TAG row is not in the IM MASTER workbooks —
+all five were searched and the string `TAG:` appears in none of them. What
+those workbooks do have is `C1 ENDS` … `C9 ENDS`, which is a different thing:
+yarn components in a colourway's bill of materials, not the garment's colour
+scheme.
+
+The tags live in the separate layout workbook the Matrix screen was drawn
+from, which this project has never imported — nor has anything else from that
+sheet, including the running order. So the tags get typed, 1,466 of them, or
+a reader for that second workbook gets written.
+
 ---
 
-## 12. Open
+## 12. Importing a style into a new season
+
+Most of a new season's sheet is the last one's. The add slot on the Layout
+tab offers **Import an existing style** beside typing a name: pick any style
+from any season and the copy lands in this collection.
+
+**The copy and the link are one action, and there is no way to do the first
+without the second.** The link is what `related_styles` reads, what the
+circle rings are derived from, and what makes a sales line for last season's
+name merge with this season's. It is also the step that gets forgotten when a
+repeat is typed out by hand — which is the whole reason this exists.
+
+### Sharing the product IS the link
+
+The copy takes the source's `product_id` at insert rather than being created
+and then passed to `link_styles`. Two reasons:
+
+- `related_styles` joins on `product_id`. Sharing it is not a step towards
+  being linked; it is what being linked means.
+- `link_styles` merges two products into one, and its merge moves
+  `product_identifiers` across but **not** `product_colorways`. Creating a
+  product and then merging it away would orphan the colour identities the
+  sales matcher reads — invisibly, since every row still exists.
+
+`_ensure_product` runs on the source first, so a source with no product does
+not fail the way the manual link does ("Both styles need a product first").
+
+### What carries, and what does not
+
+The rule is: the **garment** carries, the **season's working state** does not.
+
+| carries | does not |
+|---|---|
+| name (renameable on import), style number, TAG, photo | checklist ticks, notes |
+| colourways, their band, and each one's yarns, %, ends | pen colours, highlights |
+| sizes and weights, measurements, trims | position on the sheet, parked flag |
+| operations and minutes | prices of every kind |
+| the attribute block — gauge, body, construction, sleeve, packing, … | sales |
+
+The style number is kept, not reissued: 239 of the 267 linked products in the
+data carry one number across every season, and the copy is the same garment.
+
+Prices are the one judgement call in that table. They are renegotiated every
+season, and a carried price looks exactly like a set one on the card — there
+is no way for the person reading it to tell. So they start empty.
+
+### The deny-list, and what it costs
+
+`_IMPORT_SKIP` names what is *not* copied; everything else on `styles` is,
+read from `information_schema` at run time. That way a spec column added
+later is copied without anyone remembering to add it.
+
+The cost is the other direction: **a new per-season column has to be added to
+`_IMPORT_SKIP`, or it will be copied.** That trade is deliberate — most of
+the 85 columns describe what the garment is, and a wrong copy is visible on
+the card and editable, where a missing copy is invisible.
+
+The checklist is not on the list because nothing copies it: there is no
+`INSERT INTO style_steps` in the import at all. A test asserts that absence,
+since ticks carried from last season would claim work nobody has done.
+
+---
+
+## 13. The Pricing Matrix
+
+A second sheet over the same season and collection, switched beside the
+Matrix Master heading. Same blocks, same styles, same two running sequences
+for the card numbers — a price is looked up by where the garment sits on the
+sheet, and two sheets numbered differently would mean counting columns twice.
+
+### What `F27 MATRIX PRICING.xlsx` could and could not say
+
+The file is the layout, and **it is empty of prices**. All five sheets, one
+per collection, are ruled and styled and carry 159 numeric cells between
+them — every one of which is a card index number. Not one price.
+
+So the shape is known and the content is not:
+
+| established | still open |
+|---|---|
+| one column per style, twelve to a block | which price is on which row |
+| index row → photo (12 rows) → name (2 lines) → 8 rows of 30pt | what the second "FAF / FAH" row is for |
+| two of those 8 rows set at 16pt, the largest font in the block | whether the note row is per-style or per-block |
+| both 16pt rows read `FAF / FAH`; one row reads `NO X/L` | |
+| titles alternate "MATRIX PRICING" and "000 PRICE MATRIX" | |
+| long collections split "(PAGE 1 OF 2)" | |
+
+`FAF / FAH` is the finishing location: the column exists and holds FAF on
+413 styles, FAH on 308 and BOTH on 283.
+
+The title saying "000 PRICE MATRIX" is worth noting against the data:
+`price_000` is **empty on all 1,466 styles**, as are `sy_retail_price_usd`,
+`sy_mark_up` and `final_sale_price_usd`. The only prices the import actually
+carries are `whls_retail_price_usd` (91%) and `whls_line_price_usd` (74%).
+Whatever the rows turn out to be, three of the seven price columns have never
+held anything.
+
+### The rows are data
+
+`PRICING_ROWS` in `frontend/src/sections/PriceCard.jsx` is the stack, top to
+bottom, and the card renders from it. Settling what the rows are is editing
+that list — not the card, not the CSS, not the query, which already returns
+every price column plus the finishing location and the style number.
+
+What is in it today is a **placeholder with the right shape**, not an answer.
+
+---
+
+## 14. The Design sheets
+
+`/design`, reached from the Design tile. One sheet per style, as the workbook
+keeps them: the knit slots down the side, the colourways across, the photo
+beneath.
+
+```
+                 ALMOND BUTTER/HUSKY BEIGE   SILVER DEW/FRIGID GRAY
+    C1 PLY       2                           2
+    C1           YST ALMOND BUTTER - 872     YST SILVER DEW - 968
+    C2 PLY       2                           2
+    C2           YST HUSKY BEIGE - 506       YST FRIGID GRAY - 871
+    TAG COLOR    ALMOND BUTTER/HUSKY BEIGE   SILVER DEW/FRIGID GRAY
+```
+
+Nothing new is stored. Every part of it was already in the database:
+
+| sheet | column |
+|---|---|
+| `C1`, `C2`, `C3` | `colorway_yarns.slot` |
+| the yarn | `yarn_colors.name` through `yarn_color_id` |
+| **PLY** | `colorway_yarns.ends` |
+| TAG COLOR | `style_colorways.ws_tag_color` |
+| the title | the same `style_code` concat the Matrix uses |
+
+**PLY, ENDS and `ends` are three names for one number** — how many strands
+are held together. The workbook's column is `C1 ENDS`, the design sheet calls
+it `C1 PLY`. `styles.ply` is a different column, filled on 4 styles of 1,467,
+and is not this.
+
+### Why it is a page and not a panel
+
+The style editor's BOM section shows one colourway's bill of materials at a
+time. Nothing in the app could show that C2 is HUSKY BEIGE in one colourway
+and FRIGID GRAY in another — and reading across that row is the whole job. It
+is what catches a slot nobody changed when a colourway was copied.
+
+Read-only for the same reason the editor keeps the add-a-line and
+remove-a-line controls: a second place to edit the same thing is a second
+place to get it wrong.
+
+### Trims show up in the C rows
+
+25 of the 251 cells in F26 · COTTON are not yarn. `XBP 729 2 CM-DARK ROAST`
+is a button sitting in C3 with PLY 3, which on an unmarked sheet reads as
+three strands of yarn rather than three buttons.
+
+So a cell says whether it is a trim, by name prefix — the only signal that
+separates them, since trims sit in slots 2 to 11 mixed in with yarns (§13,
+`yarn-split.md` §5). The flag is **display only**; nothing writes it, and it
+does not pre-empt the open question of where trims should live.
+
+### Placing the slot markers
+
+Beside the photo is a tray holding one label per slot the style uses — C1 and
+C2 for MERRY CREW CHUNKY, because those are the rows its bill of materials
+comes to. Drag one onto the part of the garment that uses it; drag it off
+again to put it back. That is the workbook's C1 and C2 arrows, which live in
+its drawing layer and have never been imported.
+
+Stored on `styles.design_marks` as `{"1": {"x": 0.34, "y": 0.22}}` — a jsonb
+map rather than a table, because it is presentation: a handful of coordinates
+per style, always read and written with the sheet, never joined to or
+filtered on.
+
+**The coordinates are fractions of the photo, 0 to 1, not pixels.** The sheet
+is read on screen and printed on paper at different sizes, and a pixel offset
+that sat on the yoke in the browser would be somewhere else on the page.
+
+Three decisions worth keeping:
+
+- **The whole map is written, not one marker.** Dragging C2 somewhere new is
+  one change to an arrangement of five labels, and sending the arrangement
+  avoids a merge nobody would get right with two sheets open.
+- **Off the photo means unplaced**, so there is no separate remove to find.
+  One gesture does both.
+- **An out-of-range position is clamped, not refused.** A drag that ends a
+  pixel past the edge is a drag to the edge; failing the save would lose the
+  whole arrangement over something nobody can see.
+
+A marker is drawn only for a slot the style actually has, so a stale entry —
+C9 on a style that now has two yarns — draws nothing and the two real labels
+still appear in the tray.
+
+---
+
+## 15. Open
 
 - No cutover date, no data owner (§2). Both are `strategy.md` parallel-track items.
 - The Phase 0 checklist (`logic.md` §6) — eleven unconfirmed rules.
@@ -317,3 +563,18 @@ did for a new colour.
 - Host and port for deployment (`config-contract.md` §7).
 - **What makes a past-season repeat "confirmed"** (§10). Until it is decided,
   the circle rings stay hand-applied and neither colour is derived.
+- **Where the colourway TAG codes come from** (§11). They are not in the IM
+  MASTER workbooks, so either the layout workbook gets an importer or the team
+  types every one. Nothing else from that workbook has been imported either,
+  which makes this one case of a bigger gap rather than a field on its own.
+- **Whether a qualifier can combine with a colour count** — `C1/C2 STRIPE`
+  and the like (§11). The data says it probably can; nobody has confirmed it,
+  so it is not seeded, only typeable.
+- **What the eight rows of the Pricing Matrix hold** (§13). The F27 template
+  is blank, so the layout is known and the content is not. `PRICING_ROWS`
+  carries a placeholder until somebody says.
+- **Whether `1708` and `1708 B` are one `YCA BLACK B`** — 84 of the 104 BOM
+  lines in the yarn merge wait on it (`yarn-split.md` §4).
+- **Whether trims belong in the BOM or in `style_trims`** — 39% of
+  `yarn_colors` is zips, stamps and buttons, and `style_trims` has no writer
+  at all (`yarn-split.md` §5).

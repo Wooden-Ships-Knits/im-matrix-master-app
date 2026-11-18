@@ -7,6 +7,7 @@ import StyleEditor from './pages/StyleEditor.jsx';
 import Report from './pages/Report.jsx';
 import Checklist from './pages/Checklist.jsx';
 import Matrix from './pages/Matrix.jsx';
+import Design from './pages/Design.jsx';
 import PrintSheet from './pages/PrintSheet.jsx';
 import Login from './pages/Login.jsx';
 import { readSession, isOperator, SESSION_EXPIRED } from './session.js';
@@ -59,6 +60,7 @@ export default function App() {
         <Route path="/report" element={<Report />} />
         <Route path="/checklist" element={<Checklist />} />
         <Route path="/matrix" element={<Matrix />} />
+        <Route path="/design" element={<Design />} />
         <Route path="/print" element={<PrintSheet />} />
         <Route path="/edit/:id" element={<StyleEditor />} />
       </Routes>

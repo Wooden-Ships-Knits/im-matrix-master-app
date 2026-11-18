@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus,
-  Trash2, Check, X,
-} from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
@@ -11,6 +8,8 @@ import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 // what comes out of the printer.
 import SheetCard, { numberCards, mainRowCount } from '../sections/SheetCard.jsx';
 import AddStyle from '../sections/AddStyle.jsx';
+import ImportStyle from '../sections/ImportStyle.jsx';
+import PriceCard from '../sections/PriceCard.jsx';
 import Wordmark from '../components/Wordmark.jsx';
 import TbdTray from '../sections/TbdTray.jsx';
 
@@ -37,11 +36,22 @@ export default function Matrix() {
   const [fields, setFields] = useState([]);
   const [steps, setSteps] = useState([]);
   const [yarnCodes, setYarnCodes] = useState([]);
+  const [colorwayTags, setColorwayTags] = useState([]);
+  // The collection an import is being made into, or null. Held by name
+  // rather than as a boolean: the dialog has to know which block it was
+  // opened from, because that is the collection the copy lands in.
+  const [importInto, setImportInto] = useState(null);
   const [rows, setRows] = useState(null);
   const [season, setSeason] = useState(params.get('season') || '');
   const [collection, setCollection] = useState(params.get('collection') || '');
   const [query, setQuery] = useState('');
   const [tab, setTab] = useState(params.get('tab') === 'layout' ? 'layout' : 'grid');
+  // Which of the two sheets the page is showing. The season and collection
+  // pickers are shared, so this is a mode rather than another tab —
+  // Attributes and Layout are two views of the Matrix Master, and the
+  // Pricing Matrix is not a third view of it.
+  const [sheet, setSheet] = useState(
+    params.get('sheet') === 'pricing' ? 'pricing' : 'master');
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null);
 
@@ -49,6 +59,9 @@ export default function Matrix() {
   useEffect(() => { api.matrixFields().then(setFields).catch(() => setFields([])); }, []);
   useEffect(() => { api.checklistSteps().then(setSteps).catch(() => setSteps([])); }, []);
   useEffect(() => { api.yarnCodes().then(setYarnCodes).catch(() => setYarnCodes([])); }, []);
+  useEffect(() => {
+    api.colorwayTags().then(setColorwayTags).catch(() => setColorwayTags([]));
+  }, []);
 
   // A season is required. Without one this would read every style of every
   // season into one screen, and "COTTON" would appear five times over —
@@ -61,11 +74,12 @@ export default function Matrix() {
   useEffect(() => {
     const next = new URLSearchParams(params);
     for (const [key, value] of [['season', season], ['collection', collection],
-                                ['tab', tab === 'layout' ? 'layout' : '']]) {
+                                ['tab', tab === 'layout' ? 'layout' : ''],
+                                ['sheet', sheet === 'pricing' ? 'pricing' : '']]) {
       if (value) next.set(key, value); else next.delete(key);
     }
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
-  }, [season, collection, tab]);
+  }, [season, collection, tab, sheet]);
 
   const load = (quiet = false) => {
     if (!season) { setRows(null); return; }
@@ -185,6 +199,16 @@ export default function Matrix() {
       // avoid a flicker.
       const saved = await api.updateMatrix(row.id, { [key]: value });
       if (saved && typeof saved === 'object') patch(saved);
+      // A tag nobody had used before joins the list the moment it is saved,
+      // rather than at the next page load. The server will offer it to
+      // everyone else from their next load — this is only so the person who
+      // invented it sees it on the card they are about to fill in next.
+      if (key === 'colorway_tag') {
+        const added = saved?.colorway_tag;
+        if (added) {
+          setColorwayTags((prev) => (prev.includes(added) ? prev : [...prev, added]));
+        }
+      }
     } catch (err) {
       patch({ [key]: before === '' ? null : before });
       toast?.(err.message || 'Could not save that', 'error');
@@ -548,15 +572,29 @@ export default function Matrix() {
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
         </div>
       </header>
 
       <main className="page">
         <section className="card card-pad">
-          <h2 className="card-title">Matrix Master</h2>
+          {/* Two sheets over one season and collection. A switch rather
+              than two pages, because picking the season again to see what the
+              same styles cost is the kind of step that stops people looking. */}
+          <div className="mx-sheets" role="tablist" aria-label="Which sheet">
+            <button type="button" role="tab" aria-selected={sheet === 'master'}
+              className={`card-title tab${sheet === 'master' ? ' on' : ''}`}
+              onClick={() => setSheet('master')}>Matrix Master</button>
+            <button type="button" role="tab" aria-selected={sheet === 'pricing'}
+              className={`card-title tab${sheet === 'pricing' ? ' on' : ''}`}
+              onClick={() => setSheet('pricing')}>Pricing Matrix</button>
+          </div>
           <p className="card-sub">
-            What each garment is, and the order the sheet shows them in. Both
-            save as you go, and both are what gets printed.
+            {sheet === 'pricing'
+              ? `What each garment costs, in the order the sheet shows them in.
+                 Saves as you go, and is what gets printed.`
+              : `What each garment is, and the order the sheet shows them in. Both
+                 save as you go, and both are what gets printed.`}
           </p>
 
           <div className="chk-filters">
@@ -647,7 +685,7 @@ export default function Matrix() {
             )}
           </div>
 
-          {season && (
+          {season && sheet === 'master' && (
           <div className="rep-tabs" role="tablist" style={{ marginTop: 18 }}>
             <button type="button" role="tab" aria-selected={tab === 'grid'}
               className={`card-title tab${tab === 'grid' ? ' on' : ''}`}
@@ -662,7 +700,7 @@ export default function Matrix() {
             job from the season and collection above: those decide what gets
             loaded at all. Hence its own bar, and only once there is something
             to search. */}
-        {tab === 'grid' && shown.length > 0 && (
+        {sheet === 'master' && tab === 'grid' && shown.length > 0 && (
           <section className="card card-pad mx-empty" style={{ marginTop: 18 }}>
             <AddStyle season={season} collections={collections}
               collection={collection} busy={creating}
@@ -715,7 +753,7 @@ export default function Matrix() {
 
 
 
-        {tab === 'grid' && shown.length > 0 && (
+        {sheet === 'master' && tab === 'grid' && shown.length > 0 && (
           <section className="card chk-card">
             <div className="chk-scroll">
               <table className="chk-grid mx-grid">
@@ -806,7 +844,7 @@ export default function Matrix() {
         {/* The sheet itself, editable. The cards are the ones that print,
             so the arrangement and the attributes are judged in the shape they
             will be read in rather than in a table that looks nothing like it. */}
-        {tab === 'layout' && groups.map((g) => (
+        {sheet === 'master' && tab === 'layout' && groups.map((g) => (
           <section className="card mx-sheet" key={g.name}>
             <div className="mx-layout-head">
               <h3 className="card-title">{g.name}</h3>
@@ -825,7 +863,8 @@ export default function Matrix() {
                   index={g.numbers[r.id]}
                   view="matrix"
                   steps={steps}
-                  options={{ yarn_codes: yarnCodes }}
+                  options={{ yarn_codes: yarnCodes,
+                            colorway_tags: colorwayTags }}
                   onEdit={(style, key, value) => save(style, key, value)}
                   onChannel={(style, value) => save(style, 'whs_channel', value)}
                   onMarkColour={markColour}
@@ -894,6 +933,15 @@ export default function Matrix() {
                         Cancel
                       </button>
                     </div>
+                    {/* The other way to fill this slot. Most of a new
+                        season's sheet is last season's, and typing a repeat
+                        out again loses the link to the season it repeats
+                        from — which is what the sales report reads. */}
+                    <button type="button" className="mx-add-import"
+                      onClick={() => { setAdding(null); setNewName('');
+                                       setImportInto(g.name); }}>
+                      Import an existing style
+                    </button>
                   </form>
                 ) : (
                   <button type="button" className="mx-add-open"
@@ -907,10 +955,47 @@ export default function Matrix() {
           </section>
         ))}
 
+        {/* The Pricing Matrix. The same styles in the same order as the
+            layout sheet — same blocks, same two running sequences for the
+            numbers — because a price is looked up by where the garment sits
+            on the sheet, and two sheets numbered differently would mean
+            counting columns twice.
+
+            Parked styles are left out, as they are on the layout sheet: a
+            style with no position has no column to be priced in. */}
+        {sheet === 'pricing' && groups.map((g) => (
+          <section className="card mx-sheet" key={g.name}>
+            <div className="mx-layout-head">
+              <h3 className="card-title">{g.name}</h3>
+              <span className="result-count">{g.items.length} styles</span>
+            </div>
+            <div className="price-grid">
+              {g.items.map((r) => (
+                <PriceCard
+                  key={r.id}
+                  style={r}
+                  index={g.numbers[r.id]}
+                  onEdit={(style, key, value) => save(style, key, value)}
+                  onOpen={(style) => navigate(`/edit/${style.id}`)}
+                />
+              ))}
+            </div>
+          </section>
+        ))}
+
+        {sheet === 'pricing' && season && groups.length === 0 && (
+          <section className="card card-pad">
+            <p className="card-sub">
+              Nothing to price here yet — no styles in {season}
+              {collection ? ` · ${collection}` : ''}.
+            </p>
+          </section>
+        )}
+
         {/* Only on the Layout tab, and only once a collection is chosen —
             a parked style has to know which block it belongs to, and the
             tray is for arranging, which is what that tab is for. */}
-        {tab === 'layout' && season && (
+        {sheet === 'master' && tab === 'layout' && season && (
           <TbdTray
             items={parked}
             collection={collection}
@@ -923,6 +1008,23 @@ export default function Matrix() {
             onDelete={deleteStyle}
             onDragStart={setDragging}
             onDragEnd={() => { setDragging(null); setOver(null); }}
+          />
+        )}
+
+        {/* Rendered once for the page, not once per block: it is a modal, and
+            one per collection would be fifty identical dialogs in the tree
+            waiting for a flag that only one of them can have. */}
+        {importInto && season && (
+          <ImportStyle
+            season={season}
+            collection={importInto}
+            onClose={() => setImportInto(null)}
+            onImported={(made, from) => {
+              setImportInto(null);
+              toast?.(`${made.name} imported from ${from.season}`
+                      + ` and linked as the same garment`, 'success');
+              refresh();
+            }}
           />
         )}
 

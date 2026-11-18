@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import Wordmark from '../components/Wordmark.jsx';
-import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown} from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown, Palette} from 'lucide-react';
 
 export default function Home() {
   return (
@@ -23,6 +23,14 @@ export default function Home() {
         <Link to="/browse" className="home-card">
           <span className="icon-frame"><TextSearch size={54} strokeWidth={1.6} /></span>
           <span className="label">Browse / Edit</span>
+        </Link>
+
+        {/* After Matrix and before Checklist: it is the other way of
+            reading the same styles, and it is read while the garment is
+            still being designed rather than once it is being prepared. */}
+        <Link to="/design" className="home-card">
+          <span className="icon-frame"><Palette size={54} strokeWidth={1.6} /></span>
+          <span className="label">Design</span>
         </Link>
 
         <Link to="/checklist" className="home-card">

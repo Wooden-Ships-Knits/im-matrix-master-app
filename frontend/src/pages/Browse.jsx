@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CirclePlus, Play, Pencil, Trash2, Download, ClipboardList, Ruler,ListChecks } from 'lucide-react';
+import { CirclePlus, Play, Pencil, Trash2, Download, ClipboardList, Ruler, ListChecks, Palette } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
 import Wordmark from '../components/Wordmark.jsx';
@@ -76,6 +76,7 @@ export default function Browse({ readOnly = false }) {
             <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
             <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
             <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+            <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
           </>)}
           {readOnly && <span className="band-guest">Viewing as guest</span>}
         </div>

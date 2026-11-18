@@ -101,6 +101,26 @@ def name_history(style_id: int):
     return repo.style_name_history(style_id)
 
 
+@router.post("/{style_id}/import", status_code=201)
+def import_style(style_id: int, payload: dict = Body(...)):
+    """Copy this style into a season as the same garment.
+
+    `style_id` is the SOURCE — the style being imported from — so the call
+    reads "import from 1217 into S27". The copy shares the source's product,
+    which is what makes the two show as the same garment in related.
+    """
+    season = payload.get("season")
+    if not season:
+        raise HTTPException(status_code=400, detail="season is required")
+    try:
+        return repo.import_style(style_id, season,
+                                 payload.get("collection"), payload.get("name"))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/{style_id}/link")
 def link(style_id: int, payload: dict = Body(...)):
     """Declare this style and another the same garment."""
