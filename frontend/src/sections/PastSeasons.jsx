@@ -36,13 +36,17 @@ export default function PastSeasons({ styleId, styleName, onOpen, onToast }) {
   // Search as they type, but not on every keystroke.
   useEffect(() => {
     clearTimeout(timer.current);
-    if (!adding || query.trim().length < 2) { setHits([]); return; }
+    if (!adding || query.trim().length < 2) { setHits([]); return undefined; }
+    // The timer cleanup stops a fetch STARTING late; this flag stops one
+    // that already started from LANDING late — a slow response for "ME"
+    // must not overwrite the hits for "MERRY".
+    let live = true;
     timer.current = setTimeout(() => {
-      api.listStyles({ q: query.trim() })
-        .then((r) => setHits(r.filter((s) => s.id !== styleId).slice(0, 8)))
-        .catch(() => setHits([]));
+      api.listStyles({ q: query.trim(), limit: 24 })
+        .then((r) => { if (live) setHits(r.filter((s) => s.id !== styleId).slice(0, 8)); })
+        .catch(() => { if (live) setHits([]); });
     }, 250);
-    return () => clearTimeout(timer.current);
+    return () => { live = false; clearTimeout(timer.current); };
   }, [query, adding, styleId]);
 
   const link = async (otherId) => {

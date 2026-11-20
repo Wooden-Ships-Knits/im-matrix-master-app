@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { CirclePlus, ClipboardList, TextSearch, Ruler, Shirt, Printer, ListChecks, ZoomIn, ZoomOut } from 'lucide-react';
 import { Field } from '../components/ui.jsx';
@@ -454,6 +454,7 @@ export function DesignSheet({ style: s, onMarks = null }) {
                 : undefined}>
               {s.image_path
                 ? <img src={s.image_path} alt={s.name} draggable="false"
+                    loading="lazy" decoding="async"
                     // The scroll cannot be put back before there is anything
                     // to scroll, and on a reload that is not until here.
                     onLoad={restore} />
@@ -517,6 +518,11 @@ export function DesignSheet({ style: s, onMarks = null }) {
   );
 }
 
+// The memo wrapper, not the export: frontend/test slices this file on the
+// literal anchors `export function DesignSheet` / `export default function
+// Design`, and cut() aborts the whole suite if either disappears.
+const Sheet = memo(DesignSheet);
+
 export default function Design() {
   const [params, setParams] = useSearchParams();
   const [meta, setMeta] = useState(null);
@@ -538,10 +544,19 @@ export default function Design() {
   // A season is required, same as the Matrix: without one this reads the
   // bill of materials of every style of every season — 8,461 lines — to draw
   // sheets nobody flips through that way.
+  const loadSeq = useRef(0);
+  const [loadFailed, setLoadFailed] = useState(false);
   useEffect(() => {
+    const seq = ++loadSeq.current;
     if (!season) { setRows(null); return; }
     setRows(null);
-    api.design({ season, collection }).then(setRows).catch(() => setRows([]));
+    setLoadFailed(false);
+    api.design({ season, collection })
+      .then((r) => { if (seq === loadSeq.current) setRows(r); })
+      .catch(() => {
+        // "Nothing in F26" and "the fetch failed" are different facts.
+        if (seq === loadSeq.current) { setRows([]); setLoadFailed(true); }
+      });
   }, [season, collection]);
 
   const collections = meta?.collections_by_season?.[season] || [];
@@ -551,7 +566,7 @@ export default function Design() {
 
   // The sheet draws from what it was given, so the saved arrangement has to
   // land back in `rows` or the markers would snap back on the next render.
-  const setMarks = (style, marks) => {
+  const setMarks = useCallback((style, marks) => {
     setRows((prev) => (prev || []).map(
       (r) => (r.id === style.id ? { ...r, design_marks: marks } : r)));
     return api.setDesignMarks(style.id, marks).catch((err) => {
@@ -561,7 +576,10 @@ export default function Design() {
         (r) => (r.id === style.id ? { ...r, design_marks: style.design_marks } : r)));
       throw err;
     });
-  };
+    // Functional setRows and module-level api only, so the empty deps can
+    // never go stale — which is what lets every sheet keep one handler
+    // identity for the life of the page.
+  }, []); // eslint-disable-line
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -586,12 +604,12 @@ export default function Design() {
       <main className="page">
         <section className="card card-pad">
           <h2 className="card-title">Color Sequence & Diagram</h2>
-          <p className="card-sub">
+          {/* <p className="card-sub">
             Which yarn sits in each knit slot, and at what ply, for every
             colourway side by side. Read across a C row to check a slot was
             changed in all of them. Edited in the style editor&rsquo;s BOM
             section.
-          </p>
+          </p> */}
 
           <div className="chk-filters">
             <Field label="Season" hint="Required">
@@ -640,14 +658,16 @@ export default function Design() {
         )}
         {season && rows !== null && shown.length === 0 && (
           <p className="result-count mx-waiting">
-            {rows.length === 0
-              ? `Nothing in ${season}${collection ? ` · ${collection}` : ''}.`
-              : 'Nothing matches that.'}
+            {loadFailed
+              ? 'Could not load the design sheets — check the connection and pick the season again.'
+              : rows.length === 0
+                ? `Nothing in ${season}${collection ? ` · ${collection}` : ''}.`
+                : 'Nothing matches that.'}
           </p>
         )}
 
         {shown.map((s) => (
-          <DesignSheet key={s.id} style={s} onMarks={setMarks} />
+          <Sheet key={s.id} style={s} onMarks={setMarks} />
         ))}
       </main>
     </>

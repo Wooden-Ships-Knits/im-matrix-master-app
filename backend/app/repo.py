@@ -14,6 +14,8 @@ from psycopg.rows import dict_row
 
 import json
 
+from psycopg.types.json import Jsonb
+
 from .db import pool, transaction
 
 # Columns on `styles` that the client sends and reads back unchanged.
@@ -173,6 +175,14 @@ def _season_id(cur, code):
 
 
 # --------------------------------------------------------------------- read
+def style_exists(style_id: int) -> bool:
+    """One indexed probe, for routes that only need to 404 cleanly."""
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM styles WHERE id = %s", (style_id,))
+            return cur.fetchone() is not None
+
+
 def load_style(style_id: int) -> dict | None:
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -231,18 +241,30 @@ def load_style(style_id: int) -> dict | None:
                 WHERE cw.style_id = %s ORDER BY cw.sort_order, cw.id
                 """, (style_id,))
             colorways = [dict(r) for r in cur.fetchall()]
-            for cw in colorways:
+            # One query for every colourway's lines, not one per colourway:
+            # the editor opens with 5+N round trips otherwise, and PrintSheet
+            # pays it again per style. Grouped in Python on colorway_id,
+            # which preserves the old per-colourway ORDER BY cy.slot because
+            # the single query orders by (colorway_id, slot).
+            by_cw: dict = {}
+            if colorways:
                 cur.execute(
                     """
-                    SELECT trim(concat_ws(' ', y.prefix, y.name,
+                    SELECT cy.colorway_id,
+                           trim(concat_ws(' ', y.prefix, y.name,
                                  CASE WHEN y.color_code IS NULL THEN NULL
                                       ELSE '- ' || y.color_code END)) AS yarn,
-                           cy.percent, cy.ends
+                           cy.percent, cy.ends, cy.component
                     FROM colorway_yarns cy
                     LEFT JOIN yarn_colors y ON y.id = cy.yarn_color_id
-                    WHERE cy.colorway_id = %s ORDER BY cy.slot
-                    """, (cw.pop("id"),))
-                cw["bom"] = [dict(r) for r in cur.fetchall()]
+                    WHERE cy.colorway_id = ANY(%s)
+                    ORDER BY cy.colorway_id, cy.slot
+                    """, ([cw["id"] for cw in colorways],))
+                for r in cur.fetchall():
+                    line = dict(r)
+                    by_cw.setdefault(line.pop("colorway_id"), []).append(line)
+            for cw in colorways:
+                cw["bom"] = by_cw.get(cw.pop("id"), [])
             out["colorways"] = colorways
 
             # Every operation, with the minutes actually used for this style.
@@ -552,10 +574,17 @@ def import_style(source_id: int, season: str, collection: str | None = None,
             values["status"] = "active"
 
             names = list(values)
+            # The deny-list design means a column added to styles is copied
+            # without anyone editing this function — which is the point, and
+            # also how it broke: design_marks (jsonb, 0026) arrives from
+            # psycopg as a dict, and a bare dict cannot be bound back into
+            # %s. Every jsonb value is re-wrapped, so the NEXT jsonb column
+            # is copied instead of 500ing every import for a day.
             cur.execute(
                 f"INSERT INTO styles ({', '.join(names)})"
                 f" VALUES ({', '.join(['%s'] * len(names))}) RETURNING id",
-                [values[c] for c in names])
+                [Jsonb(values[c]) if isinstance(values[c], (dict, list))
+                 else values[c] for c in names])
             new_id = cur.fetchone()["id"]
 
             # The colourways, and the map from the old row to the new one —
@@ -597,8 +626,8 @@ def import_style(source_id: int, season: str, collection: str | None = None,
             for old, new in remap.items():
                 cur.execute("""
                     INSERT INTO colorway_yarns
-                        (colorway_id, slot, yarn_color_id, percent, ends)
-                    SELECT %s, slot, yarn_color_id, percent, ends
+                        (colorway_id, slot, yarn_color_id, percent, ends, component)
+                    SELECT %s, slot, yarn_color_id, percent, ends, component
                       FROM colorway_yarns WHERE colorway_id = %s
                 """, (new, old))
 
@@ -999,11 +1028,18 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                     if slot > 21:
                         break
                     yarn_id = get_or_create(cur, "yarn_colors", "name", yarn)
+                    part = _clean(line.get("component"))
+                    if part:
+                        part = part.lower()
+                        if part not in GARMENT_PARTS:
+                            raise ValueError(
+                                f"{part!r} is not a part of the garment"
+                                f" — expected one of {', '.join(GARMENT_PARTS)}")
                     cur.execute(
                         "INSERT INTO colorway_yarns (colorway_id, slot, yarn_color_id,"
-                        " percent, ends) VALUES (%s,%s,%s,%s,%s)",
+                        " percent, ends, component) VALUES (%s,%s,%s,%s,%s,%s)",
                         (cw_id, slot, yarn_id, _num(line.get("percent")),
-                         _num(line.get("ends"))),
+                         _num(line.get("ends")), part),
                     )
 
             # Resolve "sub to" once every colourway exists, by name within
@@ -1238,30 +1274,21 @@ def matrix_rows(season=None, collection=None, q=None,
                -- looks its quantities up by that name, and turning the list
                -- into objects would mean changing every reader of it.
                -- The name is unique per style, so it is a safe key.
-               coalesce((
-                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.mark)
-                     FROM style_colorways cw
-                    WHERE cw.style_id = s.id AND cw.mark IS NOT NULL
-               ), '{}'::jsonb) AS colorway_marks,
-               -- Which band of the ruled list each colour sits in. Keyed by
-               -- name like the pen and the background, for the same reason.
-               coalesce((
-                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.zone)
-                     FROM style_colorways cw
-                    WHERE cw.style_id = s.id
-               ), '{}'::jsonb) AS colorway_zones,
-               coalesce((
-                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.highlight)
-                     FROM style_colorways cw
-                    WHERE cw.style_id = s.id AND cw.highlight IS NOT NULL
-               ), '{}'::jsonb) AS colorway_highlights,
+               -- Pen, band and background in ONE scan of the colourways,
+               -- not three: the FILTER clauses are the old WHERE prefilters,
+               -- zones stays unfiltered so a null-zone key survives, and an
+               -- aggregate over zero rows still yields its one row of
+               -- coalesced '{}'s.
+               cwagg.marks AS colorway_marks,
+               cwagg.zones AS colorway_zones,
+               cwagg.lits  AS colorway_highlights,
                -- The attribute block the workbook prints under each photo.
                -- Most of these columns exist but were never imported, so they
                -- come back null today and the sheet prints the row blank.
                -- gauge is listed here as well as inside the style_code concat
                -- above: used there it builds a string, and a column that is
                -- only ever concatenated never reaches the sheet.
-               s.matrix_highlight, s.past_sy_mark, s.past_000_mark,
+               s.matrix_highlight,
                s.matrix_band, s.needs_photo, s.notes,
                -- The colourway naming scheme, printed under the repeat
                -- line: it says what the names below it are naming.
@@ -1302,12 +1329,6 @@ def matrix_rows(season=None, collection=None, q=None,
                                  jsonb_build_object('auto', true))
                         ELSE '{}'::jsonb END
                ) AS steps,
-               -- Every season this garment ran in, for the sales history
-               -- table. Quantities are not here: no sales data is loaded.
-               ARRAY(SELECT se2.code FROM styles o
-                       JOIN seasons se2 ON se2.id = o.season_id
-                      WHERE o.product_id = s.product_id
-                      ORDER BY se2.season_number DESC) AS seasons_run,
                -- A repeat runs a year later in the same half of the year:
                -- F26 -> F27, not F26 -> S27. That is season_number + 2.
                -- The code is computed rather than joined so it can be named
@@ -1319,27 +1340,18 @@ def matrix_rows(season=None, collection=None, q=None,
                -- Whether the next season exists at all. Without this,
                -- "not imported" and "decided against" both read as
                -- not-repeating, and the whole sheet comes out red.
-               EXISTS (SELECT 1 FROM styles o2
-                         JOIN seasons se3 ON se3.id = o2.season_id
-                        WHERE se3.season_number = se.season_number + 2) AS next_season_loaded,
+               -- Written as IN, not a correlated EXISTS: the answer only
+               -- depends on the season, and IN over an uncorrelated subquery
+               -- is one hashed subplan for the whole statement instead of
+               -- one probe per row. season_number is generated from NOT NULL
+               -- columns, so IN keeps EXISTS's strict true/false here.
+               (se.season_number + 2) IN (
+                   SELECT se3.season_number FROM styles o2
+                     JOIN seasons se3 ON se3.id = o2.season_id) AS next_season_loaded,
                EXISTS (SELECT 1 FROM styles o
                          JOIN seasons se2 ON se2.id = o.season_id
                         WHERE o.product_id = s.product_id
                           AND se2.season_number = se.season_number + 2) AS repeats_next,
-               -- Which channels the NEXT season's version of this garment is
-               -- set to sell through. Read off the booleans rather than
-               -- whs_channel: that text is blank on 254 styles, while the
-               -- flags are NOT NULL and are what the editor actually toggles.
-               (SELECT o.sell_sy FROM styles o
-                  JOIN seasons se2 ON se2.id = o.season_id
-                 WHERE o.product_id = s.product_id
-                   AND se2.season_number = se.season_number + 2
-                 ORDER BY o.id LIMIT 1) AS next_sells_sy,
-               (SELECT o.sell_000 FROM styles o
-                  JOIN seasons se2 ON se2.id = o.season_id
-                 WHERE o.product_id = s.product_id
-                   AND se2.season_number = se.season_number + 2
-                 ORDER BY o.id LIMIT 1) AS next_sells_000,
                -- The circles above the photo. A repeat is the same half of
                -- the year one year earlier, so the previous season is
                -- season_number - 2: F26 (57) repeats F25 (55).
@@ -1347,16 +1359,12 @@ def matrix_rows(season=None, collection=None, q=None,
                -- NULL where this garment did not run then, which is what the
                -- card reads to decide whether to draw the circles at all —
                -- a NEW style has no past-season row and gets none.
-               (SELECT o.sell_sy FROM styles o
-                  JOIN seasons se2 ON se2.id = o.season_id
-                 WHERE o.product_id = s.product_id
-                   AND se2.season_number = se.season_number - 2
-                 ORDER BY o.id LIMIT 1) AS prev_sells_sy,
-               (SELECT o.sell_000 FROM styles o
-                  JOIN seasons se2 ON se2.id = o.season_id
-                 WHERE o.product_id = s.product_id
-                   AND se2.season_number = se.season_number - 2
-                 ORDER BY o.id LIMIT 1) AS prev_sells_000,
+               -- One lateral probe, not two scalar subqueries that differ
+               -- only in the column they pick. The LEFT JOIN keeps the NULL
+               -- contract: no past-season row means NULL means "draw no
+               -- circles", which SheetCard reads as prev_sells_sy != null.
+               prev.sell_sy  AS prev_sells_sy,
+               prev.sell_000 AS prev_sells_000,
                -- How many earlier seasons this garment ran in. Not used to
                -- colour anything yet: orange is meant to mean "ran in the two
                -- previous seasons" and yellow "ran before but unconfirmed",
@@ -1397,6 +1405,22 @@ def matrix_rows(season=None, collection=None, q=None,
         JOIN seasons se            ON se.id = s.season_id
         LEFT JOIN collections col   ON col.id = s.collection_id
         LEFT JOIN content_codes cc  ON cc.id = s.content_code_id
+        -- The garment's previous-season row, once per style. ORDER BY o.id
+        -- LIMIT 1 is the exact tie-break the old scalar subqueries used.
+        LEFT JOIN LATERAL (
+            SELECT o.sell_sy, o.sell_000 FROM styles o
+              JOIN seasons se2 ON se2.id = o.season_id
+             WHERE o.product_id = s.product_id
+               AND se2.season_number = se.season_number - 2
+             ORDER BY o.id LIMIT 1) prev ON true
+        LEFT JOIN LATERAL (
+            SELECT coalesce(jsonb_object_agg(cw.ws_tag_color, cw.mark)
+                        FILTER (WHERE cw.mark IS NOT NULL), '{}'::jsonb) AS marks,
+                   coalesce(jsonb_object_agg(cw.ws_tag_color, cw.zone),
+                            '{}'::jsonb) AS zones,
+                   coalesce(jsonb_object_agg(cw.ws_tag_color, cw.highlight)
+                        FILTER (WHERE cw.highlight IS NOT NULL), '{}'::jsonb) AS lits
+              FROM style_colorways cw WHERE cw.style_id = s.id) cwagg ON true
         WHERE s.status <> 'draft'
     """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)
     # Placeholders bind in the order they appear, and all five are in the
@@ -1894,9 +1918,24 @@ def meta() -> dict:
                         " FROM seasons ORDER BY season_number DESC")
             seasons = [dict(r) for r in cur.fetchall()]
 
-            def distinct(c):
-                return col(f"SELECT DISTINCT {c} AS v FROM styles"
-                           f" WHERE {c} IS NOT NULL AND {c} <> '' ORDER BY v")
+            # One scan of styles for every distinct-values list, not one
+            # scan per column: this endpoint used to issue 27 separate
+            # `SELECT DISTINCT <col> FROM styles` full scans, serialized on
+            # one connection, and every page mounts it. array_agg(DISTINCT
+            # .. ORDER BY ..) FILTER gives the same sorted, NULL-and-''-free
+            # list per column in a single pass.
+            #
+            # FILTER returns SQL NULL (not an empty array) for a column with
+            # no values, where the old query returned [] — hence `or []` at
+            # the unpack, or an empty column's JSON flips from [] to null.
+            def distinct_lists(cols):
+                sel = ", ".join(
+                    f"array_agg(DISTINCT {c} ORDER BY {c})"
+                    f" FILTER (WHERE {c} IS NOT NULL AND {c} <> '') AS {c}"
+                    for c in cols)
+                cur.execute(f"SELECT {sel} FROM styles")
+                row = cur.fetchone()
+                return {c: (row[c] or []) for c in cols}
 
             # The weight rates the editor derives its columns from, so the
             # tolerances follow the season instead of being retyped in the UI.
@@ -1911,6 +1950,8 @@ def meta() -> dict:
                 for r in (dict(x) for x in cur.fetchall())
             }
 
+            lists = distinct_lists(("sub_group",) + _OPTION_COLS)
+
             return {
                 "seasons": seasons,
                 "rates": rates,
@@ -1924,7 +1965,7 @@ def meta() -> dict:
                 # season can offer only that season's blocks rather than all
                 # 31 names at once.
                 "collections_by_season": _collections_by_season(cur),
-                "subGroups": distinct("sub_group"),
+                "subGroups": lists["sub_group"],
                 "yarns": col("SELECT DISTINCT name AS v FROM yarn_colors ORDER BY v"),
                 # YCA, YST, YAC, YTX, YP — the code every yarn colour name
                 # starts with, which is the vocabulary for `yarn_type`.
@@ -1933,22 +1974,26 @@ def meta() -> dict:
                     " WHERE name ~ '^Y[A-Z]+ ' ORDER BY v"),
                 "colorNames": col("SELECT DISTINCT ws_tag_color AS v FROM style_colorways"
                                   " ORDER BY v"),
-                "options": {
-                    k: distinct(k) for k in (
-                        "construction", "bagging_method", "polybag_sticker",
-                        "packing_method", "packing_in_box", "box_labeling",
-                        "ship_via", "hang_tag", "hs_code", "duty_category",
-                        # knit details: gauge_detail is the form's "gauge",
-                        # gauge is the style-code digit (ALIAS above)
-                        "gauge_detail", "gauge", "tension", "total_ends",
-                        "composition_care", "color_sequence",
-                        "based_body", "print_placement", "bottom_type",
-                        "bottom_rib", "similar_style_past", "distressed",
-                        "sleeve_category", "sleeve_length", "length_category",
-                        "yarn_type",
-                    )
-                },
+                "options": {k: lists[k] for k in _OPTION_COLS},
             }
+
+
+# The free-text columns whose existing values the editor offers as
+# suggestions. One tuple, because meta() aggregates all of them in a single
+# scan of styles and the keys of options{} must match it exactly.
+_OPTION_COLS = (
+    "construction", "bagging_method", "polybag_sticker",
+    "packing_method", "packing_in_box", "box_labeling",
+    "ship_via", "hang_tag", "hs_code", "duty_category",
+    # knit details: gauge_detail is the form's "gauge",
+    # gauge is the style-code digit (ALIAS above)
+    "gauge_detail", "gauge", "tension", "total_ends",
+    "composition_care", "color_sequence",
+    "based_body", "print_placement", "bottom_type",
+    "bottom_rib", "similar_style_past", "distressed",
+    "sleeve_category", "sleeve_length", "length_category",
+    "yarn_type",
+)
 
 
 def add_meta(kind: str, name: str, season: str | None = None) -> None:
@@ -2045,7 +2090,8 @@ _C_IM_RULE = _IN_IM + """
 """
 
 
-def checklist_rows(season=None, collection=None, q=None) -> list[dict]:
+def checklist_rows(season=None, collection=None, q=None,
+                   style_id=None) -> list[dict]:
     """One row per style, with the steps already done.
 
     Returns the done steps as an object keyed by step, so a tick carries its
@@ -2084,6 +2130,11 @@ def checklist_rows(season=None, collection=None, q=None) -> list[dict]:
          WHERE s.status <> 'draft'
     """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)
     args: list = [AUTO_STEPS]        # the placeholder in the SELECT binds first
+    if style_id is not None:
+        # One row, for the tick round-trip: the IM-P / C-IM rules live in
+        # this query, so the server stays the authority on what a tick
+        # changed without the client re-downloading the whole season.
+        sql += " AND s.id = %s"; args.append(int(style_id))
     if season:
         sql += " AND se.code = %s"; args.append(season)
     if collection:
@@ -2420,6 +2471,18 @@ def yarn_codes(min_colours: int = 5) -> list[str]:
                  ORDER BY n DESC, code
             """, (min_colours,))
             return [r[0] for r in cur.fetchall()]
+
+
+# The parts of a pullover a yarn line can be assigned to.
+#
+# Tied to the blueprint: each code is a shape on the drawing in
+# frontend/src/sections/Blueprint.jsx, and a part with no shape could not be
+# pointed at. Kept in step by frontend/test — the drawing decides what can be
+# selected, this decides what the server will store.
+#
+# A line with no part is for the whole garment, which is what every imported
+# line means. That is NOT a member of this list: it is the absence of one.
+GARMENT_PARTS = ["neck", "body", "sleeve", "cuff", "hem"]
 
 
 # The colourway naming schemes the TAG line offers.

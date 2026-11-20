@@ -10,3 +10,5 @@ python-multipart==0.0.20
 # Sales fetching (app/sales). Shopify goes over plain urllib;
 # Salesforce needs the login and query paging this gives us.
 simple-salesforce==1.12.6
+# Shrinks style photos on upload (routers/uploads.py)
+pillow==11.3.0

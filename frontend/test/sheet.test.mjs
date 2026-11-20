@@ -568,6 +568,16 @@ is(/INSERT INTO product_identifiers[\s\S]{0,200}?'style_name'/.test(impBody), tr
 is(/_append_to_matrix_order\(cur, new_id\)/.test(impBody), true,
    'and the copy lands last in its collection, where the slot that made it sits');
 
+// The deny-list copies every new styles column automatically — including
+// types the dynamic INSERT cannot bind. design_marks (jsonb, 0026) came
+// back from psycopg as a dict and 500'd EVERY import for a day, because a
+// bare dict cannot be a %s parameter. The values are re-wrapped as Jsonb,
+// so the next jsonb column is carried instead of crashing.
+is(/Jsonb\(values\[c\]\) if isinstance\(values\[c\], \(dict, list\)\)/.test(impBody),
+   true, 'a jsonb column survives the copy instead of 500ing it');
+is(/from psycopg\.types\.json import Jsonb/.test(impRepo), true,
+   'with the real adapter, not a json.dumps that would double-encode');
+
 // Wiring, four files.
 is(/@router\.post\("\/\{style_id\}\/import"/.test(impRoute), true, 'a route serves it');
 is(/request\(`\/api\/styles\/\$\{id\}\/import`/.test(impApi), true,
@@ -903,6 +913,77 @@ is(/Unlink this one/.test(skPanel), false,
 is(/Unlink this style/.test(skPanel) && /const unlinkSelf/.test(skPanel), true,
    'and the footer one says it detaches the style being edited');
 
+// ---- the blueprint: a yarn line belongs to a part ----
+console.log('\n-- the blueprint --');
+const bpRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
+const bpDraw = fs.readFileSync('frontend/src/sections/Blueprint.jsx', 'utf8');
+const bpSec = fs.readFileSync('frontend/src/sections/BomSection.jsx', 'utf8');
+const bpMig = fs.readFileSync(
+  'backend/migrations/versions/0027_bom_component.py', 'utf8');
+
+// Two lists of parts, one on the drawing and one the server will accept. A
+// part with no shape could not be pointed at; a part the server does not
+// know could not be saved.
+const drawn = [...bpDraw.matchAll(/\{ id: '([a-z]+)'/g)].map((m) => m[1]);
+const known = (bpRepo.match(/GARMENT_PARTS = \[([^\]]*)\]/) || [, ''])[1]
+  .split(',').map((s) => s.trim().replace(/['"]/g, '')).filter(Boolean);
+is(drawn.length > 0 && known.length > 0, true, 'both lists were found');
+is(drawn.filter((d) => !known.includes(d)), [],
+   'every part on the drawing is one the server will store');
+is(known.filter((k) => !drawn.includes(k)), [],
+   'and every part the server knows has a shape to point at');
+
+// The geometry is the design panel's winner, generated so that adjacent
+// parts share their seam curves TO THE DIGIT. These assertions hold the
+// seams shut: if a hand edit changes one side of a shared curve, the count
+// drops and this fails before a gap ships.
+// Counted inside the SHAPES literal only, and exactly: the file's own
+// comment quotes these coordinates, and a count over the whole file stayed
+// at 2 while a real seam copy drifted — the comment was passing the test.
+const bpShapes = cut(bpDraw, 'const SHAPES = {', 'const DECO');
+is((bpShapes.match(/C 186 92 196 104 210 104/g) || []).length, 2,
+   'the front collar band\u2019s outer edge IS the body\u2019s neck curve');
+is((bpShapes.match(/46\.6 206\.9/g) || []).length, 2,
+   'the cuff sits on the sleeve\u2019s own end, same corner in both');
+is((bpShapes.match(/136 236/g) || []).length, 2,
+   'and the hem band starts on the body\u2019s bottom edge');
+// The rib texture must stay deaf to the pointer, or it eats part clicks.
+is(/\.bp-rib \{[^}]*pointer-events: none/s.test(css), true,
+   'the rib texture cannot steal a click from the part under it');
+// The collar is two bands with the page between them. The old hole-punch
+// needed a pointer-deaf shape over the neck; nothing may bring that back.
+is(/bp-hole/.test(bpDraw), false,
+   'no hole shape — the gap in the collar is just the page');
+is(/neck: \[/.test(bpDraw)
+   && (cut(bpDraw, 'neck: [', '};').match(/'M /g) || []).length === 2, true,
+   'the collar is exactly two bands, back stand and front band');
+
+is(/ADD COLUMN component text/.test(bpMig), true, 'a migration carries the part');
+// NULL is "the whole garment", which is what all 8,465 imported lines mean.
+// A default would claim a decision nobody made.
+is(/DEFAULT/.test(bpMig), false, 'with no default, so an old line stays unplaced');
+is(/cy\.ends, cy\.component/.test(bpRepo), true, 'it comes back with the line');
+is(/ends, component\)\s*VALUES \(%s,%s,%s,%s,%s,%s\)/.test(bpRepo), true,
+   'and is written with it');
+is(/if part not in GARMENT_PARTS:/.test(bpRepo), true,
+   'a part that is not on the drawing is refused');
+// An imported style keeps where each yarn went, or the copy quietly loses
+// the one thing the blueprint records.
+is(/SELECT %s, slot, yarn_color_id, percent, ends, component/.test(bpRepo), true,
+   'and an imported style carries it across');
+
+// The two tabs are two readings of ONE list. Nothing is held twice.
+is(/const rows = \(cw\?\.bom \|\| \[\]\)/.test(bpSec)
+   && /\.filter\(\(\{ ln \}\) => ln\.component === part\)/.test(bpSec), true,
+   'the blueprint filters the colourway\u2019s own lines');
+is(/setLine\(cwIndex, j,/.test(bpSec), true,
+   'and edits them in place, so both tabs show one truth');
+is(/<select className="input bom-part"/.test(bpSec), true,
+   'the BOM tab shows the part each line is for');
+// Removing a colourway on one tab must not leave the other pointing at it.
+is(/Math\.min\(which, Math\.max\(colorways\.length - 1, 0\)\)/.test(bpSec), true,
+   'the chosen colourway is clamped, not trusted');
+
 // ---- the nav band ----
 // Every page's band lists the others, so a new page has to be added to five
 // files. Design was added to the home tiles and missed here, which left it
@@ -934,6 +1015,215 @@ for (const [page, own] of Object.entries(PAGE_ROUTE)) {
   is(own && links.includes(own) ? own : null, null,
      `${page} does not link to itself`);
 }
+
+
+// ---- the load: compression, caching, photo size ----
+// Measured before any of this: the season Matrix was 455KB raw (26KB
+// gzipped), photos were served at original size (698KB into a 160px slot),
+// and none of the three photo grids lazy-loaded.
+console.log('\n-- the load --');
+const pfMain = fs.readFileSync('backend/app/main.py', 'utf8');
+const pfNginx = fs.readFileSync('frontend/nginx.conf', 'utf8');
+const pfUp = fs.readFileSync('backend/app/routers/uploads.py', 'utf8');
+const pfReq = fs.readFileSync('backend/requirements.txt', 'utf8');
+
+is(/GZipMiddleware, minimum_size=1024, compresslevel=6/.test(pfMain), true,
+   'the API compresses its JSON, at the measured sweet spot');
+is(/gzip on;/.test(pfNginx) && /application\/json/.test(pfNginx), true,
+   'and nginx compresses what it serves itself');
+// Photos never change under a URL — every upload gets a fresh token — so
+// both servers may say immutable.
+is(/location \/uploads\/ \{[^}]*immutable/s.test(pfNginx), true,
+   'nginx lets the browser keep photos for ever');
+is(/_photo_cache/.test(pfMain) && /max-age=31536000/.test(pfMain), true,
+   'and the dev stack caches them the same way');
+
+// Three grids draw hundreds of photos; none may load eagerly.
+for (const f of ['frontend/src/sections/SheetCard.jsx',
+                 'frontend/src/sections/PriceCard.jsx',
+                 'frontend/src/pages/Design.jsx']) {
+  const src = fs.readFileSync(f, 'utf8');
+  const imgs = src.match(/<img [^>]*src=\{s\.image_path\}[^>]*>/gs) || [];
+  is(imgs.length > 0 && imgs.every((i) => /loading="lazy"/.test(i)), true,
+     `${f.split('/').pop()} lazy-loads its photos`);
+}
+
+// Uploads are shrunk on the way in, with the three behaviours that matter:
+// The exact constant, bounded: /1200/ alone passed happily with the resize
+// neutered to 120000.
+is(/DISPLAY_PX = 1200\n/.test(pfUp) && /thumbnail\(\(DISPLAY_PX, DISPLAY_PX\)/.test(pfUp),
+   true, 'a phone photo is resized to the display size');
+// Passthrough is decided BEFORE exif_transpose: it returns a copy whose
+// .format is None, and testing after re-encoded every small JPEG for
+// nothing — that exact bug shipped for ten minutes.
+is(pfUp.indexOf('small_jpeg') < pfUp.indexOf('ImageOps.exif_transpose'), true,
+   'a small upright JPEG passes through before any transpose copy');
+is(/getexif\(\)\.get\(274, 1\)/.test(pfUp), true,
+   'and only an upright one — a sideways phone shot still gets rotated');
+is(/raise ValueError\("That file is not a readable image"\)/.test(pfUp), true,
+   'garbage with an image content-type is refused, not a 500');
+is(/^pillow==/m.test(pfReq), true, 'Pillow is pinned in the image');
+
+
+// ---- the editor fits its window ----
+// At 1250px the form column overflowed 99px under the Select Section card,
+// 177px at 1100 (measured with a headless-Chrome harness on the real
+// stylesheet). Grid tracks refuse to shrink below their content unless told.
+console.log('\n-- the editor fits --');
+is(/\.style-panel \{ display: grid; grid-template-columns: 280px minmax\(0, 1fr\)/.test(css),
+   true, 'the form column is allowed to shrink below its content');
+is(/\.editor-grid > \* \{ min-width: 0; \}/.test(css), true,
+   'and so are the editor\u2019s two cards');
+is(/\.chan-row \{ display: grid; grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/.test(css),
+   true, 'the channel pair shrinks instead of spilling');
+is(/@media \(max-width: 1200px\) \{ \.editor-grid \{ grid-template-columns: 1fr; \} \}/.test(css),
+   true, 'one column below 1200 — the 1020-1200 band was the broken zone');
+// The SKU row wraps whenever it is tight, not only under one breakpoint.
+// Not cut(): that helper finds `to` from the top of the file, and `}`
+// matches long before .sku-parts does.
+const skuAt = css.indexOf('.sku-parts {');
+const skuRule = css.slice(skuAt, css.indexOf('}', skuAt));
+is(/flex-wrap: wrap;/.test(skuRule), true,
+   'the six SKU segments wrap at any width rather than running out of the card');
+
+// The Pricing Matrix once redefined the editor's .price-row and .price-input
+// and quietly restyled the editor's whole Pricing section. The sheet's
+// classes are namespaced pmx-; neither family may define the other's names
+// twice.
+// Exact counts, pinned to what the editor legitimately owns today: one
+// .price-row rule and four .price-input rules (base, two descendants, one
+// modifier). A fifth means somebody reused the editor's names again.
+for (const [name, owns] of [['price-row', 1], ['price-input', 4], ['price-grid', 0]]) {
+  const defs = (css.match(new RegExp(`^\\.${name}[ .:,{]`, 'gm')) || []).length;
+  is(defs, owns, `.${name}: exactly the editor's ${owns} rule(s), none from the sheet`);
+}
+is(/\.pmx-row \{/.test(css) && /pmx-grid/.test(
+     fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8')), true,
+   'the pricing sheet uses its own pmx- names end to end');
+
+
+// ---- the audit round: query shape, races, render storms ----
+// 22 findings survived a 53-agent adversarial audit; these pin the fixes.
+console.log('\n-- the audit round --');
+const auRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
+const auMeta = fs.readFileSync('backend/app/routers/meta.py', 'utf8');
+const auStylesR = fs.readFileSync('backend/app/routers/styles.py', 'utf8');
+const auChkR = fs.readFileSync('backend/app/routers/checklist.py', 'utf8');
+const auMx = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
+const auEd = fs.readFileSync('frontend/src/pages/StyleEditor.jsx', 'utf8');
+const auDs = fs.readFileSync('frontend/src/pages/Design.jsx', 'utf8');
+const auPast = fs.readFileSync('frontend/src/sections/PastSeasons.jsx', 'utf8');
+const auCard = fs.readFileSync('frontend/src/sections/SheetCard.jsx', 'utf8');
+const auChk = fs.readFileSync('frontend/src/pages/Checklist.jsx', 'utf8');
+
+// /api/meta: one scan of styles for all the distinct lists, not 27.
+is(/def distinct_lists\(cols\):/.test(auRepo)
+   && /return \{c: \(row\[c\] or \[\]\) for c in cols\}/.test(auRepo), true,
+   'meta reads every distinct list in one scan, and an empty column stays []');
+is(/def distinct\(c\):/.test(auRepo), false, 'the per-column scan helper is gone');
+// The CONDITIONAL, not the strings: a dead `if False:` kept every string
+// this test used to look for while never sending a 304.
+is(/if request\.headers\.get\("if-none-match"\) == etag:\s*\n\s*return Response\(status_code=304/
+   .test(auMeta) && /"Cache-Control": "no-cache"/.test(auMeta), true,
+   'and the route answers a matching If-None-Match with an empty 304');
+
+// matrix_rows: the dead fields are gone and the probes are consolidated.
+const auRows = cut(auRepo, 'def matrix_rows(', 'def _sales_index(');
+is(['next_sells_sy', 'next_sells_000', 'seasons_run', 'past_sy_mark', 'past_000_mark']
+   .filter((k) => auRows.includes(k)), [],
+   'the five fields nothing reads are no longer computed or shipped');
+is(/LEFT JOIN LATERAL \(\s*SELECT o\.sell_sy, o\.sell_000/.test(auRows), true,
+   'the previous-season pair is one lateral probe, not two scalar subqueries');
+is(/prev\.sell_sy  AS prev_sells_sy/.test(auRows)
+   && /prev\.sell_000 AS prev_sells_000/.test(auRows), true,
+   'under the same output names the card reads');
+is(/\(se\.season_number \+ 2\) IN \(/.test(auRows), true,
+   'next_season_loaded is one hashed subplan, not a per-row EXISTS');
+is(/cwagg\.marks AS colorway_marks/.test(auRows)
+   && /FILTER \(WHERE cw\.mark IS NOT NULL\)/.test(auRows), true,
+   'pen, band and background come from one scan of the colourways');
+
+// load_style: the BOM arrives in one query however many colourways.
+is(/WHERE cy\.colorway_id = ANY\(%s\)/.test(auRepo)
+   && /ORDER BY cy\.colorway_id, cy\.slot/.test(auRepo), true,
+   'load_style fetches every colourway\u2019s lines in one round trip');
+is(/def style_exists\(style_id: int\) -> bool:/.test(auRepo)
+   && /repo\.style_exists\(style_id\)/.test(auStylesR), true,
+   'costing 404s via one indexed probe, not a full editor payload');
+
+// checklist: a tick refetches one row, and the route offers it.
+is(/api\.checklist\(\{ style_id: row\.id \}\)/.test(auChk), true,
+   'a tick asks the server for its own row only');
+is(/style_id: int \| None = Query\(None\)/.test(auChkR)
+   && /AND s\.id = %s/.test(auRepo), true,
+   'and the endpoint filters to it server-side');
+
+// races: a stale response must be a no-op, never a repaint.
+is(/const loadSeq = useRef\(0\)/.test(auMx)
+   && /if \(seq === loadSeq\.current\) setRows\(r\)/.test(auMx), true,
+   'a slow season response cannot paint over the one on screen');
+// Pinned to the ECHO site: the catch-path revert carries the same guard
+// text, so a loose match passed with the echo guard deleted.
+is(/const saveSeq = useRef\(new Map\(\)\)/.test(auMx)
+   && /&& saveSeq\.current\.get\(row\.id\) === seq\) patch\(saved\)/.test(auMx), true,
+   'an earlier save\u2019s echo cannot overwrite a later save on the same row');
+is(/catch\(\(\) => \{\}\)/.test(auMx), false,
+   'no error on the Matrix is swallowed into a silent dead end');
+// The guard INSIDE then(), not the flag's declaration: deleting the one
+// line that checks it left the declaration — and this test — intact.
+is(/api\.getStyle\(id\)\s*\n\s*\.then\(\(s\) => \{\s*\n\s*if \(!live\) return;/.test(auEd),
+   true, 'the editor ignores a superseded style load instead of hydrating it');
+is(/const loadSeq = useRef\(0\)/.test(auDs) && /setLoadFailed\(true\)/.test(auDs), true,
+   'the design page versions its loads and says when one failed');
+is(/let live = true;[\s\S]{0,300}?api\.listStyles/.test(auPast), true,
+   'the link search drops a response that arrives after the query changed');
+
+// render storms: stable identities end to end.
+is(/export default memo\(SheetCard\)/.test(auCard)
+   && /isDragging = false/.test(auCard) && !/<datalist/.test(auCard), true,
+   'SheetCard is memoised, takes live drag flags as primitives, owns no datalist');
+is(/const proxyRef = useRef\(null\)/.test(auMx)
+   && /onEdit: \(\.\.\.a\) => h\.current\.save\(\.\.\.a\)/.test(auMx), true,
+   'the cards get identity-stable proxies that call the CURRENT handlers');
+is(/live\.current = \{\s*save, markColour/.test(auMx), true,
+   'whose targets are refreshed every render, so no closure can go stale');
+// Each cached handler's own guard, because `live.current.dragging` also
+// appears at the drop site and one occurrence kept a loose test green.
+is(/const dragCache = useRef\(new Map\(\)\)/.test(auMx)
+   && /onDragOver: \(e\) => \{\s*\n\s*if \(!live\.current\.dragging\) return;/.test(auMx)
+   && /if \(live\.current\.over === id\) setOver\(null\)/.test(auMx), true,
+   'drag handlers are cached per row and read the live drag state');
+is(/const cardOptions = useMemo\(/.test(auMx)
+   && (auMx.match(/<datalist key=\{name\}/g) || []).length === 1, true,
+   'one datalist set at page level, built only when a list changes');
+is(/const AttrRow = memo\(/.test(auMx)
+   && /confirming=\{confirmDelete === r\.id\}/.test(auMx), true,
+   'the attribute grid\u2019s rows are memoised with primitive props');
+is(/const Sheet = memo\(DesignSheet\)/.test(auDs)
+   && /<Sheet key=\{s\.id\}/.test(auDs)
+   && /useCallback\(\(style, marks\) => \{/.test(auDs), true,
+   'design sheets are memoised behind a stable save handler');
+is(/export default memo\(PriceCard\)/.test(
+     fs.readFileSync('frontend/src/sections/PriceCard.jsx', 'utf8')), true,
+   'and so are the pricing cards');
+
+
+// ---- the app ships per page ----
+console.log('\n-- code splitting --');
+const auApp = fs.readFileSync('frontend/src/App.jsx', 'utf8');
+is(/import Login from '\.\/pages\/Login\.jsx'/.test(auApp), true,
+   'the login screen is eager — it must never depend on a second request');
+is((auApp.match(/lazyPage\(\(\) => import\(/g) || []).length === 8, true,
+   'and every other page is its own chunk');
+// A redeploy 404s the old chunk names on purpose (nginx.conf), so a tab
+// that outlives a deploy gets one reload — and the flag must clear on
+// success or that tab's ONLY reload is spent for ever.
+is(/sessionStorage\.removeItem\(RELOADED\)/.test(auApp)
+   && /sessionStorage\.getItem\(RELOADED\) === '1'/.test(auApp), true,
+   'the one-shot reload re-arms after any successful load');
+is(/class ChunkBoundary extends Component/.test(auApp)
+   && (auApp.match(/<ChunkBoundary>/g) || []).length === 2, true,
+   'and a chunk that still fails lands on words and a button, not a white page');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

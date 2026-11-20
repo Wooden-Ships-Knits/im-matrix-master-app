@@ -553,7 +553,92 @@ still appear in the tray.
 
 ---
 
-## 15. Open
+## 15. The blueprint: a yarn line belongs to a part
+
+A pullover is not knitted from one yarn in one place. The body can be a 2-ply
+cotton while the collar, cuffs and hem are a rib in something else, and the
+bill of materials could only say "this colourway uses these yarns" — never
+which went where. The team read it off the drawing instead.
+
+The BOM section now has two tabs over **one list of lines**:
+
+| tab | shows |
+|---|---|
+| **BOM** | every yarn of a colourway, each row saying which part it is for |
+| **Blueprint** | a flat pullover; pick a part and edit that part's yarns |
+
+Neither holds anything of its own. The Blueprint filters the colourway's own
+`bom` array and edits the same line the BOM tab shows, so the two cannot
+disagree.
+
+### NULL means the whole garment
+
+`colorway_yarns.component` is nullable with **no default**. All 8,465
+imported lines are NULL, and that is the honest reading: nobody has ever
+split one. A default of `'body'` would have claimed 8,465 decisions that were
+never made. Lines left that way stay on the BOM tab and are counted against
+no part; the Blueprint says how many there are rather than hiding them.
+
+### Two lists that have to agree
+
+`GARMENT_PARTS` in `repo.py` is what the server will store.
+`PARTS` in `Blueprint.jsx` is what has a shape to point at. A part on one and
+not the other is either unsaveable or unselectable, so a test compares them
+directly — not a copy of the list, the lists themselves.
+
+`neck · body · sleeve · cuff · hem`
+
+Deliberately not a lookup table. The parts of a pullover are a short fixed
+vocabulary that belongs to the drawing, and a row somebody added to a table
+would be a part nothing on screen could select.
+
+### The drawing
+
+Drawn as SVG paths rather than loaded as an image, because it has to be
+clickable part by part. Both sleeves are one part and both cuffs are one
+part: a garment has a sleeve yarn, not a left-sleeve yarn. The collar is an
+ellipse with a hole, and the hole is deaf to the pointer so clicking the gap
+still picks the collar around it. A part that already has yarn on it is
+shaded, so the drawing says what has been done before anything is selected.
+
+---
+
+## 16. The load
+
+A 53-agent adversarial audit (2026-11-18) confirmed 22 performance and
+stability findings; all but a handful of low-impact ones are fixed and each
+fix is pinned by a drift test. The invariants worth knowing when editing:
+
+- **API JSON is gzipped** (FastAPI middleware, level 6 — measured) and nginx
+  gzips the static files. The season Matrix went 455KB → 27KB on the wire.
+- **Photos are immutable and cached for a year** — every upload gets a fresh
+  random name — and are **resized to 1200px JPEG on the way in**
+  (uploads.py). A small upright JPEG passes through byte-identical.
+- **/api/meta is one scan of styles** (27 `SELECT DISTINCT` scans before)
+  behind an ETag: navigations revalidate with a 0-byte 304.
+- **matrix_rows** lost five fields nothing reads and runs its ±2-season
+  probes as laterals; the endpoint's JSON was byte-diffed against the
+  pre-change capture, 313 rows identical.
+- **Stale responses are no-ops everywhere**: season loads, cell saves (per
+  row), the editor's style load, the design sheets, the link search. The
+  editor race could previously SAVE style A's data onto style B.
+- **One interaction re-renders one card.** SheetCard / PriceCard /
+  DesignSheet / the attribute rows are memoised; the Matrix hands them
+  identity-stable proxies that delegate to the current render's handlers —
+  wrapping the handlers themselves in useCallback would have frozen
+  refresh() over the first season (the audit's verifier caught this).
+- **Every page is its own chunk**; Login is eager. A tab that outlives a
+  redeploy gets one automatic reload (the flag re-arms on success) and a
+  worded error with a Reload button after that, never a white page.
+
+Deferred as low-impact, unverified: list_styles' per-style colorway count,
+pool min_size, the editor's serialized costing/name fetches, photo-preview
+object URLs never revoked, DevBanner's health ping in production, Inter
+shipping all unicode subsets, no favicon.
+
+---
+
+## 17. Open
 
 - No cutover date, no data owner (§2). Both are `strategy.md` parallel-track items.
 - The Phase 0 checklist (`logic.md` §6) — eleven unconfirmed rules.

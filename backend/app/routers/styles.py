@@ -182,6 +182,9 @@ def get_costing(style_id: int):
     Nothing here is stored: it is recomputed from the style's inputs and the
     season's rates every time it is asked for (schema.md §5).
     """
-    if not repo.load_style(style_id):
+    # An existence check, not a full load: load_style builds the whole
+    # editor payload (colorways, BOM, sizes, operations) only to be thrown
+    # away here. style_exists is one indexed probe.
+    if not repo.style_exists(style_id):
         raise HTTPException(status_code=404, detail="Style not found")
     return repo.costing(style_id)

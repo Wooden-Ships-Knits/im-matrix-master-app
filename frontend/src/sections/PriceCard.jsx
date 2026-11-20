@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Shirt } from 'lucide-react';
 
 /**
@@ -52,43 +53,43 @@ export const valueOf = (style, row) => {
   return row.money ? money(raw) : String(raw);
 };
 
-export default function PriceCard({
+function PriceCard({
   style: s, index = null, onEdit = null, onOpen = null, rows = PRICING_ROWS,
 }) {
   const open = onOpen ? () => onOpen(s) : undefined;
   return (
-    <div className={`price-card${onEdit ? ' is-editable' : ''}`}>
-      {index != null && <div className="price-index">{index}</div>}
+    <div className={`pmx-card${onEdit ? ' is-editable' : ''}`}>
+      {index != null && <div className="pmx-index">{index}</div>}
 
-      <div className="price-photo" onDoubleClick={open}
+      <div className="pmx-photo" onDoubleClick={open}
         title={onOpen ? `Open ${s.name}` : undefined}>
         {s.image_path
-          ? <img src={s.image_path} alt={s.name} />
+          ? <img src={s.image_path} alt={s.name} loading="lazy" decoding="async" />
           : <Shirt size={26} strokeWidth={1.2} aria-hidden="true" />}
       </div>
 
-      <div className="price-name">{s.name}</div>
+      <div className="pmx-name">{s.name}</div>
 
-      <dl className="price-rows">
+      <dl className="pmx-rows">
         {rows.map((row, i) => {
           const shown = valueOf(s, row);
           // A label-only row is the workbook's note line: it prints its own
           // text and has nothing to fill in.
           if (!row.key) {
             return (
-              <div key={`note-${i}`} className="price-row note">
+              <div key={`note-${i}`} className="pmx-row note">
                 <dd>{row.label}</dd>
               </div>
             );
           }
           return (
             <div key={row.key}
-              className={`price-row${row.big ? ' big' : ''}${shown ? '' : ' empty'}`}>
+              className={`pmx-row${row.big ? ' big' : ''}${shown ? '' : ' empty'}`}>
               <dt>{row.label}</dt>
               <dd>
                 {onEdit ? (
                   <input
-                    className="price-input"
+                    className="pmx-input"
                     // Keyed on the stored value so a save made elsewhere
                     // reaches an uncontrolled field.
                     key={shown}
@@ -115,3 +116,7 @@ export default function PriceCard({
     </div>
   );
 }
+
+// Memoised for the same reason as SheetCard: one price blur used to
+// re-render the whole season's sheet twice (optimistic patch + server echo).
+export default memo(PriceCard);

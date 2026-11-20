@@ -181,17 +181,29 @@ export default function StyleEditor() {
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) return undefined;
     setLoading(true);
+    // Without this, jumping style-to-style can hydrate the form with the
+    // PREVIOUS style's slower response — and Save would then write that
+    // style's data over this one. The guard makes a superseded response a
+    // no-op instead.
+    let live = true;
     api.getStyle(id)
       .then((s) => {
+        if (!live) return;
         hydrate(toForm(s), s.image_path);
         setNeedsPhoto(!!s.needs_photo);
         setLoading(false);
-        api.costing(id).then(setCosting).catch(() => setCosting([]));
+        api.costing(id).then((c) => { if (live) setCosting(c); })
+          .catch(() => { if (live) setCosting([]); });
         loadNames(id);
       })
-      .catch((e) => { showToast(e.message, 'error'); navigate('/browse'); });
+      .catch((e) => {
+        if (!live) return;
+        showToast(e.message, 'error');
+        navigate('/browse');
+      });
+    return () => { live = false; };
   }, [id]); // eslint-disable-line
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -525,13 +537,13 @@ export default function StyleEditor() {
                         <span className="sku-cap">Style #</span>
                       </div>
                     </div>
-                    <div className="sku-result">
+                    {/* <div className="sku-result">
                       {derivedSku
                         ? <code>{form.sku_code || derivedSku}</code>
                         : <span className="muted">Pick a season, content, gauge and style number</span>}
                       {form.sku_code && derivedSku && form.sku_code !== derivedSku
                         && <span className="sku-flag">overridden — the parts make {derivedSku}</span>}
-                    </div>
+                    </div> */}
                     {/* <Field label="Override" hint="Only when the code does not follow the parts">
                       <TextInput value={form.sku_code} onChange={field('sku_code')}
                         placeholder={derivedSku || 'e.g. K58C3W795'} />

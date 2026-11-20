@@ -1,4 +1,4 @@
-import { Fragment, useId, useRef, useState } from 'react';
+import { Fragment, memo, useId, useRef, useState } from 'react';
 import { GripVertical, Shirt, ImagePlus, Star, Plus, X, Check, StickyNote } from 'lucide-react';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
 
@@ -328,7 +328,7 @@ export const attributesOf = (s) => ATTRIBUTES.map((a) => {
   };
 });
 
-export default function SheetCard({
+function SheetCard({
   style: s,
   view = 'matrix',
   steps = [],
@@ -343,7 +343,11 @@ export default function SheetCard({
   frameMark = null,
   nameMark = null,
   // Drag state and handlers, or nothing at all for a card that cannot move.
+  // The handlers object is cached per row by the caller; the two LIVE flags
+  // arrive as their own primitive props so one drag touches two cards.
   drag = null,
+  isDragging = false,
+  isOver = false,
   // Present on the Matrix screen: makes the attribute rows editable.
   onEdit = null,
   // Present alongside onEdit: clicking a colourway cycles its pen colour.
@@ -388,8 +392,8 @@ export default function SheetCard({
   const classes = ['sheet-card'];
   if (focused) classes.push('is-focused');
   if (wide) classes.push('is-wide');
-  if (drag?.isDragging) classes.push('dragging');
-  if (drag?.isOver) classes.push('drop-here');
+  if (isDragging || drag?.isDragging) classes.push('dragging');
+  if (isOver || drag?.isOver) classes.push('drop-here');
   if (onEdit) classes.push('is-editable');
   // The card clips its content so long names cannot escape their column; the
   // note panel has to escape, so the clipping lifts while it is open.
@@ -664,7 +668,7 @@ export default function SheetCard({
           takeFile(e.dataTransfer.files[0]);
         } : undefined}>
         {s.image_path
-          ? <img src={s.image_path} alt={s.name} />
+          ? <img src={s.image_path} alt={s.name} loading="lazy" decoding="async" />
           : <Shirt size={38} strokeWidth={1.3} />}
 
         {onEdit && (
@@ -1188,13 +1192,19 @@ export default function SheetCard({
         </dl>
       </>)}
 
-      {/* Rendered per card rather than once per page so the card stays
-          self-contained; identical ids collapse to one list in the browser. */}
-      {onEdit && Object.entries(options).map(([name, values]) => (
-        <datalist key={name} id={`${name}-list`}>
-          {values.map((v) => <option key={v} value={v} />)}
-        </datalist>
-      ))}
+      {/* The datalists these inputs name live once at page level
+          (Matrix.jsx renders them beside the grid): 313 cards each carrying
+          a full copy of the yarn list was thousands of duplicate <option>
+          nodes. */}
     </div>
   );
 }
+
+/**
+ * Memoised: the Matrix keeps 300+ of these mounted, and before this a single
+ * keystroke in the search box re-rendered every one of them. The caller
+ * keeps every prop identity-stable (rows are replaced only when patched,
+ * handlers are stable proxies, the drag object is cached per row), so the
+ * default shallow compare is exact — no custom comparator to go stale.
+ */
+export default memo(SheetCard);

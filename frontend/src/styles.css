@@ -268,9 +268,19 @@ select.input {
   display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
   gap: 22px; align-items: start;
 }
-@media (max-width: 1020px) { .editor-grid { grid-template-columns: 1fr; } }
+/* Grid items refuse to shrink below their content unless told otherwise;
+   without this the cards hold their width and the page scrolls sideways. */
+.editor-grid > * { min-width: 0; }
+/* One column below 1200, not 1020. Between those two the left card got
+   490-600px, its photo column kept 280 of them, and the form was left ~200px
+   — which is where the inputs ran out from under the Select Section card
+   (measured: 99px of overflow at a 1250px window, 177px at 1100px). */
+@media (max-width: 1200px) { .editor-grid { grid-template-columns: 1fr; } }
 
-.style-panel { display: grid; grid-template-columns: 280px 1fr; gap: 22px; }
+/* minmax(0, 1fr), not 1fr: a bare 1fr still refuses to go below the
+   content's minimum, so the form column used to force the whole panel wider
+   than its card and the overflow painted under the next card over. */
+.style-panel { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 22px; }
 @media (max-width: 680px) { .style-panel { grid-template-columns: 1fr; } }
 
 .style-photo {
@@ -302,7 +312,7 @@ select.input {
 @media (max-width: 560px) { .price-row { grid-template-columns: 1fr; } }
 
 /* section tiles */
-.tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
 .tile {
   border: none; border-radius: var(--radius);
@@ -331,10 +341,16 @@ select.input {
 .cw-head .field { flex: 1; min-width: 240px; max-width: 420px; }
 .bom-label { font-weight: 700; font-size: 0.95rem; margin: 6px 0 8px; }
 .bom-row {
-  display: grid; grid-template-columns: minmax(200px, 2.4fr) 110px 110px 44px;
+  display: grid; grid-template-columns: minmax(180px, 2.4fr) 100px 100px 132px 44px;
   gap: 10px; margin-bottom: 10px; align-items: center;
 }
-@media (max-width: 640px) { .bom-row { grid-template-columns: 1fr 90px 90px 44px; } }
+/* The blueprint's rows carry no Part column: the part is the thing that was
+   picked off the drawing to get there. */
+.bom-row.no-part { grid-template-columns: minmax(200px, 2.4fr) 110px 110px 44px; }
+@media (max-width: 760px) {
+  .bom-row { grid-template-columns: 1fr 86px 86px 120px 44px; }
+  .bom-row.no-part { grid-template-columns: 1fr 90px 90px 44px; }
+}
 /* Column captions for the BOM lines, on the same grid as the rows. */
 .bom-row.bom-head {
   margin-bottom: 4px;
@@ -352,7 +368,7 @@ select.input {
 .query-card { padding: 20px 24px; margin-bottom: 24px; }
 .query-title { font-weight: 800; font-size: 1.15rem; margin: 0 0 14px; }
 .query-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr) auto;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: 16px; align-items: end;
 }
 @media (max-width: 980px) { .query-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -498,6 +514,10 @@ select.input {
    enterable: three come from the season and are fixed, three are typed. */
 .sku-parts {
   display: flex; align-items: stretch; gap: 6px;
+  /* Wrap whenever the row is tight, at every width — gating it behind one
+     breakpoint is how the six segments ran out of the card on mid-size
+     windows. On a wide screen nothing wraps and nothing changes. */
+  flex-wrap: wrap;
   padding: 8px; background: var(--inset);
   border: 1px solid var(--border); border-radius: var(--radius);
 }
@@ -522,7 +542,6 @@ select.input {
 }
 .sku-flag { font-size: 0.78rem; color: var(--tan); }
 @media (max-width: 560px) {
-  .sku-parts { flex-wrap: wrap; }
   .sku-part.wide { flex-basis: 100%; }
 }
 
@@ -566,7 +585,7 @@ select.input {
 .wt-head, .wt-row { min-width: 700px; }
 
 /* Channel + finishing, beside the Sold through checkboxes */
-.chan-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.chan-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; }
 @media (max-width: 560px) { .chan-row { grid-template-columns: 1fr; } }
 
 /* ================= Colourway preview =================
@@ -2384,74 +2403,74 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 
    Proportions come from the workbook's own rows: a 12-row photo under a
    30pt number, a 57.75pt name (two lines at 10pt), then 30pt rows. */
-.price-grid {
+.pmx-grid {
   display: grid; grid-template-columns: repeat(12, 1fr);
   gap: 6mm 2mm; align-content: start;
 }
-@media (max-width: 1500px) { .price-grid { grid-template-columns: repeat(8, 1fr); } }
-@media (max-width: 1100px) { .price-grid { grid-template-columns: repeat(6, 1fr); } }
-@media (max-width: 760px)  { .price-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 1500px) { .pmx-grid { grid-template-columns: repeat(8, 1fr); } }
+@media (max-width: 1100px) { .pmx-grid { grid-template-columns: repeat(6, 1fr); } }
+@media (max-width: 760px)  { .pmx-grid { grid-template-columns: repeat(3, 1fr); } }
 
-.price-card {
+.pmx-card {
   display: flex; flex-direction: column; gap: 3px;
   min-width: 0; overflow: hidden;
 }
-.price-index {
+.pmx-index {
   height: 18px; display: flex; align-items: center; justify-content: center;
   font-size: 0.8rem; font-weight: 800; color: #1b1b1b;
 }
-.price-photo {
+.pmx-photo {
   aspect-ratio: 3 / 3.4; border: 1px solid var(--border, #ddd); border-radius: 3px;
   background: #fafafa; color: #c4c4c4; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
 }
-.price-photo img { width: 100%; height: 100%; object-fit: cover; }
+.pmx-photo img { width: 100%; height: 100%; object-fit: cover; }
 /* Two lines of name, always — the workbook gives the row 57.75pt whatever
    the name is, so the rows below it start at one height across a block. */
-.price-name {
+.pmx-name {
   height: 2.7em; overflow: hidden;
   font-size: 0.68rem; font-weight: 800; line-height: 1.35; text-align: center;
   color: #1b1b1b;
 }
 
-.price-rows { margin: 0; display: flex; flex-direction: column; }
-.price-row {
+.pmx-rows { margin: 0; display: flex; flex-direction: column; }
+.pmx-row {
   display: flex; align-items: center; gap: 4px;
   min-height: 19px; padding: 1px 2px;
   border-top: 1px solid #e4e4e4;
   font-size: 0.66rem;
 }
-.price-row dt {
+.pmx-row dt {
   flex: 0 0 auto; font-weight: 700; color: #8a8a8a;
   text-transform: uppercase; letter-spacing: 0.02em; font-size: 0.6rem;
 }
-.price-row dd { margin: 0; flex: 1; min-width: 0; text-align: right; }
+.pmx-row dd { margin: 0; flex: 1; min-width: 0; text-align: right; }
 /* The two rows the workbook sets at 16pt, which is what makes them read as
    the answer and the rest as working. */
-.price-row.big { min-height: 23px; }
-.price-row.big dd, .price-row.big .price-input { font-size: 0.86rem; font-weight: 800; }
-.price-row.note {
+.pmx-row.big { min-height: 23px; }
+.pmx-row.big dd, .pmx-row.big .pmx-input { font-size: 0.86rem; font-weight: 800; }
+.pmx-row.note {
   border-top: 0; justify-content: center;
   font-size: 0.6rem; font-weight: 700; color: #b4383c;
   letter-spacing: 0.03em;
 }
-.price-row.note dd { text-align: center; }
+.pmx-row.note dd { text-align: center; }
 
 /* Frameless, like the TAG field: a bordered box on every row of every column
    of a mostly-unpriced sheet reads as hundreds of things to fill in. */
-.price-input {
+.pmx-input {
   width: 100%; height: 100%; min-height: 15px; padding: 0; border: 0;
   border-radius: 2px; background: transparent;
   font: inherit; color: inherit; text-align: right;
 }
-.price-input:hover { background: #f1f1f1; }
-.price-input:focus { outline: none; background: #fff8c5; }
-.price-row.empty dt { color: #c4c4c4; }
+.pmx-input:hover { background: #f1f1f1; }
+.pmx-input:focus { outline: none; background: #fff8c5; }
+.pmx-row.empty dt { color: #c4c4c4; }
 
 @media print {
-  .price-grid { grid-template-columns: repeat(12, 1fr); }
-  .price-card { break-inside: avoid; }
-  .price-input { background: transparent !important; }
+  .pmx-grid { grid-template-columns: repeat(12, 1fr); }
+  .pmx-card { break-inside: avoid; }
+  .pmx-input { background: transparent !important; }
 }
 
 /* ---- The design sheets ----
@@ -2657,3 +2676,57 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .past-row-wrap:hover .past-unlink { color: #6f6f6f; }
 .past-unlink:hover { border-color: #b4383c; color: #b4383c; background: #fff6f6; }
 .past-unlink:focus-visible { outline: 2px solid #b4383c; outline-offset: 1px; }
+
+/* ---- The blueprint ----
+   A flat pullover with every part selectable, beside the list of the same
+   parts in words. The drawing says where a part is; the list says what it is
+   called and whether anything has been put in it. */
+.bom-tabs { margin: 0 0 18px; }
+.bom-part { font-size: 0.86rem; }
+
+.bp-wrap {
+  display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.bp { width: 290px; max-width: 100%; height: auto; flex: 0 0 auto; }
+.bp-part {
+  fill: #f3f1ed; stroke: #9a938a; stroke-width: 1.6; cursor: pointer;
+  /* Round joins are what keep the silhouette's corners soft — the shapes
+     were drawn expecting them. */
+  stroke-linejoin: round; stroke-linecap: round;
+  transition: fill 120ms ease;
+}
+.bp-part:hover { fill: #e7e2d9; }
+.bp-part:focus-visible { outline: none; stroke: #1b1b1b; stroke-width: 3; }
+/* A part that already has yarn on it, so the drawing says what is done
+   without anything having to be selected to find out. */
+.bp-part.filled { fill: #e2ded4; }
+.bp-part.on { fill: #3f4345; stroke: #1b1b1b; stroke-width: 2; }
+/* The collar is two bands with the page showing between them, so there is
+   no hole shape and nothing deaf to the pointer sits over the neck. */
+.bp-rib { fill: none; stroke: #b6ada0; stroke-width: 1; stroke-linecap: round;
+  pointer-events: none; }
+
+.bp-side { flex: 1 1 220px; min-width: 200px; }
+.bp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bp-pick {
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 8px 12px; cursor: pointer;
+  border: 1px solid var(--border, #ddd); border-radius: 8px; background: #fff;
+  font: inherit; font-size: 0.9rem; text-align: left;
+}
+.bp-pick:hover { border-color: #1b1b1b; }
+.bp-pick.on { background: #3f4345; border-color: #3f4345; color: #fff; }
+.bp-pick-name { flex: 1; font-weight: 700; }
+.bp-pick-n {
+  flex: 0 0 auto; min-width: 22px; text-align: center;
+  font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums;
+}
+.bp-pick-n.none { color: #b4b4b4; font-weight: 600; }
+.bp-pick.on .bp-pick-n.none { color: rgba(255, 255, 255, 0.5); }
+
+.bp-unplaced {
+  margin: 12px 0 0; padding: 9px 11px; border-radius: 8px;
+  background: #fbf7e8; color: #6f6136; font-size: 0.8rem; line-height: 1.4;
+}
+.bp-empty { margin: 0 0 12px; }

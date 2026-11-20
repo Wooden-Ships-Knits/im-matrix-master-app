@@ -109,7 +109,9 @@ export default function Checklist() {
       await api.setStep(row.id, code, next, who);
       // A hand tick can change a computed one — IM decides C-IM — and only
       // the server knows the rules, so take the row's steps back from it.
-      const fresh = await api.checklist({ season, collection });
+      // Just that row: refetching the whole season per tick made working
+      // down a column cost N full-grid downloads.
+      const fresh = await api.checklist({ style_id: row.id });
       const updated = fresh.find((r) => r.id === row.id);
       if (updated) {
         setRows((prev) => prev.map(
@@ -148,11 +150,11 @@ export default function Checklist() {
       <main className="page">
         <section className="card card-pad">
           <h2 className="card-title">Checklist</h2>
-          <p className="card-sub">
+          {/* <p className="card-sub">
             What has been prepared for each style. Ticks save as you make them.
             Columns marked <em>auto</em> are worked out from the style record
             rather than ticked — hover one to see what decides it.
-          </p>
+          </p> */}
 
           <div className="chk-filters">
             {/* First, and required before anything else: every tick is

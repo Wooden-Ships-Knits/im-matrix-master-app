@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
@@ -24,6 +24,89 @@ import TbdTray from '../sections/TbdTray.jsx';
  * The order is saved on the style, not in this browser — it is a decision the
  * team makes together, and the printed sheet reads the same column.
  */
+/**
+ * One style's row on the Attributes grid, memoised.
+ *
+ * 313 rows x (fields + 2) cells is thousands of inputs; before this, every
+ * search keystroke and every delete-gate toggle re-rendered all of them.
+ * Every prop is primitive or identity-stable (the row object is replaced
+ * only when patched; onSave/onDelete are the page's stable proxies;
+ * `fields` is fetched-once state), so the shallow compare holds and a
+ * keystroke re-renders nothing here at all.
+ */
+const AttrRow = memo(function AttrRow({ r, fields, confirming, onSave,
+                                        onDelete, onAskDelete, onKeepIt }) {
+  return (
+    <tr>
+      <th scope="row" className="chk-style">
+        <Link to={`/edit/${r.id}`}>{r.name}</Link>
+        <span className="chk-code">{r.style_code}</span>
+      </th>
+      {/* The S/M weight. The server grades the other sizes
+          from it on save, as the style editor does. */}
+      <td>
+        <input
+          className="mx-cell"
+          defaultValue={commaDecimal(roundFixed(r.weight_sm, 3))}
+          inputMode="decimal"
+          aria-label={`Weight S/M (kg) — ${r.name}`}
+          title="S/M, in kg. The other sizes are graded from it."
+          onBlur={(e) => {
+            // Shown rounded, so an untouched cell is not
+            // saved back as its own rounding.
+            if (e.target.value === commaDecimal(roundFixed(r.weight_sm, 3))) return;
+            onSave(r, 'weight_sm', pointDecimal(e.target.value));
+          }}
+          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+        />
+      </td>
+      {fields.map((f) => (
+        <td key={f.key}>
+          <input
+            className="mx-cell"
+            defaultValue={r[f.key] ?? ''}
+            inputMode={f.numeric ? 'numeric' : undefined}
+            aria-label={`${f.label} — ${r.name}`}
+            onBlur={(e) => onSave(r, f.key, e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+          />
+        </td>
+      ))}
+
+      {/* Removing a style takes its colourways, sizes, sales
+          and checklist ticks with it, so it asks first. The
+          confirm replaces the button on the row that asked,
+          rather than a dialog that has to name the style
+          again. */}
+      <td className="mx-del-col">
+        {confirming ? (
+          <span className="mx-del-gate">
+            <button type="button" className="sheet-colour-yes"
+              title={`Remove ${r.name} and everything filed under it`}
+              aria-label={`Confirm removing ${r.name}`}
+              onClick={() => onDelete(r)}>
+              <Check size={12} strokeWidth={3} />
+            </button>
+            <button type="button" className="sheet-colour-no"
+              title="Keep it"
+              aria-label={`Keep ${r.name}`}
+              onClick={() => onKeepIt(null)}>
+              <X size={12} strokeWidth={3} />
+            </button>
+          </span>
+        ) : (
+          <button type="button" className="mx-del"
+            title={`Remove ${r.name}`}
+            aria-label={`Remove ${r.name}`}
+            onClick={() => onAskDelete(r.id)}>
+            <Trash2 size={15} />
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+});
+
 export default function Matrix() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -55,7 +138,13 @@ export default function Matrix() {
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null);
 
-  useEffect(() => { api.meta().then(setMeta).catch(() => {}); }, []);
+  useEffect(() => {
+    // Not swallowed: with meta missing the Season select renders only
+    // "Choose a season…" with zero options and the page is a dead end that
+    // looks like an empty database. Say what actually happened.
+    api.meta().then(setMeta)
+      .catch((e) => toast?.(e.message || 'Could not load the season lists — reload the page', 'error'));
+  }, []); // eslint-disable-line
   useEffect(() => { api.matrixFields().then(setFields).catch(() => setFields([])); }, []);
   useEffect(() => { api.checklistSteps().then(setSteps).catch(() => setSteps([])); }, []);
   useEffect(() => { api.yarnCodes().then(setYarnCodes).catch(() => setYarnCodes([])); }, []);
@@ -81,7 +170,13 @@ export default function Matrix() {
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
   }, [season, collection, tab, sheet]);
 
+  // Which load is the current one. A slow response for the season you just
+  // left must not paint over the one you are looking at — out-of-order
+  // responses are routine when flicking between seasons on a slow link.
+  const loadSeq = useRef(0);
+
   const load = (quiet = false) => {
+    const seq = ++loadSeq.current;
     if (!season) { setRows(null); return; }
     // Blanking unmounts every card. The page then collapses to the height of
     // a spinner, the browser clamps the scroll to the new maximum, and when
@@ -94,7 +189,14 @@ export default function Matrix() {
     if (!quiet) setRows(null);
     // include_parked: this is the only screen with somewhere to show them.
     api.matrix({ season, collection, include_parked: true })
-      .then(setRows).catch(() => setRows([]));
+      .then((r) => { if (seq === loadSeq.current) setRows(r); })
+      .catch((e) => {
+        if (seq !== loadSeq.current) return;
+        setRows([]);
+        // An empty sheet and a failed fetch are different facts; the old
+        // catch showed the first for the second.
+        toast?.(e.message || 'Could not load the sheet', 'error');
+      });
   };
 
   // Refetch without taking the page away. The scroll position is kept by
@@ -186,9 +288,16 @@ export default function Matrix() {
     return v;
   };
 
+  // The last save STARTED per row, so the echo of an earlier save cannot
+  // overwrite a later one's optimistic value: the grid is built for rapid
+  // tab-blur edits, and two quick cells on one row race their responses.
+  const saveSeq = useRef(new Map());
+
   const save = async (row, key, value) => {
     const before = row[key] ?? '';
     if (String(value) === String(before)) return;
+    const seq = (saveSeq.current.get(row.id) || 0) + 1;
+    saveSeq.current.set(row.id, seq);
     const patch = (fields) => setRows((prev) => prev.map(
       (r) => (r.id === row.id ? { ...r, ...fields } : r)));
 
@@ -198,7 +307,10 @@ export default function Matrix() {
       // is the authority — the guess above only has to be close enough to
       // avoid a flicker.
       const saved = await api.updateMatrix(row.id, { [key]: value });
-      if (saved && typeof saved === 'object') patch(saved);
+      // The write itself landed either way; only the ECHO is stale when a
+      // newer save on this row has started since.
+      if (saved && typeof saved === 'object'
+          && saveSeq.current.get(row.id) === seq) patch(saved);
       // A tag nobody had used before joins the list the moment it is saved,
       // rather than at the next page load. The server will offer it to
       // everyone else from their next load — this is only so the person who
@@ -210,7 +322,10 @@ export default function Matrix() {
         }
       }
     } catch (err) {
-      patch({ [key]: before === '' ? null : before });
+      // Reverting is also an echo: skip it if a newer save owns the row.
+      if (saveSeq.current.get(row.id) === seq) {
+        patch({ [key]: before === '' ? null : before });
+      }
       toast?.(err.message || 'Could not save that', 'error');
     }
   };
@@ -560,6 +675,90 @@ export default function Matrix() {
     }
   };
 
+  /**
+   * Stable proxies for everything a memoised card calls.
+   *
+   * The real handlers above stay plain functions, recreated every render,
+   * which is what keeps their closures over season / collection / groups /
+   * refresh permanently fresh — the audit's verifier caught that wrapping
+   * them in useCallback would freeze refresh() over the first render's
+   * season. The cards instead receive these proxies: identity-stable for
+   * the life of the page, delegating to whatever the CURRENT render's
+   * handler is. memo() gets stability, the handlers keep their closures,
+   * and there is no dependency list to get wrong.
+   */
+  const live = useRef({});
+  live.current = {
+    save, markColour, highlightColour, arrangeColours, renameColour,
+    addColour, deleteColour, addPhoto, move, deleteStyle, navigate,
+    dragging, over,
+  };
+  const proxyRef = useRef(null);
+  if (!proxyRef.current) {
+    const h = live;
+    proxyRef.current = {
+      onEdit: (...a) => h.current.save(...a),
+      onChannel: (s, v) => h.current.save(s, 'whs_channel', v),
+      onMarkColour: (...a) => h.current.markColour(...a),
+      onHighlightColour: (...a) => h.current.highlightColour(...a),
+      onArrange: (...a) => h.current.arrangeColours(...a),
+      onRenameColour: (...a) => h.current.renameColour(...a),
+      onAddColour: (...a) => h.current.addColour(...a),
+      onDeleteColour: (...a) => h.current.deleteColour(...a),
+      onPhoto: (...a) => h.current.addPhoto(...a),
+      onOpen: (s) => h.current.navigate(`/edit/${s.id}`),
+      onDelete: (...a) => h.current.deleteStyle(...a),
+    };
+  }
+  const proxies = proxyRef.current;
+
+  // One datalist payload for every card, rebuilt only when a list changes.
+  const cardOptions = useMemo(
+    () => ({ yarn_codes: yarnCodes, colorway_tags: colorwayTags }),
+    [yarnCodes, colorwayTags]);
+
+  /**
+   * One drag-prop object per card, cached by row id and rebuilt only when
+   * the row's name or collection changes (the title embeds both). The
+   * handlers read the LIVE drag state through the ref, so a cached handler
+   * can never act on a stale `dragging`. The isDragging/isOver flags travel
+   * as separate primitive props, so a drag re-renders two cards, not 313.
+   */
+  const dragCache = useRef(new Map());
+  const dragFor = (groupName, r) => {
+    const title = `Drag to move ${r.name} within ${groupName}`;
+    const hit = dragCache.current.get(r.id);
+    if (hit && hit.title === title) return hit.obj;
+    const id = r.id;
+    const obj = {
+      title,
+      handlers: {
+        draggable: true,
+        onDragStart: (e) => {
+          setDragging(id);
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', String(id));
+        },
+        onDragEnd: () => { setDragging(null); setOver(null); },
+        onDragOver: (e) => {
+          if (!live.current.dragging) return;
+          e.preventDefault();
+          if (live.current.over !== id) setOver(id);
+        },
+        onDragLeave: () => { if (live.current.over === id) setOver(null); },
+        onDrop: (e) => {
+          e.preventDefault();
+          const group = dragCache.current.get(id)?.group;
+          live.current.move(group, live.current.dragging, id);
+          setDragging(null); setOver(null);
+        },
+      },
+    };
+    dragCache.current.set(id, { title, obj, group: groupName });
+    return obj;
+  };
+
+
   const printHref = `/print?${new URLSearchParams(
     Object.entries({ season, collection }).filter(([, v]) => v))}`;
 
@@ -589,13 +788,13 @@ export default function Matrix() {
               className={`card-title tab${sheet === 'pricing' ? ' on' : ''}`}
               onClick={() => setSheet('pricing')}>Pricing Matrix</button>
           </div>
-          <p className="card-sub">
+          {/* <p className="card-sub">
             {sheet === 'pricing'
               ? `What each garment costs, in the order the sheet shows them in.
                  Saves as you go, and is what gets printed.`
               : `What each garment is, and the order the sheet shows them in. Both
                  save as you go, and both are what gets printed.`}
-          </p>
+          </p> */}
 
           <div className="chk-filters">
             <Field label="Season" hint="Required">
@@ -767,73 +966,16 @@ export default function Matrix() {
                 </thead>
                 <tbody>
                   {shown.map((r) => (
-                    <tr key={r.id}>
-                      <th scope="row" className="chk-style">
-                        <Link to={`/edit/${r.id}`}>{r.name}</Link>
-                        <span className="chk-code">{r.style_code}</span>
-                      </th>
-                      {/* The S/M weight. The server grades the other sizes
-                          from it on save, as the style editor does. */}
-                      <td>
-                        <input
-                          className="mx-cell"
-                          defaultValue={commaDecimal(roundFixed(r.weight_sm, 3))}
-                          inputMode="decimal"
-                          aria-label={`Weight S/M (kg) — ${r.name}`}
-                          title="S/M, in kg. The other sizes are graded from it."
-                          onBlur={(e) => {
-                            // Shown rounded, so an untouched cell is not
-                            // saved back as its own rounding.
-                            if (e.target.value === commaDecimal(roundFixed(r.weight_sm, 3))) return;
-                            save(r, 'weight_sm', pointDecimal(e.target.value));
-                          }}
-                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                        />
-                      </td>
-                      {fields.map((f) => (
-                        <td key={f.key}>
-                          <input
-                            className="mx-cell"
-                            defaultValue={r[f.key] ?? ''}
-                            inputMode={f.numeric ? 'numeric' : undefined}
-                            aria-label={`${f.label} — ${r.name}`}
-                            onBlur={(e) => save(r, f.key, e.target.value)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
-                          />
-                        </td>
-                      ))}
-
-                      {/* Removing a style takes its colourways, sizes, sales
-                          and checklist ticks with it, so it asks first. The
-                          confirm replaces the button on the row that asked,
-                          rather than a dialog that has to name the style
-                          again. */}
-                      <td className="mx-del-col">
-                        {confirmDelete === r.id ? (
-                          <span className="mx-del-gate">
-                            <button type="button" className="sheet-colour-yes"
-                              title={`Remove ${r.name} and everything filed under it`}
-                              aria-label={`Confirm removing ${r.name}`}
-                              onClick={() => deleteStyle(r)}>
-                              <Check size={12} strokeWidth={3} />
-                            </button>
-                            <button type="button" className="sheet-colour-no"
-                              title="Keep it"
-                              aria-label={`Keep ${r.name}`}
-                              onClick={() => setConfirmDelete(null)}>
-                              <X size={12} strokeWidth={3} />
-                            </button>
-                          </span>
-                        ) : (
-                          <button type="button" className="mx-del"
-                            title={`Remove ${r.name}`}
-                            aria-label={`Remove ${r.name}`}
-                            onClick={() => setConfirmDelete(r.id)}>
-                            <Trash2 size={15} />
-                          </button>
-                        )}
-                      </td>
-                    </tr>
+                    <AttrRow
+                      key={r.id}
+                      r={r}
+                      fields={fields}
+                      confirming={confirmDelete === r.id}
+                      onSave={proxies.onEdit}
+                      onDelete={proxies.onDelete}
+                      onAskDelete={setConfirmDelete}
+                      onKeepIt={setConfirmDelete}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -844,6 +986,17 @@ export default function Matrix() {
         {/* The sheet itself, editable. The cards are the ones that print,
             so the arrangement and the attributes are judged in the shape they
             will be read in rather than in a table that looks nothing like it. */}
+        {/* The datalists every card's inputs name. Once, here, instead of
+            a copy inside each of 300+ cards — identical ids collapsed in
+            the browser but the duplicate option nodes were real. */}
+        {sheet === 'master' && tab === 'layout' && (
+          Object.entries(cardOptions).map(([name, values]) => (
+            <datalist key={name} id={`${name}-list`}>
+              {values.map((v) => <option key={v} value={v} />)}
+            </datalist>
+          ))
+        )}
+
         {sheet === 'master' && tab === 'layout' && groups.map((g) => (
           <section className="card mx-sheet" key={g.name}>
             <div className="mx-layout-head">
@@ -863,45 +1016,22 @@ export default function Matrix() {
                   index={g.numbers[r.id]}
                   view="matrix"
                   steps={steps}
-                  options={{ yarn_codes: yarnCodes,
-                            colorway_tags: colorwayTags }}
-                  onEdit={(style, key, value) => save(style, key, value)}
-                  onChannel={(style, value) => save(style, 'whs_channel', value)}
-                  onMarkColour={markColour}
-                  onHighlightColour={highlightColour}
-                  onArrange={arrangeColours}
+                  options={cardOptions}
+                  onEdit={proxies.onEdit}
+                  onChannel={proxies.onChannel}
+                  onMarkColour={proxies.onMarkColour}
+                  onHighlightColour={proxies.onHighlightColour}
+                  onArrange={proxies.onArrange}
                   minMainRows={g.mainRows}
-                  onRenameColour={renameColour}
-                  onAddColour={addColour}
-                  onDeleteColour={deleteColour}
-                  onPhoto={addPhoto}
-                  onOpen={(style) => navigate(`/edit/${style.id}`)}
+                  onRenameColour={proxies.onRenameColour}
+                  onAddColour={proxies.onAddColour}
+                  onDeleteColour={proxies.onDeleteColour}
+                  onPhoto={proxies.onPhoto}
+                  onOpen={proxies.onOpen}
                   focused={focused === r.id}
-                  drag={{
-                    isDragging: dragging === r.id,
-                    isOver: over === r.id && dragging && dragging !== r.id,
-                    title: `Drag to move ${r.name} within ${g.name}`,
-                    handlers: {
-                      draggable: true,
-                      onDragStart: (e) => {
-                        setDragging(r.id);
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', String(r.id));
-                      },
-                      onDragEnd: () => { setDragging(null); setOver(null); },
-                      onDragOver: (e) => {
-                        if (!dragging) return;
-                        e.preventDefault();
-                        if (over !== r.id) setOver(r.id);
-                      },
-                      onDragLeave: () => { if (over === r.id) setOver(null); },
-                      onDrop: (e) => {
-                        e.preventDefault();
-                        move(g.name, dragging, r.id);
-                        setDragging(null); setOver(null);
-                      },
-                    },
-                  }}
+                  drag={dragFor(g.name, r)}
+                  isDragging={dragging === r.id}
+                  isOver={!!(over === r.id && dragging && dragging !== r.id)}
                 />
               ))}
 
@@ -969,14 +1099,14 @@ export default function Matrix() {
               <h3 className="card-title">{g.name}</h3>
               <span className="result-count">{g.items.length} styles</span>
             </div>
-            <div className="price-grid">
+            <div className="pmx-grid">
               {g.items.map((r) => (
                 <PriceCard
                   key={r.id}
                   style={r}
                   index={g.numbers[r.id]}
-                  onEdit={(style, key, value) => save(style, key, value)}
-                  onOpen={(style) => navigate(`/edit/${style.id}`)}
+                  onEdit={proxies.onEdit}
+                  onOpen={proxies.onOpen}
                 />
               ))}
             </div>
