@@ -8,7 +8,9 @@ export default defineConfig({
     // Vite refuses requests for hostnames it does not know, so a
     // trycloudflare URL would be blocked outright. Allowing that one domain
     // lets the dev server be tunnelled for a quick look by someone else.
-    allowedHosts: ['.trycloudflare.com'],
+    // .pt-infashion.com is the VM's dev portal (dev-plm-master and any
+    // future sibling), whose nginx proxies to this server.
+    allowedHosts: ['.trycloudflare.com', '.pt-infashion.com'],
     // dist/ sits inside the project, so the dev server was watching its own
     // build output: every `npm run build` rewrote dist/index.html and vite
     // answered with a full page reload in whatever browser was open.
