@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import Wordmark from '../components/Wordmark.jsx';
-import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown, Palette} from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown, Palette, SwatchBook} from 'lucide-react';
 
 export default function Home() {
   return (
@@ -31,6 +31,13 @@ export default function Home() {
         <Link to="/design" className="home-card">
           <span className="icon-frame"><Palette size={54} strokeWidth={1.6} /></span>
           <span className="label">Design</span>
+        </Link>
+
+        {/* Beside Design: the same colours read the other way round — by
+            yarn rather than by style. */}
+        <Link to="/colors" className="home-card">
+          <span className="icon-frame"><SwatchBook size={54} strokeWidth={1.6} /></span>
+          <span className="label">Color Table</span>
         </Link>
 
         <Link to="/checklist" className="home-card">

@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette } from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette, SwatchBook } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
@@ -771,6 +771,7 @@ export default function Matrix() {
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
           <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
         </div>
       </header>

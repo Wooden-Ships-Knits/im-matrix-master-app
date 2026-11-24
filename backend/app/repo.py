@@ -2473,6 +2473,137 @@ def yarn_codes(min_colours: int = 5) -> list[str]:
             return [r[0] for r in cur.fetchall()]
 
 
+def color_table() -> dict:
+    """The Color Table: every yarn colour, grouped by palette.
+
+    Trims are left out via _is_trim — a zip is in yarn_colors because the
+    importer put every BOM line there, not because anyone thinks of it as a
+    colour. The split into real tables is planned (docs/yarn-split.md);
+    until then this filter is the same one the design sheet uses.
+
+    style_count comes along so the page can say which swatches are actually
+    knitted with, without a request per colour. The full style list is a
+    separate call (color_styles) made on demand: 676 colours times a style
+    list would be most of the payload for rows nobody hovers.
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name FROM yarn_palettes"
+                        " ORDER BY sort_order, name")
+            palettes = [{"id": r[0], "name": r[1], "colors": []}
+                        for r in cur.fetchall()]
+            by_id = {p["id"]: p for p in palettes}
+            cur.execute("""
+                SELECT y.id, y.name, y.palette_id, y.hex,
+                       y.qty_with_proj, y.qty_without_proj, COALESCE(u.n, 0)
+                  FROM yarn_colors y
+                  LEFT JOIN (SELECT cy.yarn_color_id,
+                                    count(DISTINCT sc.style_id) AS n
+                               FROM colorway_yarns cy
+                               JOIN style_colorways sc ON sc.id = cy.colorway_id
+                              GROUP BY cy.yarn_color_id) u
+                         ON u.yarn_color_id = y.id
+                 ORDER BY y.name
+            """)
+            unsorted = []
+            for cid, name, pal, hexv, qw, qo, n in cur.fetchall():
+                if _is_trim(name):
+                    continue
+                row = {
+                    "id": cid, "name": name, "hex": hexv,
+                    "palette_id": pal if pal in by_id else None,
+                    "qty_with_proj": float(qw) if qw is not None else None,
+                    "qty_without_proj": float(qo) if qo is not None else None,
+                    "style_count": n,
+                }
+                (by_id[pal]["colors"] if pal in by_id else unsorted).append(row)
+            return {"palettes": palettes, "unsorted": unsorted}
+
+
+def color_styles(color_id: int) -> list[dict]:
+    """The styles knitted with one yarn colour, newest season first.
+
+    What the hover card shows. DISTINCT because a colour sits in several
+    slots of several colourways of the same style, and the question is
+    "which styles", not "how many lines".
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT s.id, se.code, s.style_name, se.season_number
+                  FROM colorway_yarns cy
+                  JOIN style_colorways sc ON sc.id = cy.colorway_id
+                  JOIN styles s ON s.id = sc.style_id
+                  JOIN seasons se ON se.id = s.season_id
+                 WHERE cy.yarn_color_id = %s
+                 ORDER BY se.season_number DESC, s.style_name
+            """, (int(color_id),))
+            return [{"style_id": r[0], "season": r[1], "style_name": r[2]}
+                    for r in cur.fetchall()]
+
+
+def create_palette(name: str) -> dict:
+    """Make a palette, or hand back the one that already has that name.
+
+    Idempotent on purpose: the second person to type "Open Color" means the
+    same group, not an error.
+    """
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("A palette needs a name")
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO yarn_palettes (name) VALUES (%s)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id, name
+            """, (name,))
+            row = cur.fetchone()
+            return {"id": row[0], "name": row[1]}
+
+
+# What the Color Table may write on a colour. Everything else on
+# yarn_colors belongs to the BOM import.
+_COLOR_FIELDS = ("palette_id", "hex", "qty_with_proj", "qty_without_proj")
+
+
+def update_yarn_color(color_id: int, fields: dict) -> dict:
+    """Write the Color Table facts on one colour. Absent keys are left alone."""
+    sets, vals = [], []
+    for key, raw in fields.items():
+        if key not in _COLOR_FIELDS:
+            raise ValueError(f"Unknown field: {key}")
+        if key == "hex":
+            value = str(raw).strip().lower() if raw not in (None, "") else None
+            if value is not None and not (
+                    len(value) == 7 and value[0] == "#"
+                    and all(c in "0123456789abcdef" for c in value[1:])):
+                raise ValueError("hex must look like #aabbcc")
+        elif key == "palette_id":
+            value = int(raw) if raw not in (None, "") else None
+        else:
+            if raw in (None, ""):
+                value = None
+            else:
+                try:
+                    value = Decimal(str(raw))
+                except InvalidOperation as exc:
+                    raise ValueError(f"{key} must be a number") from exc
+        sets.append(f"{key} = %s")
+        vals.append(value)
+    if not sets:
+        raise ValueError("Nothing to change")
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE yarn_colors SET {', '.join(sets)}"
+                " WHERE id = %s RETURNING id",
+                vals + [int(color_id)])
+            if cur.fetchone() is None:
+                raise ValueError("No such colour")
+    return {"ok": True}
+
+
 # The parts of a pullover a yarn line can be assigned to.
 #
 # Tied to the blueprint: each code is a shape on the drawing in

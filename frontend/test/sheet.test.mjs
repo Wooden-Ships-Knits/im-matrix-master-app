@@ -992,6 +992,7 @@ console.log('\n-- the nav band --');
 const PAGE_ROUTE = {
   'Matrix.jsx': '/matrix', 'Browse.jsx': '/browse', 'Checklist.jsx': '/checklist',
   'Report.jsx': '/report', 'Design.jsx': '/design', 'StyleEditor.jsx': null,
+  'ColorTable.jsx': '/colors',
 };
 const banded = fs.readdirSync('frontend/src/pages')
   .filter((f) => fs.readFileSync(`frontend/src/pages/${f}`, 'utf8')
@@ -1004,7 +1005,7 @@ for (const [page, own] of Object.entries(PAGE_ROUTE)) {
   const links = [...band.matchAll(/to="(\/[a-z]*)"\s+className="band-link"/g)]
     .map((m) => m[1]);
   // Its own page is not a link on it, and everything else is.
-  const want = ['/new', '/matrix', '/browse', '/design', '/checklist', '/report']
+  const want = ['/new', '/matrix', '/browse', '/colors', '/design', '/checklist', '/report']
     .filter((r) => r !== own && !(page === 'StyleEditor.jsx' && r === '/new'));
   is(want.filter((r) => !links.includes(r)), [],
      `${page} links to every other page`);
@@ -1209,11 +1210,51 @@ is(/export default memo\(PriceCard\)/.test(
 
 
 // ---- the app ships per page ----
+// ---- the color table ----
+// The swatch board: name parsing and qty formatting are pure and shown on
+// every swatch, and the server-side rules each stopped a real wrong write.
+console.log('\n-- the color table --');
+const ctSrc = fs.readFileSync('frontend/src/pages/ColorTable.jsx', 'utf8');
+const { splitColorName, fmtQty } = await import(
+  'data:text/javascript,' + encodeURIComponent(
+    cut(ctSrc, 'export const splitColorName', 'const SWATCH_FALLBACK')));
+
+is(splitColorName('YST ARTIC FOX - 507'), { label: 'YST ARTIC FOX', code: '507' },
+   'a name splits into label and code at the dash');
+is(splitColorName('YCA BLACK B - 1708 B'), { label: 'YCA BLACK B', code: '1708 B' },
+   'a two-token code ("1708 B") stays whole');
+is(splitColorName('BJ SANDSTONE'), { label: 'BJ SANDSTONE', code: '' },
+   'a name with no code is all label, not a crash');
+is(splitColorName(null), { label: '', code: '' }, 'and so is no name at all');
+is([fmtQty(null), fmtQty(0), fmtQty(3.9), fmtQty('2.50')], ['—', '0', '3.9', '2.5'],
+   'qty: unknown is a dash, zero is a real answer, trailing zeros go');
+
+const ctRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
+// The board shows colours, not zips: the same _is_trim the design sheet uses.
+is(/def color_table[\s\S]*?if _is_trim\(name\):\n\s*continue/.test(ctRepo), true,
+   'the board leaves trims out, with the one shared trim rule');
+// The writable surface is exactly the four board facts — everything else on
+// yarn_colors belongs to the BOM import.
+is(/_COLOR_FIELDS = \("palette_id", "hex", "qty_with_proj", "qty_without_proj"\)/.test(ctRepo),
+   true, 'the Color Table can write only its four facts');
+// Idempotent create: the second person to type "Open Color" gets the group.
+is(/ON CONFLICT \(name\) DO UPDATE SET name = EXCLUDED\.name/.test(ctRepo), true,
+   'making a palette twice is one palette');
+// StrictMode mounts twice in dev: the live flag must be re-armed in the
+// effect body or the second mount drops every fetch for ever. That exact
+// bug showed an eternal "Loading the board…" before it was caught.
+is(ctSrc.indexOf('live.current = true;') > 0
+   && ctSrc.indexOf('live.current = true;') < ctSrc.indexOf('live.current = false;'),
+   true, 'the live flag is re-armed inside the effect, StrictMode-proof');
+// The palette dropdown is a dropdown: a click anywhere else closes it.
+is(/document\.addEventListener\('pointerdown', away\)/.test(ctSrc), true,
+   'the palette panel closes on a click outside it');
+
 console.log('\n-- code splitting --');
 const auApp = fs.readFileSync('frontend/src/App.jsx', 'utf8');
 is(/import Login from '\.\/pages\/Login\.jsx'/.test(auApp), true,
    'the login screen is eager — it must never depend on a second request');
-is((auApp.match(/lazyPage\(\(\) => import\(/g) || []).length === 8, true,
+is((auApp.match(/lazyPage\(\(\) => import\(/g) || []).length === 9, true,
    'and every other page is its own chunk');
 // A redeploy 404s the old chunk names on purpose (nginx.conf), so a tab
 // that outlives a deploy gets one reload — and the flag must clear on

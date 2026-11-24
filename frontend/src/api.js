@@ -126,6 +126,18 @@ export const api = {
       method: 'POST', body: JSON.stringify({ style_ids: styleIds, clear }),
     }),
 
+  // The Color Table: the yarn colours as a swatch board, grouped by palette.
+  colorTable: () => request('/api/colors'),
+  colorStyles: (colorId) => request(`/api/colors/${colorId}/styles`),
+  updateYarnColor: (colorId, fields) =>
+    request(`/api/colors/${colorId}`, {
+      method: 'PATCH', body: JSON.stringify(fields),
+    }),
+  createPalette: (name) =>
+    request('/api/colors/palettes', {
+      method: 'POST', body: JSON.stringify({ name }),
+    }),
+
   // The operator's preparation checklist, read as a grid for a whole season.
   checklistSteps: () => request('/api/checklist/steps'),
   checklist: (filters = {}) => {

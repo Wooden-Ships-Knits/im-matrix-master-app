@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .db import ping, pool
 from .routers import auth as auth_routes
-from .routers import checklist, matrix, meta, reports, sales, styles, uploads
+from .routers import checklist, colors, matrix, meta, reports, sales, styles, uploads
 from .settings import settings
 
 log = logging.getLogger("im_master")
@@ -68,6 +68,7 @@ app.include_router(reports.router)
 app.include_router(sales.router)
 app.include_router(checklist.router)
 app.include_router(matrix.router)
+app.include_router(colors.router)
 app.include_router(uploads.router)
 
 

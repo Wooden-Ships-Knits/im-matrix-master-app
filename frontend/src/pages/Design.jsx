@@ -1,6 +1,6 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, Ruler, Shirt, Printer, ListChecks, ZoomIn, ZoomOut } from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, Ruler, Shirt, Printer, ListChecks, ZoomIn, ZoomOut, SwatchBook } from 'lucide-react';
 import { Field } from '../components/ui.jsx';
 import { api } from '../api.js';
 import Wordmark from '../components/Wordmark.jsx';
@@ -598,6 +598,7 @@ export default function Design() {
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
         </div>
       </header>
 

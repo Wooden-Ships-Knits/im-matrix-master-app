@@ -50,6 +50,7 @@ const Report = lazyPage(() => import('./pages/Report.jsx'));
 const Checklist = lazyPage(() => import('./pages/Checklist.jsx'));
 const Matrix = lazyPage(() => import('./pages/Matrix.jsx'));
 const Design = lazyPage(() => import('./pages/Design.jsx'));
+const ColorTable = lazyPage(() => import('./pages/ColorTable.jsx'));
 const PrintSheet = lazyPage(() => import('./pages/PrintSheet.jsx'));
 
 /**
@@ -143,6 +144,7 @@ export default function App() {
             <Route path="/checklist" element={<Checklist />} />
             <Route path="/matrix" element={<Matrix />} />
             <Route path="/design" element={<Design />} />
+            <Route path="/colors" element={<ColorTable />} />
             <Route path="/print" element={<PrintSheet />} />
             <Route path="/edit/:id" element={<StyleEditor />} />
           </Routes>

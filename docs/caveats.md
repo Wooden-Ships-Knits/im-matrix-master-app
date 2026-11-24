@@ -638,7 +638,41 @@ shipping all unicode subsets, no favicon.
 
 ---
 
-## 17. Open
+## 17. The Color Table
+
+The swatch board (`/colors`, migration 0028): the season's yarn colours under
+team-named palettes, two kilos-available numbers per swatch, hover for the
+styles knitted with it, click for the panel that edits the board's own facts.
+
+- **The board owns four columns and nothing else** — `palette_id`, `hex`,
+  `qty_with_proj`, `qty_without_proj` on `yarn_colors` (`_COLOR_FIELDS`).
+  The names still belong to the BOM import; renaming a colour here would
+  silently detach it from every bill of materials that typed it.
+- **The swatch colour is typed in by a person.** "YST ARTIC FOX - 507"
+  carries no colour a machine could derive, so every swatch is grey until
+  somebody sets a hex in the panel. The two quantities are the same: NULL
+  means nobody has said, which renders as a dash and is different from 0.
+- **Trims are left out with `_is_trim`** — the same rule the design sheet
+  uses. But the import also left non-colours that the prefix rule cannot
+  catch: `CANCEL RELEASE`, `HOLD RELEASE`, `TBD`, `SALE 04`, `BENANG JAHIT`
+  (sewing thread), `OBRAS SESUAI WARNA TOPI` (an instruction, not a colour).
+  They sit under Unsorted until the yarn split (`yarn-split.md`) separates
+  real colours from BOM noise; hiding them by hand-list here would be a
+  second copy of that decision.
+- **Palettes can be made, not yet renamed or deleted.** Creating one is
+  idempotent (`ON CONFLICT`), so two people typing "Open Color" get one
+  group. Deleting would be `ON DELETE SET NULL` — the colours fall back to
+  Unsorted — but no one asked yet and an un-deletable group costs nothing.
+- **The hover list is fetched per colour and cached per visit.** For a
+  workhorse like YCA BREAKER WHITE that list is 660 styles (~40KB once);
+  the card shows ten and says how many more.
+- **StrictMode taught a lesson here**: a `useRef(true)` live-flag that is
+  only set at creation is false after dev's mount-unmount-mount, and every
+  fetch result gets dropped — the page showed "Loading the board…" for
+  ever while the network tab showed a 200. The flag is re-armed inside the
+  effect body, and the test suite pins that.
+
+## 18. Open
 
 - No cutover date, no data owner (§2). Both are `strategy.md` parallel-track items.
 - The Phase 0 checklist (`logic.md` §6) — eleven unconfirmed rules.

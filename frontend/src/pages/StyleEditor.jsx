@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer, ClipboardList, ListChecks, LayoutGrid, Palette } from 'lucide-react';
+import { Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer, ClipboardList, ListChecks, LayoutGrid, Palette, SwatchBook } from 'lucide-react';
 import { api } from '../api.js';
 import { roundFixed } from '../format.js';
 import {
@@ -351,6 +351,7 @@ export default function StyleEditor() {
           <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link> 
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
           <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
 
           {/* Straight to another style without going back to Browse. It
