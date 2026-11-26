@@ -28,8 +28,15 @@ export default function DevBanner() {
     <div className="dev-banner" role="status">
       <strong>DEVELOPMENT</strong>
       <span>
-        Not the live site — this database is {info.db_name || 'local'} and
-        anything here can be reset without notice.
+        Not the live site
+        {/* The database name and the reset warning are hidden while the app
+            is being walked through with the team (26 Nov 2026). Both are
+            true, but read over someone's shoulder they sound like a warning
+            about the work being shown rather than about the environment.
+            The band itself stays: which site this is still has to be
+            visible at a glance.
+        {' '}— this database is {info.db_name || 'local'} and
+        anything here can be reset without notice. */}
       </span>
     </div>
   );
