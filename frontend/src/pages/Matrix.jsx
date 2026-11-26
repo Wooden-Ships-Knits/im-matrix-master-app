@@ -768,11 +768,16 @@ export default function Matrix() {
         <div className="band-row">
           <Wordmark />
           <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
+          {/* Hidden while the rebuild is shown one screen at a time, same as
+              the home page's cards (Home.jsx, 26 Nov 2026). Matrix is one of
+              the two screens reachable from the front door, so leaving these
+              here would have put the whole app back in front of her one
+              click in. The routes still work — type /colors and it opens.
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
           <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
-          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link> */}
         </div>
       </header>
 
@@ -785,9 +790,12 @@ export default function Matrix() {
             <button type="button" role="tab" aria-selected={sheet === 'master'}
               className={`card-title tab${sheet === 'master' ? ' on' : ''}`}
               onClick={() => setSheet('master')}>Matrix Master</button>
+            {/* Hidden with the rest (Home.jsx, 26 Nov 2026). Only the tab is
+                gone: `sheet` still reads the URL, so /matrix?sheet=pricing
+                opens the pricing sheet exactly as before.
             <button type="button" role="tab" aria-selected={sheet === 'pricing'}
               className={`card-title tab${sheet === 'pricing' ? ' on' : ''}`}
-              onClick={() => setSheet('pricing')}>Pricing Matrix</button>
+              onClick={() => setSheet('pricing')}>Pricing Matrix</button> */}
           </div>
           {/* <p className="card-sub">
             {sheet === 'pricing'

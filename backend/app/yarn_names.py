@@ -32,6 +32,14 @@ differences, both ours to keep:
   * a code must look like a code: digits, with one optional letter
     ("1708", "1708 B"). The four qty figures of a row whose code is
     "ELASTIC" were never going to be yarn kilos.
+
+This parse runs ONE WAY. `yarn_colors.name` is the written label and the
+identity; `prefix` and `color_code` are copies of parts of it, kept so a
+query can ask about them. Nothing rebuilds the label from the parts — a
+label-from-parts helper lived here unused until the style editor's BOM did
+exactly that and printed "YST YST RED PAPRIKA - 893 - 893". It is gone, and
+frontend/test/sheet.test.mjs now fails if one comes back. To show a yarn,
+select its name.
 """
 from __future__ import annotations
 
@@ -91,11 +99,6 @@ def parse_yarn_name(text) -> dict | None:
         return {"kind": "trim", "prefix": _TRIM_RE.match(s).group(1),
                 "name": None, "code": None}
     return None
-
-
-def yarn_label(prefix, name, code) -> str:
-    """The text the team writes, rebuilt from the parts."""
-    return f"{prefix}{' ' + name if name else ''} - {code}"
 
 
 def resolve_yarn(cur, text, source_code: str = "*") -> tuple[int | None, str, dict]:

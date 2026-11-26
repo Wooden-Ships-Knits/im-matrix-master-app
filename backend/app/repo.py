@@ -252,9 +252,17 @@ def load_style(style_id: int) -> dict | None:
                 cur.execute(
                     """
                     SELECT cy.colorway_id,
-                           trim(concat_ws(' ', y.prefix, y.name,
-                                 CASE WHEN y.color_code IS NULL THEN NULL
-                                      ELSE '- ' || y.color_code END)) AS yarn,
+                           -- The label IS the name. `yarn_colors.name` holds the
+                           -- whole written text ("YST RED PAPRIKA - 893"), and
+                           -- prefix/color_code are parts cut OUT of it by
+                           -- yarn_names.parse_yarn_name, not parts to build it
+                           -- back from: concatenating them printed the prefix and
+                           -- the code twice ("YST YST RED PAPRIKA - 893 - 893").
+                           -- Measured on the live data — all 394 rows with a
+                           -- prefix begin with it, all 386 with a code end with
+                           -- it, and the 264 trims have neither and are already
+                           -- whole.
+                           btrim(y.name) AS yarn,
                            cy.percent, cy.ends, cy.component
                     FROM colorway_yarns cy
                     LEFT JOIN yarn_colors y ON y.id = cy.yarn_color_id

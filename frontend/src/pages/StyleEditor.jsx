@@ -348,11 +348,14 @@ export default function StyleEditor() {
         <div className="band-row">
           <Wordmark />
           <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
+          {/* Hidden with the rest (Home.jsx, 26 Nov 2026): this is where both
+              "Add new" and a style opened from Matrix land, so it is the
+              other screen she can reach. The routes are untouched.
           <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
-          <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link> 
+          <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
           <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
-          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link> */}
 
           {/* Straight to another style without going back to Browse. It
               leaves through leaveTo, so unsaved work still prompts. */}

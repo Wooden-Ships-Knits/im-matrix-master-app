@@ -1476,6 +1476,37 @@ is(/if name == "default":[\s\S]{0,200}SET items = '\[\]'::jsonb/.test(ctRepo), t
 is(/SAVE_AFTER_MS/.test(csatSrc) && /setTimeout\(/.test(csatSrc), true,
    'a drag saves itself — CSAT is a desk, not a form');
 
+console.log('\n-- a yarn label is written once --');
+// `yarn_colors.name` IS the label ("YST RED PAPRIKA - 893"). prefix and
+// color_code are parts cut OUT of it by yarn_names.parse_yarn_name, never
+// parts to build it back from — the editor's BOM rebuilt it from all three
+// and printed "YST YST RED PAPRIKA - 893 - 893". Measured when that was
+// fixed: of 658 rows, all 394 with a prefix begin with it and all 386 with a
+// code end with it, so the parts are always already in the name.
+//
+// Worth a pin rather than a comment because the BOM text is also an INPUT:
+// save_style does get_or_create(yarn_colors, name, yarn), so anyone saving a
+// style while a doubled label was on screen would have minted a second yarn
+// under the doubled name. (None exist — checked.)
+const bomRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
+const bomQuery = cut(bomRepo, 'SELECT cy.colorway_id,', 'FROM colorway_yarns cy')
+  .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+is(/btrim\(y\.name\) AS yarn/.test(bomQuery), true,
+   'the colourway BOM takes the yarn label whole');
+is(/y\.prefix|y\.color_code/.test(bomQuery), false,
+   'and never rebuilds it from the parts it was cut into');
+
+// The same rule, everywhere rather than in one query. `yarn_label()` sat in
+// yarn_names.py uncalled, offering to do this, until a query did it by hand;
+// it is gone, and this is what keeps the next one from being written. The
+// parse runs one way: text in, parts out, and the text stays the identity.
+const pyFiles = (dir) => fs.readdirSync(dir, { withFileTypes: true })
+  .flatMap((e) => (e.isDirectory() ? pyFiles(`${dir}/${e.name}`)
+    : e.name.endsWith('.py') ? [`${dir}/${e.name}`] : []));
+const rebuilt = [...pyFiles('backend/app'), ...pyFiles('backend/scripts')]
+  .filter((f) => /concat_ws\([^)]*prefix|yarn_label\s*\(/.test(fs.readFileSync(f, 'utf8')));
+is(rebuilt, [], 'no query anywhere assembles a yarn label out of prefix and code');
+
 console.log('\n-- code splitting --');
 const auApp = fs.readFileSync('frontend/src/App.jsx', 'utf8');
 is(/import Login from '\.\/pages\/Login\.jsx'/.test(auApp), true,

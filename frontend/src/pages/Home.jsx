@@ -20,35 +20,46 @@ export default function Home() {
           <span className="label">Matrix</span>
         </Link>
 
-        <Link to="/browse" className="home-card">
+        {/* ---------------------------------------------------------------
+            Hidden on purpose — 26 Nov 2026. The rebuild is being shown one
+            screen at a time, so the front door offers Add and Matrix and
+            nothing else for now. Nothing is removed: the routes all still
+            work, so /browse, /design, /colors, /checklist and /report open
+            if you type the address, and the top band of every other page
+            still links to them.
+
+            Uncomment a card to put it back.
+            --------------------------------------------------------------- */}
+
+        {/* <Link to="/browse" className="home-card">
           <span className="icon-frame"><TextSearch size={54} strokeWidth={1.6} /></span>
           <span className="label">Browse / Edit</span>
-        </Link>
+        </Link> */}
 
         {/* After Matrix and before Checklist: it is the other way of
             reading the same styles, and it is read while the garment is
-            still being designed rather than once it is being prepared. */}
+            still being designed rather than once it is being prepared.
         <Link to="/design" className="home-card">
           <span className="icon-frame"><Palette size={54} strokeWidth={1.6} /></span>
           <span className="label">Design</span>
-        </Link>
+        </Link> */}
 
         {/* Beside Design: the same colours read the other way round — by
-            yarn rather than by style. */}
+            yarn rather than by style.
         <Link to="/colors" className="home-card">
           <span className="icon-frame"><SwatchBook size={54} strokeWidth={1.6} /></span>
           <span className="label">Color Table</span>
-        </Link>
+        </Link> */}
 
-        <Link to="/checklist" className="home-card">
+        {/* <Link to="/checklist" className="home-card">
           <span className="icon-frame"><ListChecks size={54} strokeWidth={1.6} /></span>
           <span className="label">Checklist</span>
-        </Link>
+        </Link> */}
 
-        <Link to="/report" className="home-card">
+        {/* <Link to="/report" className="home-card">
           <span className="icon-frame"><ClipboardList size={54} strokeWidth={1.6} /></span>
           <span className="label">Report</span>
-        </Link>
+        </Link> */}
       </main>
 
       <footer className="home-foot">
