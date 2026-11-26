@@ -17,8 +17,12 @@ def list_styles(
     q: str | None = Query(None),
     color: str | None = Query(None),
     size: str | None = Query(None),
+    # Only the typeahead passes this. Browse wants the whole list, so the
+    # default stays unlimited rather than silently truncating that page.
+    limit: int | None = Query(None, ge=1, le=500),
 ):
-    return repo.list_styles(season=season, q=q, color=color, size=size)
+    return repo.list_styles(
+        season=season, q=q, color=color, size=size, limit=limit)
 
 
 @router.get("/export.csv")
@@ -63,13 +67,18 @@ def matrix(
     q: str | None = Query(None),
     start_date: str | None = Query(None),
     end_date: str | None = Query(None),
+    # Only the Matrix screen asks for these — it has a tray to show them in.
+    # The printed sheet and the sales report leave it off and never see a
+    # style that has no position.
+    include_parked: bool = Query(False),
 ):
     """The styles a printed review sheet covers, grouped by collection.
 
     Declared before /{style_id}, which would otherwise read "matrix" as an id.
     """
     return repo.matrix_rows(season=season, collection=collection, q=q,
-                            start_date=start_date, end_date=end_date)
+                            start_date=start_date, end_date=end_date,
+                            include_parked=include_parked)
 
 
 @router.get("/{style_id}")
@@ -84,6 +93,32 @@ def get_style(style_id: int):
 def related(style_id: int):
     """The same garment in other seasons."""
     return repo.related_styles(style_id)
+
+
+@router.get("/{style_id}/names")
+def name_history(style_id: int):
+    """What this style and its colourways have been called before."""
+    return repo.style_name_history(style_id)
+
+
+@router.post("/{style_id}/import", status_code=201)
+def import_style(style_id: int, payload: dict = Body(...)):
+    """Copy this style into a season as the same garment.
+
+    `style_id` is the SOURCE — the style being imported from — so the call
+    reads "import from 1217 into S27". The copy shares the source's product,
+    which is what makes the two show as the same garment in related.
+    """
+    season = payload.get("season")
+    if not season:
+        raise HTTPException(status_code=400, detail="season is required")
+    try:
+        return repo.import_style(style_id, season,
+                                 payload.get("collection"), payload.get("name"))
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/{style_id}/link")
@@ -133,9 +168,11 @@ def update_style(style_id: int, payload: dict = Body(...)):
 
 @router.delete("/{style_id}")
 def delete_style(style_id: int):
-    if not repo.delete_style(style_id):
+    gone = repo.delete_style(style_id)
+    if gone is None:
         raise HTTPException(status_code=404, detail="Style not found")
-    return {"ok": True}
+    # What went with it, so the page can say so rather than a bare "deleted".
+    return {"ok": True, **gone}
 
 
 @router.get("/{style_id}/costing")
@@ -145,6 +182,9 @@ def get_costing(style_id: int):
     Nothing here is stored: it is recomputed from the style's inputs and the
     season's rates every time it is asked for (schema.md §5).
     """
-    if not repo.load_style(style_id):
+    # An existence check, not a full load: load_style builds the whole
+    # editor payload (colorways, BOM, sizes, operations) only to be thrown
+    # away here. style_exists is one indexed probe.
+    if not repo.style_exists(style_id):
         raise HTTPException(status_code=404, detail="Style not found")
     return repo.costing(style_id)

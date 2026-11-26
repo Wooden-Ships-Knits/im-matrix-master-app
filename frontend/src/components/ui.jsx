@@ -35,19 +35,35 @@ export const useToast = () => useContext(ToastContext);
 /* ---------------- Confirm dialog ---------------- */
 
 export function ConfirmDialog({ open, title, message, confirmLabel = 'Yes, continue',
-  danger = false, onConfirm, onCancel }) {
+  danger = false, onConfirm, onCancel, altLabel, onAlt, busy = false }) {
   if (!open) return null;
+  // A third way out, for when the choice is not really yes-or-no. The discard
+  // prompt offered "lose the work" or "stay here", and the thing most people
+  // wanted — save it and go — was not on the dialog at all.
+  const hasAlt = !!(altLabel && onAlt);
   return (
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div className="dialog" role="alertdialog" aria-modal="true" aria-label={title}>
         <h3>{title}</h3>
         <p>{message}</p>
         <div className="dialog-actions">
-          <button type="button" className="btn-ghost" onClick={onCancel}>Cancel</button>
+          <button type="button" className="btn-ghost" onClick={onCancel} disabled={busy}>
+            Cancel
+          </button>
           <button type="button" className={`btn ${danger ? 'btn-danger' : 'btn-save'}`}
-            onClick={onConfirm} autoFocus>
+            onClick={onConfirm} disabled={busy} autoFocus={!hasAlt}>
             {confirmLabel}
           </button>
+          {/* Last, so the safe action holds the rightmost slot and the focus.
+              With only two buttons the destructive one is the answer to the
+              question and belongs there; once there is something better to do
+              than lose the work, it should not be what Enter reaches. */}
+          {hasAlt && (
+            <button type="button" className="btn btn-save" onClick={onAlt}
+              disabled={busy} autoFocus>
+              {busy ? 'Saving…' : altLabel}
+            </button>
+          )}
         </div>
       </div>
     </div>

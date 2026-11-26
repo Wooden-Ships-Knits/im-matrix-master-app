@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, Check, Ruler} from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, Check, Ruler, Palette, SwatchBook } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
+import Wordmark from '../components/Wordmark.jsx';
 
 // Who ticked it. The API records this against every tick; until there are
 // accounts, the browser remembers what was typed so it is not retyped daily.
@@ -108,7 +109,9 @@ export default function Checklist() {
       await api.setStep(row.id, code, next, who);
       // A hand tick can change a computed one — IM decides C-IM — and only
       // the server knows the rules, so take the row's steps back from it.
-      const fresh = await api.checklist({ season, collection });
+      // Just that row: refetching the whole season per tick made working
+      // down a column cost N full-grid downloads.
+      const fresh = await api.checklist({ style_id: row.id });
       const updated = fresh.find((r) => r.id === row.id);
       if (updated) {
         setRows((prev) => prev.map(
@@ -135,22 +138,24 @@ export default function Checklist() {
     <>
       <header className="band">
         <div className="band-row">
-          <Link to="/" className="logo">IM Master</Link>
+          <Wordmark />
           <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
           <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
           <Link to="/browse" className="band-link"><TextSearch size={18} /> Browse</Link>
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
         </div>
       </header>
 
       <main className="page">
         <section className="card card-pad">
           <h2 className="card-title">Checklist</h2>
-          <p className="card-sub">
+          {/* <p className="card-sub">
             What has been prepared for each style. Ticks save as you make them.
             Columns marked <em>auto</em> are worked out from the style record
             rather than ticked — hover one to see what decides it.
-          </p>
+          </p> */}
 
           <div className="chk-filters">
             {/* First, and required before anything else: every tick is
@@ -158,7 +163,7 @@ export default function Checklist() {
                 attached to is worth less than no grid at all. The browser
                 remembers it, so this is a one-off on most days. */}
             <Field label="Your name" hint="Recorded against each tick">
-              <input className="input" value={who} placeholder="e.g. Wayan"
+              <input className="input" value={who} placeholder="e.g. Putri"
                 required aria-required="true"
                 onChange={(e) => setWho(e.target.value)} />
             </Field>

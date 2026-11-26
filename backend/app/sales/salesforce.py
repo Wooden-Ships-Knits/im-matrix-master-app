@@ -84,6 +84,7 @@ class Salesforce:
             ids = ",".join(f"'{oid}'" for oid in order_ids[i:i + CHUNK])
             soql = f"""
             SELECT kugo2p__ProductFamily__c, kugo2p__ProductName__c,
+                   kugo2p__Product__r.Style__c,
                    kugo2p__Quantity__c
             FROM kugo2p__SalesOrderProductLine__c
             WHERE kugo2p__SalesOrder__c IN ({ids})
@@ -104,6 +105,19 @@ class Salesforce:
         for line in self._lines(order_ids):
             style, colour, _size = parse_style_color(
                 line.get("kugo2p__ProductName__c"))
+            # The product master's current name wins over the one frozen onto
+            # the line when the order was created. A style renamed mid-season
+            # keeps its old name on every older line, so without this its sales
+            # split in two — XAVIER CARDI CHUNKY COTTON and XAVIER BUTTON CARDI
+            # CHUNKY COTTON were the same garment, and only the second exists
+            # here, so ten units landed on a style this database does not have.
+            #
+            # Colour and size still come from the line: Style__c is only the
+            # style. A line whose product has no Style__c keeps the parsed
+            # name, so nothing loses its identity.
+            master = tidy((line.get("kugo2p__Product__r") or {}).get("Style__c"))
+            if master:
+                style = master
             try:
                 qty = int(float(line.get("kugo2p__Quantity__c") or 0))
             except (TypeError, ValueError):

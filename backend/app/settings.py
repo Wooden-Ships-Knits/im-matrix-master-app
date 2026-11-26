@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     # How long a signed-in session lasts before it has to be entered again.
     session_hours: int = 12
 
+    # True on a developer's machine, false on the VM. The two sites look
+    # identical, and only one of them is the one people rely on — so the
+    # difference has to be visible rather than remembered.
+    # Named app_dev, not dev: pydantic maps the field name to the variable, so
+    # this reads APP_DEV — beside APP_PASSWORD, and specific enough not to
+    # collide with whatever else sets DEV in a shell.
+    app_dev: bool = False
+
     max_upload_mb: int = 8
     upload_dir: str = "/app/data/uploads"
 

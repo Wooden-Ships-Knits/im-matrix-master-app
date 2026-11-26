@@ -1,4 +1,4 @@
-"""IM Master — API.
+"""PDM — API.
 
 Serves the endpoints the existing React client calls (frontend/src/api.js) on
 top of the v2 schema. The mapping between the client's field names and the
@@ -10,12 +10,13 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .db import ping, pool
 from .routers import auth as auth_routes
-from .routers import checklist, matrix, meta, reports, sales, styles, uploads
+from .routers import checklist, colors, matrix, meta, reports, sales, styles, uploads
 from .settings import settings
 
 log = logging.getLogger("im_master")
@@ -29,7 +30,17 @@ async def lifespan(app: FastAPI):
     pool.close()
 
 
-app = FastAPI(title="IM Master", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="PDM", version="0.2.0", lifespan=lifespan)
+
+# The season Matrix is 455KB of JSON raw and ~45KB gzipped, and it is fetched
+# on every visit to the page. Compression here rather than only in nginx so
+# the dev stack (vite proxy straight to uvicorn) behaves like production.
+# minimum_size leaves the many tiny responses alone — compressing a 200-byte
+# health check costs more than it saves.
+# compresslevel 6, not the default 9: measured on the 455KB season Matrix,
+# level 9 spends 10.4ms for 26KB and level 5 spends 2.7ms for 30KB. Level 6
+# keeps nearly all the size win at a third of the CPU.
+app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=6)
 
 # The client reads `error` from a failed response, not FastAPI's `detail`
 # (frontend/src/api.js), so errors are reshaped to match rather than silently
@@ -57,6 +68,7 @@ app.include_router(reports.router)
 app.include_router(sales.router)
 app.include_router(checklist.router)
 app.include_router(matrix.router)
+app.include_router(colors.router)
 app.include_router(uploads.router)
 
 
@@ -86,6 +98,18 @@ async def guard_writes(request: Request, call_next):
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads")
 
 
+@app.middleware("http")
+async def _photo_cache(request: Request, call_next):
+    """Photos are immutable — every upload gets a fresh random name — so the
+    browser may keep them for ever. nginx adds this in production; adding it
+    here too makes the dev stack cache the same way, which matters when the
+    Matrix layout shows 300 photos per season."""
+    response = await call_next(request)
+    if request.url.path.startswith("/uploads/") and response.status_code == 200:
+        response.headers["Cache-Control"] = "public, immutable, max-age=31536000"
+    return response
+
+
 @app.get("/api/health")
 def health():
     """Liveness plus database connectivity — strategy.md Phase 1 exit criteria."""
@@ -97,5 +121,10 @@ def health():
             status_code=503,
             content={"status": "degraded", "database": "unreachable", "detail": str(exc)},
         )
-    return {"status": "ok", "database": "ok" if ok else "unreachable",
+    return {"status": "ok",
+            # Read by the banner at the top of every page. False on the VM, so
+            # the banner renders nothing there — one that is always up is one
+            # nobody reads.
+            "dev": settings.app_dev,
+            "database": "ok" if ok else "unreachable",
             "db_name": settings.postgres_db}

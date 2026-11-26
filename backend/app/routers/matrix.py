@@ -24,6 +24,12 @@ def highlights():
     return repo.HIGHLIGHT_COLOURS
 
 
+@router.get("/channels")
+def channels():
+    """The sell channels the number cell cycles through."""
+    return repo.WHS_CHANNELS
+
+
 @router.get("/ring-marks")
 def ring_marks():
     """The colours a ring round a next-season circle can be."""
@@ -42,9 +48,13 @@ def rows(
     season: str | None = Query(None),
     collection: str | None = Query(None),
     q: str | None = Query(None),
+    # Only the Matrix screen wants these — it has a tray to put them in. The
+    # printed sheet asks without it and never sees a style with no position.
+    include_parked: bool = Query(False),
 ):
     """The same rows the printed sheet uses, so both read one query."""
-    return repo.matrix_rows(season=season, collection=collection, q=q)
+    return repo.matrix_rows(season=season, collection=collection, q=q,
+                            include_parked=include_parked)
 
 
 @router.patch("/{style_id}")
@@ -54,6 +64,35 @@ def update(style_id: int, payload: dict = Body(...)):
         return repo.update_matrix_fields(style_id, payload or {})
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/design")
+def design(
+    season: str | None = Query(None),
+    collection: str | None = Query(None),
+    style_id: int | None = Query(None),
+):
+    """The design sheets: slot by colourway, one sheet per style."""
+    return repo.design_rows(season=season, collection=collection,
+                            style_id=style_id)
+
+
+@router.put("/design/{style_id}/marks")
+def design_marks(style_id: int, payload: dict = Body(...)):
+    """Place this style's slot markers on its photo. The whole map at once."""
+    try:
+        return repo.set_design_marks(style_id, payload.get("marks") or {})
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/colorway-tags")
+def colorway_tags():
+    """The colourway naming schemes the TAG field offers. Not a closed list —
+    the field takes anything typed, and what is typed joins the list."""
+    return repo.colorway_tags()
 
 
 @router.get("/colorway-marks")
@@ -72,9 +111,28 @@ def colorway_highlights():
 def add_colorway(style_id: int, payload: dict = Body(...)):
     """Add a colourway to this style, at the end of its list."""
     try:
-        return repo.add_colorway(style_id, payload.get("color"))
+        return repo.add_colorway(style_id, payload.get("color"),
+                                 payload.get("zone") or "main")
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+
+
+@router.post("/{style_id}/colorways/arrange")
+def arrange_colorways(style_id: int, payload: dict = Body(...)):
+    """Place this style's colourways: band and order, the whole list at once."""
+    items = payload.get("colorways")
+    if not isinstance(items, list):
+        raise HTTPException(400, "colorways must be a list")
+    try:
+        return {"moved": repo.arrange_colorways(style_id, items)}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@router.get("/colorway-zones")
+def colorway_zones():
+    """The bands a colourway can sit in, top to bottom."""
+    return list(repo.COLORWAY_ZONES)
 
 
 @router.patch("/{style_id}/colorway")

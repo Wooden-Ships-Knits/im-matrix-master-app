@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer,
-  ClipboardList,ListChecks, LayoutGrid,
-} from 'lucide-react';
+import { Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer, ClipboardList, ListChecks, LayoutGrid, Palette, SwatchBook } from 'lucide-react';
 import { api } from '../api.js';
 import { roundFixed } from '../format.js';
 import {
@@ -17,6 +14,9 @@ import ShippingSection from '../sections/ShippingSection.jsx';
 import MeasurementsSection from '../sections/MeasurementsSection.jsx';
 import OperationsSection from '../sections/OperationsSection.jsx';
 import PastSeasons from '../sections/PastSeasons.jsx';
+import StyleJump from '../sections/StyleJump.jsx';
+import Wordmark from '../components/Wordmark.jsx';
+import NameHistory from '../sections/NameHistory.jsx';
 
 const SECTIONS = [
   { key: 'measurements', label: 'Matrix', icon: Ruler },
@@ -139,12 +139,25 @@ export default function StyleEditor() {
   const [costing, setCosting] = useState([]);
   const [preview, setPreview] = useState('');
 
+  // Raised on the Matrix layout, shown here. Kept out of `form` on purpose:
+  // the editor never writes it, and anything in `form` counts towards the
+  // unsaved-changes prompt, which this must not.
+  const [needsPhoto, setNeedsPhoto] = useState(false);
+
   const [serverImage, setServerImage] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
   const previewUrl = useMemo(
     () => (pendingImage ? URL.createObjectURL(pendingImage) : null), [pendingImage]);
   const fileRef = useRef(null);
   const nameRef = useRef(null);
+  // What this style has been called before. Loaded beside the style and taken
+  // again after every save: a save is when a rename is recorded, so the panel
+  // would otherwise show the state from before the change that just happened.
+  const [names, setNames] = useState([]);
+  const loadNames = (styleId) => {
+    if (!styleId) { setNames([]); return; }
+    api.nameHistory(styleId).then(setNames).catch(() => setNames([]));
+  };
 
   const snapshot = useRef('');
   const dirty = JSON.stringify(form) !== snapshot.current || !!pendingImage;
@@ -168,15 +181,29 @@ export default function StyleEditor() {
   }, []); // eslint-disable-line
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) return undefined;
     setLoading(true);
+    // Without this, jumping style-to-style can hydrate the form with the
+    // PREVIOUS style's slower response — and Save would then write that
+    // style's data over this one. The guard makes a superseded response a
+    // no-op instead.
+    let live = true;
     api.getStyle(id)
       .then((s) => {
+        if (!live) return;
         hydrate(toForm(s), s.image_path);
+        setNeedsPhoto(!!s.needs_photo);
         setLoading(false);
-        api.costing(id).then(setCosting).catch(() => setCosting([]));
+        api.costing(id).then((c) => { if (live) setCosting(c); })
+          .catch(() => { if (live) setCosting([]); });
+        loadNames(id);
       })
-      .catch((e) => { showToast(e.message, 'error'); navigate('/browse'); });
+      .catch((e) => {
+        if (!live) return;
+        showToast(e.message, 'error');
+        navigate('/browse');
+      });
+    return () => { live = false; };
   }, [id]); // eslint-disable-line
 
   const update = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -214,11 +241,14 @@ export default function StyleEditor() {
 
   /* ---- actions ---- */
 
+  // Returns whether it saved. Anything that acts on the result — leaving the
+  // page, for one — has to know, and a failed save that still navigated would
+  // lose exactly the work the prompt was protecting.
   async function save(asDraft = false) {
     if (!form.name.trim()) {
       showToast('Please enter a style name first', 'error');
       nameRef.current?.focus();
-      return;
+      return false;
     }
     setSaving(true);
     try {
@@ -233,14 +263,32 @@ export default function StyleEditor() {
         image = r.image_path;
       }
       hydrate(toForm(saved), image);
+      // The save answers with the stored row, so a flag raised on the Matrix
+      // while this was open shows up rather than staying as it was on load.
+      setNeedsPhoto(!!saved.needs_photo);
+      loadNames(saved.id);
       api.costing(saved.id).then(setCosting).catch(() => setCosting([]));
       showToast(asDraft ? 'Draft saved' : 'Style saved');
       if (!id) navigate(`/edit/${saved.id}`, { replace: true });
+      return true;
     } catch (e) {
       showToast(e.message, 'error');
+      return false;
     } finally {
       setSaving(false);
     }
+  }
+
+  // The third button on the discard prompt. A draft stays a draft: leaving the
+  // page is not a decision to publish it.
+  async function saveAndLeave() {
+    const to = confirmDiscard;
+    if (await save(form.status === 'draft')) {
+      setConfirmDiscard(false);
+      navigate(to);
+    }
+    // On failure the dialog stays open with the error toast behind it, so the
+    // way back to the work is still one click away.
   }
 
   function discard() {
@@ -276,14 +324,13 @@ export default function StyleEditor() {
 
   // The checkboxes and the channel say the same thing, so one edit writes
   // both. Otherwise a style could claim SY ONLY with 000 ticked.
+  // What the IM calls a pair of tick boxes. The boxes are the fact; this is
+  // how it gets written down.
+  const channelOf = (sy, thousand) => (
+    sy && thousand ? 'BOTH' : sy ? 'SY ONLY' : thousand ? '000 ONLY' : '');
+
   const setChannel = (sy, thousand) =>
-    update({
-      sell_sy: sy,
-      sell_000: thousand,
-      whs_channel: sy && thousand ? 'BOTH'
-        : sy ? 'SY ONLY'
-          : thousand ? '000 ONLY' : '',
-    });
+    update({ sell_sy: sy, sell_000: thousand, whs_channel: channelOf(sy, thousand) });
 
   const sectionProps = { form, update, meta, costing };
   const Body = {
@@ -299,11 +346,17 @@ export default function StyleEditor() {
       {/* ---------- Header ---------- */}
       <header className="band">
         <div className="band-row">
-          <Link to="/" className="logo">IM Master</Link>
+          <Wordmark />
           <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
           <Link to="/browse" className="band-link"><Search size={18} /> Browse / Edit</Link>
           <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link> 
           <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+          <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
+          <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
+
+          {/* Straight to another style without going back to Browse. It
+              leaves through leaveTo, so unsaved work still prompts. */}
+          <StyleJump onLeave={(styleId) => leaveTo(`/edit/${styleId}`)} />
           
           <button type="button" className="btn btn-save" disabled={saving || loading}
             onClick={() => save(false)}>
@@ -319,13 +372,10 @@ export default function StyleEditor() {
           </button>
           {form.status === 'draft' && <span className="badge-draft">DRAFT</span>}
 
+          {/* Season and collection moved into the card, above Style:
+              they are part of what the garment is, not controls that
+              belong beside Save and Discard. */}
           <div className="band-meta">
-            <label>Season</label>
-            <Combo value={form.season} onChange={field('season')}
-              options={meta?.seasons.map((s) => s.code) || []} placeholder="e.g. S27" />
-            <label>Collection</label>
-            <Combo value={form.collection} onChange={field('collection')}
-              options={meta?.collections || []} placeholder="Pick or type new" />
             {/* <label>Sub group</label>
             <Combo value={form.sub_group} onChange={field('sub_group')}
               options={meta?.subGroups || []} placeholder="Pick or type new" /> */}
@@ -381,6 +431,16 @@ export default function StyleEditor() {
                       </ul>
                     )}
                   </div>
+                  {/* Set on the Matrix layout, where the sheet being handed
+                      to the photographer is read. Shown here so somebody who
+                      opens the style knows a new picture is wanted before
+                      they look at the old one. Read-only: the Matrix raises
+                      and clears it, and the link below goes straight there. */}
+                  {needsPhoto && (
+                    <p className="ed-needs-photo" role="status">
+                      <Camera size={15} aria-hidden="true" /> NEED NEW PHOTO
+                    </p>
+                  )}
                   <div className="style-photo">
                     {imgSrc ? (
                       <img src={imgSrc} alt={form.name || 'Style photo'} />
@@ -412,13 +472,36 @@ export default function StyleEditor() {
                       <LayoutGrid size={15} /> Show in Matrix
                     </Link>
                   )}
+                  {/* Only for a style that exists: a new one has no past. */}
+                  {id && <NameHistory rows={names} />}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  {/* Where the garment sits, before what it is called. A
+                      collection typed here that does not exist is created on
+                      save, which is how a new season gets its first. */}
+                  <div className="editor-where">
+                    <Field label="Season">
+                      <Combo value={form.season} onChange={field('season')}
+                        options={meta?.seasons.map((x) => x.code) || []}
+                        placeholder="e.g. S27" />
+                    </Field>
+                    <Field label="Collection">
+                      <Combo value={form.collection} onChange={field('collection')}
+                        options={meta?.collections_by_season?.[form.season]
+                          || meta?.collections || []}
+                        placeholder="Pick or type new" />
+                    </Field>
+                  </div>
+
                   <Field label="Style">
+                    {/* Upper-cased as it is typed, like the colourway names and
+                        the Matrix page's add-a-style box. Style names are the
+                        key sales data is matched on, so one typed in lower case
+                        is a second name for the same garment. */}
                     <input ref={nameRef} className="input" value={form.name}
                       placeholder="e.g. MAUI CHUNKY CREW COTTON"
-                      onChange={(e) => update({ name: e.target.value })} />
+                      onChange={(e) => update({ name: e.target.value.toUpperCase() })} />
                   </Field>
                   {/* <Field label="Color" hint="First colorway — add more in the BOM section below">
                     <Combo value={primaryColor} onChange={setPrimaryColor}
@@ -455,13 +538,13 @@ export default function StyleEditor() {
                         <span className="sku-cap">Style #</span>
                       </div>
                     </div>
-                    <div className="sku-result">
+                    {/* <div className="sku-result">
                       {derivedSku
                         ? <code>{form.sku_code || derivedSku}</code>
                         : <span className="muted">Pick a season, content, gauge and style number</span>}
                       {form.sku_code && derivedSku && form.sku_code !== derivedSku
                         && <span className="sku-flag">overridden — the parts make {derivedSku}</span>}
-                    </div>
+                    </div> */}
                     {/* <Field label="Override" hint="Only when the code does not follow the parts">
                       <TextInput value={form.sku_code} onChange={field('sku_code')}
                         placeholder={derivedSku || 'e.g. K58C3W795'} />
@@ -488,21 +571,18 @@ export default function StyleEditor() {
                         onChange={(v) => setChannel(form.sell_sy, v)} />
                     </div>
                     <div className="chan-row">
-                      <Field label="Channel" hint="As the IM writes it">
-                        <select className="input" value={form.whs_channel || ''}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            update({
-                              whs_channel: v,
-                              sell_sy: v !== '000 ONLY',
-                              sell_000: v !== 'SY ONLY',
-                            });
-                          }}>
-                          <option value="">Not set</option>
-                          <option value="SY ONLY">SY ONLY</option>
-                          <option value="000 ONLY">000 ONLY</option>
-                          <option value="BOTH">BOTH</option>
-                        </select>
+                      {/* Read-only: it is the tick boxes above, written the
+                          way the IM writes them. It used to be a second way to
+                          set the same thing, which meant the two could — and
+                          did — end up disagreeing on the same garment.
+
+                          Derived at render rather than read from the stored
+                          column, so it always matches the boxes on screen. */}
+                      <Field label="Channel" hint="From Sold through, above">
+                        <output className="chan-readout"
+                          aria-live="polite">
+                          {channelOf(form.sell_sy, form.sell_000) || 'Not set'}
+                        </output>
                       </Field>
                       <Field label="Finishing" hint="At factory or taken home">
                         <select className="input" value={form.finishing_location || ''}
@@ -547,8 +627,13 @@ export default function StyleEditor() {
 
             {/* ---------- Bottom: dynamic editor ---------- */}
             <section className="card card-pad section-card">
-              <h2 className="card-title">{SECTIONS.find((s) => s.key === section).label}</h2>
-              <div style={{ marginTop: 18 }}>
+              {/* The BOM section opens with its own BOM | Blueprint tabs,
+                  which are title-styled — a second "BOM" heading above them
+                  said the same thing twice. */}
+              {section !== 'bom' && (
+                <h2 className="card-title">{SECTIONS.find((s) => s.key === section).label}</h2>
+              )}
+              <div style={{ marginTop: section === 'bom' ? 0 : 18 }}>
                 <Body {...sectionProps} />
               </div>
             </section>
@@ -559,9 +644,12 @@ export default function StyleEditor() {
       <ConfirmDialog
         open={!!confirmDiscard}
         danger
-        title="Discard changes?"
+        title="Leave without saving?"
         message="Everything you changed since the last save will be lost."
-        confirmLabel="Yes, discard"
+        confirmLabel="Discard changes"
+        altLabel="Save changes"
+        onAlt={saveAndLeave}
+        busy={saving}
         onConfirm={() => { const to = confirmDiscard; setConfirmDiscard(false); navigate(to); }}
         onCancel={() => setConfirmDiscard(false)}
       />

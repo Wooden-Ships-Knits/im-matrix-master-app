@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CirclePlus, Play, Pencil, Trash2, Download, ClipboardList, Ruler,ListChecks } from 'lucide-react';
+import { CirclePlus, Play, Pencil, Trash2, Download, ClipboardList, Ruler, ListChecks, Palette, SwatchBook } from 'lucide-react';
 import { api } from '../api.js';
 import { Field, Combo, ConfirmDialog, useToast } from '../components/ui.jsx';
+import Wordmark from '../components/Wordmark.jsx';
 
 const fmt$ = (v) => (v == null ? '—' : `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
 const fmtKg = (v) => (v == null ? '—' : Number(v).toFixed(3));
@@ -69,12 +70,14 @@ export default function Browse({ readOnly = false }) {
     <>
       <header className="band">
         <div className="band-row">
-          <Link to="/" className="logo">IM Master</Link>
+          <Wordmark />
           {!readOnly && (<>
             <Link to="/new" className="band-link"><CirclePlus size={19} /> Add new</Link>
             <Link to="/matrix" className="band-link"><Ruler size={18} /> Matrix</Link>
             <Link to="/checklist" className="band-link"><ListChecks size={18} /> Checklist</Link>
             <Link to="/report" className="band-link"><ClipboardList size={18} /> Report</Link>
+            <Link to="/colors" className="band-link"><SwatchBook size={18} /> Color Table</Link>
+            <Link to="/design" className="band-link"><Palette size={18} /> Design</Link>
           </>)}
           {readOnly && <span className="band-guest">Viewing as guest</span>}
         </div>

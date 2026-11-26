@@ -1,4 +1,4 @@
-# IM Master — Backend
+# PDM — Backend
 
 Draft for discussion. Follows the shape already running on the VM in
 `wholesale-order-entry` and `ymal-project`: Postgres, FastAPI, nginx serving the

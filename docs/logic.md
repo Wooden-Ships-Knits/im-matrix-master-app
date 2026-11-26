@@ -1,4 +1,4 @@
-# IM Master — Domain Logic
+# PDM — Domain Logic
 
 > **Status: partly provisional.** The rules below are written from the old app's
 > schema and the S27 Excel. Several are marked **UNCONFIRMED** — they describe

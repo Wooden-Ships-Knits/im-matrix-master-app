@@ -12,6 +12,16 @@
  */
 const KEY = 'im-master:session';
 
+/**
+ * Fired when the server rejects the token we are holding.
+ *
+ * The session is read once when the app mounts, so a tab left open past the
+ * expiry goes on showing the operator's screens while every write comes back
+ * 401 — which reads as "the delete button is broken", not "sign in again".
+ * This is how the app finds out it has been signed out.
+ */
+export const SESSION_EXPIRED = 'im-master:session-expired';
+
 export const readSession = () => {
   try {
     const raw = window.localStorage.getItem(KEY);

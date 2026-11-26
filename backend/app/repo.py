@@ -14,6 +14,8 @@ from psycopg.rows import dict_row
 
 import json
 
+from psycopg.types.json import Jsonb
+
 from .db import pool, transaction
 
 # Columns on `styles` that the client sends and reads back unchanged.
@@ -173,6 +175,14 @@ def _season_id(cur, code):
 
 
 # --------------------------------------------------------------------- read
+def style_exists(style_id: int) -> bool:
+    """One indexed probe, for routes that only need to 404 cleanly."""
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM styles WHERE id = %s", (style_id,))
+            return cur.fetchone() is not None
+
+
 def load_style(style_id: int) -> dict | None:
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
@@ -195,7 +205,18 @@ def load_style(style_id: int) -> dict | None:
 
             out = {"id": s["id"], "season": s["season"], "collection": s["collection"],
                    "content_code": s["content_code"], "material": s["material"],
-                   "version": s["version"]}
+                   "version": s["version"],
+                   # Read-only here on purpose. The flag is raised and cleared
+                   # on the Matrix layout, which is where the sheet being
+                   # handed to the photographer is read; the editor shows it
+                   # so somebody opening a style knows it is wanted.
+                   #
+                   # Deliberately NOT in FLAT: save_style writes every FLAT
+                   # column the payload carries, and the editor's form would
+                   # send an empty string for it on every save, which would
+                   # clear the flag each time a style was edited for any
+                   # other reason.
+                   "needs_photo": bool(s["needs_photo"])}
             for col in FLAT:
                 out[UNALIAS.get(col, col)] = s.get(col)
 
@@ -220,18 +241,30 @@ def load_style(style_id: int) -> dict | None:
                 WHERE cw.style_id = %s ORDER BY cw.sort_order, cw.id
                 """, (style_id,))
             colorways = [dict(r) for r in cur.fetchall()]
-            for cw in colorways:
+            # One query for every colourway's lines, not one per colourway:
+            # the editor opens with 5+N round trips otherwise, and PrintSheet
+            # pays it again per style. Grouped in Python on colorway_id,
+            # which preserves the old per-colourway ORDER BY cy.slot because
+            # the single query orders by (colorway_id, slot).
+            by_cw: dict = {}
+            if colorways:
                 cur.execute(
                     """
-                    SELECT trim(concat_ws(' ', y.prefix, y.name,
+                    SELECT cy.colorway_id,
+                           trim(concat_ws(' ', y.prefix, y.name,
                                  CASE WHEN y.color_code IS NULL THEN NULL
                                       ELSE '- ' || y.color_code END)) AS yarn,
-                           cy.percent, cy.ends
+                           cy.percent, cy.ends, cy.component
                     FROM colorway_yarns cy
                     LEFT JOIN yarn_colors y ON y.id = cy.yarn_color_id
-                    WHERE cy.colorway_id = %s ORDER BY cy.slot
-                    """, (cw.pop("id"),))
-                cw["bom"] = [dict(r) for r in cur.fetchall()]
+                    WHERE cy.colorway_id = ANY(%s)
+                    ORDER BY cy.colorway_id, cy.slot
+                    """, ([cw["id"] for cw in colorways],))
+                for r in cur.fetchall():
+                    line = dict(r)
+                    by_cw.setdefault(line.pop("colorway_id"), []).append(line)
+            for cw in colorways:
+                cw["bom"] = by_cw.get(cw.pop("id"), [])
             out["colorways"] = colorways
 
             # Every operation, with the minutes actually used for this style.
@@ -261,7 +294,7 @@ def load_style(style_id: int) -> dict | None:
             return out
 
 
-def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
+def list_styles(season=None, q=None, color=None, size=None, limit=None) -> list[dict]:
     """The browse list: one row per style, newest season first.
 
     The colour and size filters are EXISTS rather than joins. Joining them
@@ -269,6 +302,10 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
     14,479 rows — and every one of those rows then ran the colourway count
     before DISTINCT threw the duplicates away. EXISTS filters without
     multiplying, so the count runs once per style and DISTINCT is not needed.
+
+    `limit` is for the typeahead in the editor header, which shows eight
+    hits. Without it a two-letter query matched 803 styles and sent all 803
+    — 109kB per pause in typing, to draw eight lines.
     """
     sql = """
         SELECT s.id, s.style_name AS name, s.status, s.photo_url AS image_path,
@@ -295,6 +332,8 @@ def list_styles(season=None, q=None, color=None, size=None) -> list[dict]:
         args.append(size)
     # Newest season first, so a repeated style's latest run leads.
     sql += " ORDER BY se.season_number DESC NULLS LAST, s.style_name"
+    if limit:
+        sql += " LIMIT %s"; args.append(int(limit))
     with pool.connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, args)
@@ -356,7 +395,15 @@ def related_styles(style_id: int) -> list[dict]:
     """
     sql = """
         SELECT s.id, s.style_name AS name, se.code AS season,
-               se.season_number, s.status
+               se.season_number, s.status,
+               -- The numeric tail of the style code — K59Y2IW092 ends in 092
+               -- — which is what the team reads off the sheet as the SKU.
+               -- Padded to three here rather than in the client, so the code
+               -- and this panel cannot disagree about what the number is.
+               --
+               -- NOT sku_code: that column exists and is empty on all 1,467
+               -- styles, so reading it would print "-" against every row.
+               lpad(s.style_number::text, 3, '0') AS sku_tail
         FROM styles me
         JOIN styles s      ON s.product_id = me.product_id AND s.id <> me.id
         LEFT JOIN seasons se ON se.id = s.season_id
@@ -414,6 +461,373 @@ def link_styles(style_id: int, other_id: int) -> None:
                   FROM styles WHERE product_id = %s
                 ON CONFLICT DO NOTHING
             """, (keep,))
+
+
+# ---------------------------------------------------------------------------
+# Importing a style from an earlier season
+# ---------------------------------------------------------------------------
+
+# What belongs to the SEASON rather than to the garment, and so must not be
+# carried into the copy.
+#
+# A deny-list, not an allow-list, and deliberately: most of the 85 columns on
+# a style describe what the garment IS — gauge, body, construction, sleeve,
+# the finishing and packing instructions — and a column added later is far
+# more likely to be another of those than another piece of this season's
+# working state. An allow-list would quietly stop copying each new one.
+#
+# The cost of that choice is that a new per-season column has to be added
+# here, or it will be copied. That is the trade: a wrong copy is visible on
+# the card and editable, a missing copy is invisible.
+_IMPORT_SKIP = {
+    # Identity. Set by the import itself.
+    "id", "season_id", "collection_id", "product_id",
+    "created_at", "updated_at", "version",
+    # Where it sits on the sheet, and how it has been marked up. A copy is
+    # placed by the slot that created it and has been marked up by nobody.
+    "matrix_order", "matrix_parked", "matrix_highlight", "matrix_band",
+    "past_sy_mark", "past_000_mark", "needs_photo",
+    # Said about the garment this season, by somebody, about this season.
+    "notes", "status",
+    # Prices are renegotiated every season. Carrying them over would make
+    # last season's number look like this season's answer, and the person
+    # reading the card cannot tell a carried price from a set one.
+    "whls_line_price_usd", "whls_retail_price_usd", "sy_retail_price_usd",
+    "sy_mark_up", "final_sale_price_usd", "final_sample_price_usd",
+    "price_000", "similar_repeat_price_note",
+}
+
+
+def _import_columns(cur) -> list[str]:
+    """The style columns an import copies, read from the table itself.
+
+    From information_schema rather than a written list, so adding a spec
+    column to styles does not also mean remembering to add it here.
+    """
+    cur.execute("""
+        SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'styles'
+         ORDER BY ordinal_position
+    """)
+    return [r["column_name"] for r in cur.fetchall()
+            if r["column_name"] not in _IMPORT_SKIP]
+
+
+def import_style(source_id: int, season: str, collection: str | None = None,
+                 name: str | None = None) -> dict:
+    """Copy an existing style into a season as the same garment.
+
+    The repeat workflow. Most of next season's sheet is last season's sheet,
+    and before this the only way to say so was to type the name, then the
+    colourways, then every yarn of every colourway again — and then remember
+    to link the two, which is a step nobody remembers.
+
+    What comes across is the garment: its name, its colourways and their
+    bills of materials, sizes and weights, measurements, trims, operations
+    and minutes, and the attribute block. What does not is anything this
+    season has to decide for itself — the checklist, the notes, the pens and
+    highlights, the position on the sheet, the prices.
+
+    The copy shares the source's product rather than being linked to it
+    afterwards. Sharing IS the link — related_styles joins on product_id —
+    and doing it at insert avoids link_styles' merge, which moves
+    product_identifiers between products but not product_colorways, and so
+    would orphan the colour identities the sales matcher reads.
+
+    Returns the new style: {id, name, season, collection, style_number}.
+    """
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT * FROM styles WHERE id = %s", (source_id,))
+            src = cur.fetchone()
+            if not src:
+                raise LookupError(f"no style {source_id}")
+
+            season_id = _season_id(cur, season)
+            if not season_id:
+                raise ValueError(f"{season!r} is not a season code")
+            collection_id = get_or_create(
+                cur, "collections", "name", collection,
+                scope={"season_id": season_id},
+            ) if _clean(collection) else None
+
+            # The source needs a product before the copy can share it. Most
+            # styles have one; the ones that do not are exactly the ones the
+            # manual link used to refuse with "Both styles need a product
+            # first", and an import should not fail for that reason.
+            _ensure_product(cur, source_id)
+            cur.execute("SELECT product_id FROM styles WHERE id = %s", (source_id,))
+            product_id = cur.fetchone()["product_id"]
+
+            new_name = _clean(name) or src["style_name"]
+            new_name = new_name.upper()
+
+            cols = _import_columns(cur)
+            values = {c: src[c] for c in cols}
+            values["style_name"] = new_name
+            values["season_id"] = season_id
+            values["collection_id"] = collection_id
+            values["product_id"] = product_id
+            # Created ready to work on, not as a draft: the sheet filters
+            # drafts out, so a style imported onto a page would vanish from
+            # the page that imported it. Same reasoning as addStyle.
+            values["status"] = "active"
+
+            names = list(values)
+            # The deny-list design means a column added to styles is copied
+            # without anyone editing this function — which is the point, and
+            # also how it broke: design_marks (jsonb, 0026) arrives from
+            # psycopg as a dict, and a bare dict cannot be bound back into
+            # %s. Every jsonb value is re-wrapped, so the NEXT jsonb column
+            # is copied instead of 500ing every import for a day.
+            cur.execute(
+                f"INSERT INTO styles ({', '.join(names)})"
+                f" VALUES ({', '.join(['%s'] * len(names))}) RETURNING id",
+                [Jsonb(values[c]) if isinstance(values[c], (dict, list))
+                 else values[c] for c in names])
+            new_id = cur.fetchone()["id"]
+
+            # The colourways, and the map from the old row to the new one —
+            # the bill of materials and the per-colour operations both hang
+            # off style_colorways.id, not off the colour's name.
+            #
+            # product_colorway_id comes across untouched, which is the point:
+            # it is the colour's identity on the shared product, and it is
+            # what makes a sales line for OCEAN BLUE in two seasons merge.
+            #
+            # mark and highlight do not: they are this season's pen marks.
+            # One INSERT per colour, rather than one INSERT ... SELECT for the
+            # lot. The set version would be shorter, but RETURNING does not
+            # promise to hand the ids back in the order the SELECT produced
+            # them, and this map is read by id — so a reordered RETURNING
+            # would hang each colour's yarns off the wrong colour. Silently:
+            # every row still exists and every count still matches.
+            cur.execute("""
+                SELECT id, product_colorway_id, ws_tag_color, whs_channel,
+                       reps_color, color_sequence, sell_restriction, sort_order, zone
+                  FROM style_colorways WHERE style_id = %s
+                 ORDER BY sort_order, id
+            """, (source_id,))
+            remap = {}
+            for cw in cur.fetchall():
+                cur.execute("""
+                    INSERT INTO style_colorways
+                        (style_id, product_colorway_id, ws_tag_color, whs_channel,
+                         reps_color, color_sequence, sell_restriction, sort_order, zone)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 RETURNING id
+                """, (new_id, cw["product_colorway_id"], cw["ws_tag_color"],
+                      cw["whs_channel"], cw["reps_color"], cw["color_sequence"],
+                      cw["sell_restriction"], cw["sort_order"], cw["zone"]))
+                remap[cw["id"]] = cur.fetchone()["id"]
+
+            # The bill of materials: which yarn, in which slot, at what
+            # percentage and how many ends.
+            for old, new in remap.items():
+                cur.execute("""
+                    INSERT INTO colorway_yarns
+                        (colorway_id, slot, yarn_color_id, percent, ends, component)
+                    SELECT %s, slot, yarn_color_id, percent, ends, component
+                      FROM colorway_yarns WHERE colorway_id = %s
+                """, (new, old))
+
+            cur.execute("""
+                INSERT INTO style_sizes
+                    (style_id, size_id, pre_component_wt_kg, finished_wt_kg, pcs_per_box)
+                SELECT %s, size_id, pre_component_wt_kg, finished_wt_kg, pcs_per_box
+                  FROM style_sizes WHERE style_id = %s
+            """, (new_id, source_id))
+
+            cur.execute("""
+                INSERT INTO style_measurements (style_id, size_id, point, value_cm)
+                SELECT %s, size_id, point, value_cm
+                  FROM style_measurements WHERE style_id = %s
+            """, (new_id, source_id))
+
+            cur.execute("""
+                INSERT INTO style_trims (style_id, material_id, qty_per_piece)
+                SELECT %s, material_id, qty_per_piece
+                  FROM style_trims WHERE style_id = %s
+            """, (new_id, source_id))
+
+            # Operations carry their colourway where they have one, remapped
+            # to the copy's own row. A NULL stays NULL: that is an operation
+            # on the style rather than on one colour.
+            cur.execute("""
+                SELECT operation_id, colorway_id, minutes
+                  FROM style_operations WHERE style_id = %s
+            """, (source_id,))
+            for op in cur.fetchall():
+                cur.execute(
+                    "INSERT INTO style_operations"
+                    " (style_id, operation_id, colorway_id, minutes)"
+                    " VALUES (%s, %s, %s, %s)",
+                    (new_id, op["operation_id"],
+                     remap.get(op["colorway_id"]) if op["colorway_id"] else None,
+                     op["minutes"]))
+
+            # The name, filed against the shared product for this season, so
+            # a sales line arriving under it matches. save_style does this for
+            # a style it creates; an import creates one without going through
+            # it, and a copy that no report can find is worse than no copy.
+            cur.execute(
+                "INSERT INTO product_identifiers (product_id, kind, value, season_id)"
+                " VALUES (%s, 'style_name', %s, %s) ON CONFLICT DO NOTHING",
+                (product_id, new_name, season_id))
+
+            # Last in its collection, which is where the slot that imported
+            # it sits.
+            _append_to_matrix_order(cur, new_id)
+
+            cur.execute("""
+                SELECT s.id, s.style_name AS name, s.style_number,
+                       se.code AS season, c.name AS collection
+                  FROM styles s
+                  LEFT JOIN seasons se ON se.id = s.season_id
+                  LEFT JOIN collections c ON c.id = s.collection_id
+                 WHERE s.id = %s
+            """, (new_id,))
+            return dict(cur.fetchone())
+
+
+def _append_to_matrix_order(cur, style_id: int) -> None:
+    """Put a new style at the end of its collection on the Matrix sheet.
+
+    The sheet orders by `matrix_order NULLS LAST, style_name`, so a new style
+    only lands last when the rest of its collection already has explicit
+    positions. In a collection nobody has dragged yet every position is NULL,
+    they are all sorted by name, and the new one appears wherever its name
+    falls — which looks random to someone who just typed it into the slot at
+    the end.
+
+    Writing the whole collection's positions is what makes "last" mean last.
+    Numbering only the new style cannot work: any number it took would sort
+    *before* the NULLs it is supposed to follow.
+
+    Reversible — "Reset order" sets them all back to NULL.
+    """
+    cur.execute("""
+        WITH me AS (
+            SELECT season_id, collection_id FROM styles WHERE id = %s
+        ), ordered AS (
+            SELECT s.id,
+                   row_number() OVER (
+                       -- false sorts before true, so the new style goes last
+                       -- while everything else keeps the order it is shown in.
+                       ORDER BY (s.id = %s),
+                                s.matrix_order NULLS LAST,
+                                s.style_name) AS ord
+              FROM styles s, me
+             WHERE s.season_id IS NOT DISTINCT FROM me.season_id
+               AND s.collection_id IS NOT DISTINCT FROM me.collection_id
+        )
+        UPDATE styles t SET matrix_order = ordered.ord
+          FROM ordered WHERE t.id = ordered.id
+    """, (style_id, style_id))
+
+
+def _derive_channel(cur, style_id: int) -> None:
+    """Write whs_channel from the two sell flags.
+
+    The tick boxes are the fact; the channel is how the IM writes it down. It
+    used to be editable in its own right, which meant one garment could say
+    "000 ONLY" in the dropdown and have both boxes ticked — and one did.
+
+    Done in SQL off the row's own columns so it needs neither flag passed in:
+    a payload that sets only one of them still lands on the right channel.
+    """
+    cur.execute("""
+        UPDATE styles SET whs_channel = CASE
+            WHEN sell_sy AND sell_000 THEN 'BOTH'
+            WHEN sell_000            THEN '000 ONLY'
+            WHEN sell_sy             THEN 'SY ONLY'
+            ELSE NULL
+        END
+        WHERE id = %s
+    """, (style_id,))
+
+
+def _record_rename(cur, style_id: int, scope: str, old: str, new: str) -> None:
+    """Note that something was called `old` and is now called `new`.
+
+    Nothing is written when the name has not really changed — case and stray
+    whitespace are not a rename, and a history full of them is one nobody
+    reads.
+
+    For a style the old name is also filed as a product identifier, because
+    that is what _sales_index matches on: the history is what people read, the
+    identifier is what the matcher reads, and both have to be written here or
+    they drift.
+    """
+    old_t, new_t = _clean(old), _clean(new)
+    if not old_t or not new_t or old_t.upper() == new_t.upper():
+        return
+
+    cur.execute(
+        "INSERT INTO name_history (style_id, scope, old_value, new_value)"
+        " VALUES (%s, %s, %s, %s)", (style_id, scope, old_t, new_t))
+
+    if scope != "style":
+        return
+    cur.execute("SELECT product_id, season_id FROM styles WHERE id = %s", (style_id,))
+    row = cur.fetchone()
+    if not row or not row["product_id"]:
+        return
+    cur.execute(
+        "INSERT INTO product_identifiers (product_id, kind, value, season_id)"
+        " VALUES (%s, 'style_name', %s, %s) ON CONFLICT DO NOTHING",
+        (row["product_id"], old_t, row["season_id"]))
+
+
+def style_name_history(style_id: int) -> list[dict]:
+    """Every recorded rename for this style, newest first."""
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT scope, old_value, new_value, changed_at
+                  FROM name_history WHERE style_id = %s
+                 ORDER BY changed_at DESC, id DESC
+            """, (style_id,))
+            return [dict(r) for r in cur.fetchall()]
+
+
+def _ensure_product(cur, style_id: int) -> None:
+    """Give a style a product if it has none, reusing one with the same name.
+
+    Case- and whitespace-insensitive, matching link_products.py — `Maui V` and
+    `MAUI V ` are the same garment, and two products for one garment is the
+    thing this whole table exists to prevent.
+
+    The name is also recorded in product_identifiers, because that is what a
+    sales feed looks up: sales arrive under whatever the source calls it.
+    """
+    cur.execute("SELECT style_name, season_id, product_id FROM styles WHERE id = %s",
+                (style_id,))
+    row = cur.fetchone()
+    if not row or row["product_id"] is not None:
+        return
+    name = _clean(row["style_name"])
+    if not name:
+        return
+
+    cur.execute(
+        "SELECT id FROM products"
+        " WHERE upper(btrim(display_name)) = upper(btrim(%s)) LIMIT 1", (name,))
+    found = cur.fetchone()
+    if found:
+        product_id = found["id"]
+    else:
+        cur.execute(
+            "INSERT INTO products (display_name, first_season_id)"
+            " VALUES (%s, %s) RETURNING id", (name, row["season_id"]))
+        product_id = cur.fetchone()["id"]
+
+    cur.execute("UPDATE styles SET product_id = %s WHERE id = %s",
+                (product_id, style_id))
+    cur.execute(
+        "INSERT INTO product_identifiers (product_id, kind, value, season_id)"
+        " VALUES (%s, 'style_name', %s, %s) ON CONFLICT DO NOTHING",
+        (product_id, name, row["season_id"]))
 
 
 def unlink_style(style_id: int) -> None:
@@ -486,6 +900,15 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             if not values.get("style_name"):
                 raise ValueError("Style name is required")
 
+            is_new = style_id is None
+            if style_id and values.get("style_name"):
+                # Read before the UPDATE below overwrites it — afterwards the
+                # old spelling is gone and there is nothing to record.
+                cur.execute("SELECT style_name FROM styles WHERE id = %s", (style_id,))
+                was = cur.fetchone()
+                if was:
+                    _record_rename(cur, style_id, "style",
+                                   was["style_name"], values["style_name"])
             if style_id:
                 sets = ", ".join(f"{k} = %s" for k in values)
                 cur.execute(
@@ -504,6 +927,40 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                 )
                 style_id = cur.fetchone()["id"]
 
+            # Every style needs a product, from the moment it exists.
+            #
+            # Products used to be handed out only by scripts/link_products.py,
+            # run by hand after a workbook import — so a style created in the
+            # app never got one, and a style with no product cannot be linked
+            # to another season ("Both styles need a product first"), shows no
+            # related seasons, and is invisible to sales matching, which joins
+            # on the product. The app could create styles it could never
+            # finish.
+            #
+            # Matched on the name the same way the script does, so creating
+            # F27's MAUI V CHUNKY COTTON where F26 already has one joins them
+            # without anybody pressing Link.
+            # The channel follows the tick boxes whenever they are written,
+            # so the editor's read-only display cannot be contradicted by
+            # anything that reaches this function another way.
+            if "sell_sy" in values or "sell_000" in values:
+                _derive_channel(cur, style_id)
+
+            _ensure_product(cur, style_id)
+            if is_new:
+                if payload.get("matrix_parked"):
+                    # Created into the tray: no position yet, and it must not
+                    # be numbered or it would be on the sheet as well.
+                    cur.execute(
+                        "UPDATE styles SET matrix_parked = true,"
+                        " matrix_order = NULL WHERE id = %s", (style_id,))
+                else:
+                    # Last on the sheet, not wherever its name happens to fall.
+                    # Only on creation: re-running this on every save would
+                    # shove a style to the end of its collection each time
+                    # anyone corrected a typo on it.
+                    _append_to_matrix_order(cur, style_id)
+
             # Children are replaced, not diffed (flow.md §3).
             #
             # Which means anything on a colourway that the editor does not
@@ -517,7 +974,8 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             # row id that this rewrite destroys, so restoring it would either
             # dangle or fail the constraint.
             cur.execute("""
-                SELECT ws_tag_color, mark, product_colorway_id, whs_channel,
+                SELECT ws_tag_color, mark, highlight, zone,
+                       product_colorway_id, whs_channel,
                        reps_color, color_sequence, sell_restriction,
                        subbed_on, sub_reason
                   FROM style_colorways WHERE style_id = %s
@@ -570,11 +1028,18 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                     if slot > 21:
                         break
                     yarn_id = get_or_create(cur, "yarn_colors", "name", yarn)
+                    part = _clean(line.get("component"))
+                    if part:
+                        part = part.lower()
+                        if part not in GARMENT_PARTS:
+                            raise ValueError(
+                                f"{part!r} is not a part of the garment"
+                                f" — expected one of {', '.join(GARMENT_PARTS)}")
                     cur.execute(
                         "INSERT INTO colorway_yarns (colorway_id, slot, yarn_color_id,"
-                        " percent, ends) VALUES (%s,%s,%s,%s,%s)",
+                        " percent, ends, component) VALUES (%s,%s,%s,%s,%s,%s)",
                         (cw_id, slot, yarn_id, _num(line.get("percent")),
-                         _num(line.get("ends"))),
+                         _num(line.get("ends")), part),
                     )
 
             # Resolve "sub to" once every colourway exists, by name within
@@ -635,11 +1100,49 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             return style_id
 
 
-def delete_style(style_id: int) -> bool:
+# Everything that goes when a style does. Eight tables cascade off styles, so
+# a delete is never only a row — and the counts are what make a confirmation
+# worth reading rather than a reflex to click through.
+_STYLE_CHILDREN = [
+    ("colourways", "SELECT count(*) FROM style_colorways WHERE style_id = %s"),
+    ("sizes", "SELECT count(*) FROM style_sizes WHERE style_id = %s"),
+    ("sales rows", "SELECT count(*) FROM style_sales WHERE style_id = %s"),
+    ("checklist ticks", "SELECT count(*) FROM style_steps WHERE style_id = %s"),
+    ("operations", "SELECT count(*) FROM style_operations WHERE style_id = %s"),
+    ("measurements", "SELECT count(*) FROM style_measurements WHERE style_id = %s"),
+    ("trims", "SELECT count(*) FROM style_trims WHERE style_id = %s"),
+    ("market prices", "SELECT count(*) FROM style_market_prices WHERE style_id = %s"),
+    # Not a child table, but it goes the same way: the yarn lines hang off the
+    # colourways, which hang off the style.
+    ("yarn lines",
+     "SELECT count(*) FROM colorway_yarns cy"
+     " JOIN style_colorways cw ON cw.id = cy.colorway_id WHERE cw.style_id = %s"),
+]
+
+
+def delete_style(style_id: int) -> dict | None:
+    """Remove a style, and say what went with it.
+
+    None when there was no such style, so the route can answer 404 rather
+    than reporting a delete that did not happen.
+    """
     with transaction() as conn:
-        with conn.cursor() as cur:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT style_name FROM styles WHERE id = %s", (style_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            # Counted first: afterwards there is nothing left to count.
+            removed = {}
+            for label, sql in _STYLE_CHILDREN:
+                cur.execute(sql, (style_id,))
+                n = cur.fetchone()["count"]
+                if n:
+                    removed[label] = n
+
             cur.execute("DELETE FROM styles WHERE id = %s", (style_id,))
-            return cur.rowcount > 0
+            return {"name": row["style_name"], "removed": removed}
 
 
 def set_photo(style_id: int, path: str) -> None:
@@ -692,7 +1195,8 @@ def lookup_products(q=None, limit: int = 40) -> list[dict]:
 
 
 def matrix_rows(season=None, collection=None, q=None,
-                start_date=None, end_date=None) -> list[dict]:
+                start_date=None, end_date=None,
+                include_parked=False) -> list[dict]:
     """One row per style, with what a printed review sheet shows.
 
     Grouped by collection because that is how the sheet is worked through, one
@@ -702,6 +1206,26 @@ def matrix_rows(season=None, collection=None, q=None,
     earlier season, which the product link already answers.
     """
     sql = """
+        -- Every name a colourway on a style has been called, so a colour that
+        -- was carried over and then renamed is still recognised as carried
+        -- over. The team adds it under last season's name and renames it,
+        -- which is what leaves the trail this walks.
+        --
+        -- Recursive so a colour renamed twice still reaches its original.
+        -- Seeded from name_history rather than from every colourway, because
+        -- that table is small and the join only expands where a rename exists.
+        WITH RECURSIVE colour_was AS (
+            SELECT style_id,
+                   upper(btrim(new_value)) AS now_name,
+                   upper(btrim(old_value)) AS was_name
+              FROM name_history WHERE scope = 'colorway'
+            UNION
+            SELECT c.style_id, c.now_name, upper(btrim(h.old_value))
+              FROM colour_was c
+              JOIN name_history h
+                ON h.style_id = c.style_id AND h.scope = 'colorway'
+               AND upper(btrim(h.new_value)) = c.was_name
+        )
         SELECT s.id, s.style_name AS name, s.ply, s.photo_url AS image_path,
                se.code AS season, col.name AS collection,
                s.gauge_detail, s.whs_channel,
@@ -718,35 +1242,70 @@ def matrix_rows(season=None, collection=None, q=None,
                ARRAY(SELECT cw.ws_tag_color FROM style_colorways cw
                       WHERE cw.style_id = s.id
                       ORDER BY cw.sort_order, cw.ws_tag_color) AS colorways,
+               -- Which of those colours are NEW — written in green on the
+               -- card, where a carried-over colour is plain black.
+               --
+               -- "Carried over" means the colour ran in ANY earlier season of
+               -- this garment, not only the one before: a colour that sits out
+               -- a season and comes back was still not invented this season.
+               --
+               -- A style with no earlier season at all matches nothing here,
+               -- so every one of its colours is new. That is intended — a new
+               -- style's colours are all new.
+               ARRAY(
+                   SELECT cw.ws_tag_color FROM style_colorways cw
+                    WHERE cw.style_id = s.id
+                      AND NOT EXISTS (
+                          SELECT 1 FROM styles o
+                            JOIN seasons se2 ON se2.id = o.season_id
+                            JOIN style_colorways pcw ON pcw.style_id = o.id
+                           WHERE o.product_id = s.product_id
+                             AND se2.season_number < se.season_number
+                             AND (upper(btrim(pcw.ws_tag_color))
+                                    = upper(btrim(cw.ws_tag_color))
+                                  OR upper(btrim(pcw.ws_tag_color)) IN (
+                                       SELECT w.was_name FROM colour_was w
+                                        WHERE w.style_id = s.id
+                                          AND w.now_name
+                                                = upper(btrim(cw.ws_tag_color)))))
+                    ORDER BY cw.sort_order, cw.ws_tag_color) AS new_colorways,
                -- The pen colour on a colourway's name, keyed by the name
                -- rather than folded into the array above: the sales table
                -- looks its quantities up by that name, and turning the list
                -- into objects would mean changing every reader of it.
                -- The name is unique per style, so it is a safe key.
-               coalesce((
-                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.mark)
-                     FROM style_colorways cw
-                    WHERE cw.style_id = s.id AND cw.mark IS NOT NULL
-               ), '{}'::jsonb) AS colorway_marks,
-               coalesce((
-                   SELECT jsonb_object_agg(cw.ws_tag_color, cw.highlight)
-                     FROM style_colorways cw
-                    WHERE cw.style_id = s.id AND cw.highlight IS NOT NULL
-               ), '{}'::jsonb) AS colorway_highlights,
+               -- Pen, band and background in ONE scan of the colourways,
+               -- not three: the FILTER clauses are the old WHERE prefilters,
+               -- zones stays unfiltered so a null-zone key survives, and an
+               -- aggregate over zero rows still yields its one row of
+               -- coalesced '{}'s.
+               cwagg.marks AS colorway_marks,
+               cwagg.zones AS colorway_zones,
+               cwagg.lits  AS colorway_highlights,
                -- The attribute block the workbook prints under each photo.
                -- Most of these columns exist but were never imported, so they
                -- come back null today and the sheet prints the row blank.
                -- gauge is listed here as well as inside the style_code concat
                -- above: used there it builds a string, and a column that is
                -- only ever concatenated never reaches the sheet.
-               s.matrix_highlight, s.next_sy_mark, s.next_000_mark,
+               s.matrix_highlight,
                s.matrix_band, s.needs_photo, s.notes,
+               -- The colourway naming scheme, printed under the repeat
+               -- line: it says what the names below it are naming.
+               s.colorway_tag,
                s.gauge, s.gauge_detail, s.matrix_construction,
                s.construction, s.based_body,
                s.print_placement, s.total_ends,
                s.bottom_type, s.bottom_rib, s.distressed,
                s.sleeve_category, s.sleeve_length, s.length_category,
-               s.similar_style_past, s.yarn_type,
+               s.similar_style_past, s.yarn_type, s.matrix_parked,
+               -- The pricing block. Read by the Pricing Matrix view, which
+               -- draws the same styles in the same order as the layout sheet
+               -- but shows what each one costs instead of what it is made of.
+               s.style_number, s.finishing_location, s.admin_pct,
+               s.whls_line_price_usd, s.whls_retail_price_usd,
+               s.sy_retail_price_usd, s.final_sale_price_usd,
+               s.final_sample_price_usd, s.price_000,
                -- The S/M weight is what the workbook shows; the others are
                -- graded from it.
                (SELECT ss.finished_wt_kg FROM style_sizes ss
@@ -770,12 +1329,6 @@ def matrix_rows(season=None, collection=None, q=None,
                                  jsonb_build_object('auto', true))
                         ELSE '{}'::jsonb END
                ) AS steps,
-               -- Every season this garment ran in, for the sales history
-               -- table. Quantities are not here: no sales data is loaded.
-               ARRAY(SELECT se2.code FROM styles o
-                       JOIN seasons se2 ON se2.id = o.season_id
-                      WHERE o.product_id = s.product_id
-                      ORDER BY se2.season_number DESC) AS seasons_run,
                -- A repeat runs a year later in the same half of the year:
                -- F26 -> F27, not F26 -> S27. That is season_number + 2.
                -- The code is computed rather than joined so it can be named
@@ -787,27 +1340,55 @@ def matrix_rows(season=None, collection=None, q=None,
                -- Whether the next season exists at all. Without this,
                -- "not imported" and "decided against" both read as
                -- not-repeating, and the whole sheet comes out red.
-               EXISTS (SELECT 1 FROM styles o2
-                         JOIN seasons se3 ON se3.id = o2.season_id
-                        WHERE se3.season_number = se.season_number + 2) AS next_season_loaded,
+               -- Written as IN, not a correlated EXISTS: the answer only
+               -- depends on the season, and IN over an uncorrelated subquery
+               -- is one hashed subplan for the whole statement instead of
+               -- one probe per row. season_number is generated from NOT NULL
+               -- columns, so IN keeps EXISTS's strict true/false here.
+               (se.season_number + 2) IN (
+                   SELECT se3.season_number FROM styles o2
+                     JOIN seasons se3 ON se3.id = o2.season_id) AS next_season_loaded,
                EXISTS (SELECT 1 FROM styles o
                          JOIN seasons se2 ON se2.id = o.season_id
                         WHERE o.product_id = s.product_id
                           AND se2.season_number = se.season_number + 2) AS repeats_next,
-               -- Which channels the NEXT season's version of this garment is
-               -- set to sell through. Read off the booleans rather than
-               -- whs_channel: that text is blank on 254 styles, while the
-               -- flags are NOT NULL and are what the editor actually toggles.
-               (SELECT o.sell_sy FROM styles o
+               -- The circles above the photo. A repeat is the same half of
+               -- the year one year earlier, so the previous season is
+               -- season_number - 2: F26 (57) repeats F25 (55).
+               --
+               -- NULL where this garment did not run then, which is what the
+               -- card reads to decide whether to draw the circles at all —
+               -- a NEW style has no past-season row and gets none.
+               -- One lateral probe, not two scalar subqueries that differ
+               -- only in the column they pick. The LEFT JOIN keeps the NULL
+               -- contract: no past-season row means NULL means "draw no
+               -- circles", which SheetCard reads as prev_sells_sy != null.
+               prev.sell_sy  AS prev_sells_sy,
+               prev.sell_000 AS prev_sells_000,
+               -- How many earlier seasons this garment ran in. Not used to
+               -- colour anything yet: orange is meant to mean "ran in the two
+               -- previous seasons" and yellow "ran before but unconfirmed",
+               -- and what makes a past season confirmed is still open
+               -- (docs/caveats.md). Shown on the circles' tooltip so the
+               -- person applying the ring by hand can see it.
+               (SELECT count(DISTINCT o.season_id) FROM styles o
                   JOIN seasons se2 ON se2.id = o.season_id
                  WHERE o.product_id = s.product_id
-                   AND se2.season_number = se.season_number + 2
-                 ORDER BY o.id LIMIT 1) AS next_sells_sy,
-               (SELECT o.sell_000 FROM styles o
-                  JOIN seasons se2 ON se2.id = o.season_id
-                 WHERE o.product_id = s.product_id
-                   AND se2.season_number = se.season_number + 2
-                 ORDER BY o.id LIMIT 1) AS next_sells_000,
+                   AND se2.season_number < se.season_number) AS past_seasons,
+               -- The orange ring: ran in BOTH of the two previous seasons.
+               -- F26 (57) wants F25 (55) and F24 (53) — same half of the year,
+               -- one and two years back. Computed, not stored: it is a fact
+               -- about the links, and a stored copy would be a second answer
+               -- to the same question.
+               (EXISTS (SELECT 1 FROM styles o
+                          JOIN seasons se2 ON se2.id = o.season_id
+                         WHERE o.product_id = s.product_id
+                           AND se2.season_number = se.season_number - 2)
+                AND EXISTS (SELECT 1 FROM styles o
+                              JOIN seasons se2 ON se2.id = o.season_id
+                             WHERE o.product_id = s.product_id
+                               AND se2.season_number = se.season_number - 4)
+               ) AS repeats_two_past,
                -- {colourway: {whs_000: n, sy: n}} for the period asked for.
                -- Absent rather than zero when nothing was fetched: a blank
                -- cell means "not known", a 0 means "sold none".
@@ -824,11 +1405,32 @@ def matrix_rows(season=None, collection=None, q=None,
         JOIN seasons se            ON se.id = s.season_id
         LEFT JOIN collections col   ON col.id = s.collection_id
         LEFT JOIN content_codes cc  ON cc.id = s.content_code_id
+        -- The garment's previous-season row, once per style. ORDER BY o.id
+        -- LIMIT 1 is the exact tie-break the old scalar subqueries used.
+        LEFT JOIN LATERAL (
+            SELECT o.sell_sy, o.sell_000 FROM styles o
+              JOIN seasons se2 ON se2.id = o.season_id
+             WHERE o.product_id = s.product_id
+               AND se2.season_number = se.season_number - 2
+             ORDER BY o.id LIMIT 1) prev ON true
+        LEFT JOIN LATERAL (
+            SELECT coalesce(jsonb_object_agg(cw.ws_tag_color, cw.mark)
+                        FILTER (WHERE cw.mark IS NOT NULL), '{}'::jsonb) AS marks,
+                   coalesce(jsonb_object_agg(cw.ws_tag_color, cw.zone),
+                            '{}'::jsonb) AS zones,
+                   coalesce(jsonb_object_agg(cw.ws_tag_color, cw.highlight)
+                        FILTER (WHERE cw.highlight IS NOT NULL), '{}'::jsonb) AS lits
+              FROM style_colorways cw WHERE cw.style_id = s.id) cwagg ON true
         WHERE s.status <> 'draft'
     """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)
     # Placeholders bind in the order they appear, and all five are in the
     # SELECT: the checklist's AUTO_STEPS, then the four sales dates.
     args: list = [AUTO_STEPS, start_date, start_date, end_date, end_date]
+    # A parked style has no place in the running order, so it stays off the
+    # sheet and out of the print. Only the Matrix screen asks for them, to
+    # fill its tray.
+    if not include_parked:
+        sql += " AND NOT s.matrix_parked"
     if season:
         sql += " AND se.code = %s"; args.append(season)
     if collection:
@@ -844,6 +1446,162 @@ def matrix_rows(season=None, collection=None, q=None,
 
 
 # -------------------------------------------------------------------- sales
+def set_design_marks(style_id: int, marks: dict) -> dict:
+    """Place the slot markers on a style's photo.
+
+    The whole map is written, not one marker, because that is how the sheet
+    holds it: dragging C2 somewhere new is one change to a picture of five
+    labels, and sending the picture avoids a merge nobody would get right
+    when two people have the sheet open.
+
+    Keys are slot numbers as strings; values are {"x": f, "y": f} with both
+    between 0 and 1 — fractions of the photo, so the marker stays on the yoke
+    whether the sheet is on screen or printed. A slot that is not in the map
+    has not been placed and waits in the tray.
+    """
+    if not isinstance(marks, dict):
+        raise ValueError("marks must be an object of slot -> {x, y}")
+    clean: dict[str, dict] = {}
+    for key, value in marks.items():
+        try:
+            slot = int(key)
+        except (TypeError, ValueError):
+            raise ValueError(f"{key!r} is not a slot number") from None
+        if slot < 1 or slot > 99:
+            raise ValueError(f"slot {slot} is out of range")
+        if not isinstance(value, dict):
+            raise ValueError(f"slot {slot} must be an object with x and y")
+        try:
+            x, y = float(value["x"]), float(value["y"])
+        except (KeyError, TypeError, ValueError):
+            raise ValueError(f"slot {slot} needs a numeric x and y") from None
+        # Clamped rather than refused. A drag that ends a pixel past the edge
+        # is a drag to the edge, and failing the save would lose the whole
+        # arrangement over something nobody can see.
+        clean[str(slot)] = {"x": min(max(x, 0.0), 1.0),
+                            "y": min(max(y, 0.0), 1.0)}
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "UPDATE styles SET design_marks = %s, updated_at = now()"
+                " WHERE id = %s RETURNING design_marks",
+                (json.dumps(clean), style_id))
+            row = cur.fetchone()
+            if not row:
+                raise LookupError(f"no style {style_id}")
+            return row["design_marks"]
+
+
+# Names that are not yarn. The prefix is the only reliable signal — trims sit
+# in slots 2 to 11 mixed in with yarns, so the slot number says nothing, and
+# only 22% of trim lines carry a percentage where 99.4% of yarn lines do
+# (yarn-split.md §5). Read-only: nothing here decides what gets stored.
+_TRIM_PREFIX = ("XZIP", "XB", "XSNAP", "XGROMET", "STAMP", "XLB", "XTAG")
+
+
+def _is_trim(name) -> bool:
+    return bool(name) and str(name).strip().upper().startswith(_TRIM_PREFIX)
+
+
+def design_rows(season=None, collection=None, style_id: int | None = None) -> list[dict]:
+    """The design sheet: what colour goes in each knit slot, per colourway.
+
+    The workbook keeps one sheet per style — `K59Y2IW092 - ARGYLE MOCK T NECK
+    CHUNKY` — with the slots down the side and the colourways across:
+
+        C1 PLY  |  2                  |  2
+        C1      |  YST ALMOND BUTTER  |  YST SILVER DEW
+        C2 PLY  |  2                  |  2
+        C2      |  YST HUSKY BEIGE    |  YST FRIGID GRAY
+        TAG COLOR | ALMOND BUTTER/HUSKY BEIGE | SILVER DEW/FRIGID GRAY
+
+    Every part of that is already stored. A slot is `colorway_yarns.slot`, the
+    yarn is the row it points at, and PLY is `ends` — the workbook's "C1 ENDS"
+    column and the sheet's "C1 PLY" are the same number, which is how many
+    strands are held together.
+
+    The reason it is worth a page of its own: the style editor shows one
+    colourway's bill of materials at a time, so nothing in the app can show
+    that C2 is HUSKY BEIGE in one colourway and FRIGID GRAY in another. That
+    comparison across the row is the whole point of the sheet, and it is what
+    catches a slot somebody forgot to change.
+
+    Returned per style rather than as a flat grid, because a sheet is a style
+    and the slots a style uses are its own — one style has 3, another has 17.
+    """
+    where, args = [], []
+    if style_id is not None:
+        where.append("s.id = %s"); args.append(int(style_id))
+    else:
+        where.append("s.status <> 'draft'")
+        if season:
+            where.append("se.code = %s"); args.append(season)
+        if collection:
+            where.append("col.name = %s"); args.append(collection)
+    sql = f"""
+        SELECT s.id, s.style_name AS name, s.photo_url AS image_path,
+               se.code AS season, col.name AS collection,
+               concat(se.cat_code, se.season_number, cc.code, s.gauge,
+                      se.style_letter, s.style_number) AS style_code,
+               s.matrix_order, s.colorway_tag, s.design_marks,
+               cw.id AS cw_id, cw.ws_tag_color AS colorway, cw.sort_order,
+               cy.slot, cy.ends, cy.percent, yc.name AS yarn
+          FROM styles s
+          LEFT JOIN seasons se ON se.id = s.season_id
+          LEFT JOIN collections col ON col.id = s.collection_id
+          LEFT JOIN content_codes cc ON cc.id = s.content_code_id
+          LEFT JOIN style_colorways cw ON cw.style_id = s.id
+          LEFT JOIN colorway_yarns cy ON cy.colorway_id = cw.id
+          LEFT JOIN yarn_colors yc ON yc.id = cy.yarn_color_id
+         WHERE {' AND '.join(where)}
+         ORDER BY s.matrix_order NULLS LAST, s.style_name,
+                  cw.sort_order, cw.id, cy.slot
+    """
+    out: dict[int, dict] = {}
+    with pool.connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, args)
+            for r in cur.fetchall():
+                st = out.get(r["id"])
+                if st is None:
+                    st = out[r["id"]] = {
+                        "id": r["id"], "name": r["name"],
+                        "style_code": r["style_code"], "image_path": r["image_path"],
+                        "season": r["season"], "collection": r["collection"],
+                        "colorway_tag": r["colorway_tag"],
+                        # Where each slot's marker sits on the photo, as
+                        # fractions. A slot missing from here is unplaced.
+                        "design_marks": r["design_marks"] or {},
+                        "colorways": [], "slots": [], "cells": {},
+                    }
+                cw = r["colorway"]
+                # A style can have a colourway with no bill of materials at
+                # all. It still gets a column — an empty one says "nobody has
+                # filled this in", where a missing one says nothing.
+                if cw and cw not in st["colorways"]:
+                    st["colorways"].append(cw)
+                if r["slot"] is None or not cw:
+                    continue
+                slot = int(r["slot"])
+                if slot not in st["slots"]:
+                    st["slots"].append(slot)
+                st["cells"].setdefault(str(slot), {})[cw] = {
+                    "yarn": r["yarn"],
+                    # PLY on the sheet, ENDS in the workbook, `ends` here.
+                    "ply": None if r["ends"] is None else float(r["ends"]),
+                    "percent": None if r["percent"] is None else float(r["percent"]),
+                    # Whether this slot holds a trim rather than a yarn. The
+                    # sheet has to say so: 39% of yarn_colors is zips, stamps
+                    # and buttons (caveats.md, yarn-split.md §5), and without
+                    # the flag "C3 PLY 3" against XBP 729 2 CM-DARK ROAST
+                    # reads as three strands of yarn rather than a button.
+                    "trim": _is_trim(r["yarn"]),
+                }
+    for st in out.values():
+        st["slots"].sort()
+    return list(out.values())
+
+
 def _sales_index(cur, season_id):
     """Every name a style can be found by, this season, to its colourways.
 
@@ -879,6 +1637,34 @@ def _sales_index(cur, season_id):
         own = by_product.get(r["product_id"])
         if own and r["alias"] not in index:
             index[r["alias"]] = index[own]
+
+    # Third pass: colours this season's styles used to be called. Shopify and
+    # Salesforce keep selling under the old colour name just as they do with
+    # the style name, and until name_history existed there was nowhere to look
+    # it up — colour matching was exact-name only, so a renamed colourway lost
+    # its figures silently.
+    #
+    # Chained oldest to newest, so BLUE -> OCEAN BLUE -> DEEP OCEAN resolves
+    # from any of the three. Rows are applied in order and each one points at
+    # whatever its new name resolves to by then.
+    cur.execute("""
+        SELECT upper(btrim(s.style_name)) AS style,
+               upper(btrim(h.old_value))  AS was,
+               upper(btrim(h.new_value))  AS now
+          FROM name_history h
+          JOIN styles s ON s.id = h.style_id
+         WHERE h.scope = 'colorway' AND s.season_id = %s
+         ORDER BY h.changed_at, h.id
+    """, (season_id,))
+    for r in cur.fetchall():
+        colours = index.get(r["style"])
+        if not colours:
+            continue
+        target = colours.get(r["now"])
+        # Only fills a gap: a colour name in use today always wins over one
+        # that used to mean something else.
+        if target and r["was"] not in colours:
+            colours[r["was"]] = target
     return index
 
 
@@ -1132,9 +1918,24 @@ def meta() -> dict:
                         " FROM seasons ORDER BY season_number DESC")
             seasons = [dict(r) for r in cur.fetchall()]
 
-            def distinct(c):
-                return col(f"SELECT DISTINCT {c} AS v FROM styles"
-                           f" WHERE {c} IS NOT NULL AND {c} <> '' ORDER BY v")
+            # One scan of styles for every distinct-values list, not one
+            # scan per column: this endpoint used to issue 27 separate
+            # `SELECT DISTINCT <col> FROM styles` full scans, serialized on
+            # one connection, and every page mounts it. array_agg(DISTINCT
+            # .. ORDER BY ..) FILTER gives the same sorted, NULL-and-''-free
+            # list per column in a single pass.
+            #
+            # FILTER returns SQL NULL (not an empty array) for a column with
+            # no values, where the old query returned [] — hence `or []` at
+            # the unpack, or an empty column's JSON flips from [] to null.
+            def distinct_lists(cols):
+                sel = ", ".join(
+                    f"array_agg(DISTINCT {c} ORDER BY {c})"
+                    f" FILTER (WHERE {c} IS NOT NULL AND {c} <> '') AS {c}"
+                    for c in cols)
+                cur.execute(f"SELECT {sel} FROM styles")
+                row = cur.fetchone()
+                return {c: (row[c] or []) for c in cols}
 
             # The weight rates the editor derives its columns from, so the
             # tolerances follow the season instead of being retyped in the UI.
@@ -1149,6 +1950,8 @@ def meta() -> dict:
                 for r in (dict(x) for x in cur.fetchall())
             }
 
+            lists = distinct_lists(("sub_group",) + _OPTION_COLS)
+
             return {
                 "seasons": seasons,
                 "rates": rates,
@@ -1162,7 +1965,7 @@ def meta() -> dict:
                 # season can offer only that season's blocks rather than all
                 # 31 names at once.
                 "collections_by_season": _collections_by_season(cur),
-                "subGroups": distinct("sub_group"),
+                "subGroups": lists["sub_group"],
                 "yarns": col("SELECT DISTINCT name AS v FROM yarn_colors ORDER BY v"),
                 # YCA, YST, YAC, YTX, YP — the code every yarn colour name
                 # starts with, which is the vocabulary for `yarn_type`.
@@ -1171,25 +1974,37 @@ def meta() -> dict:
                     " WHERE name ~ '^Y[A-Z]+ ' ORDER BY v"),
                 "colorNames": col("SELECT DISTINCT ws_tag_color AS v FROM style_colorways"
                                   " ORDER BY v"),
-                "options": {
-                    k: distinct(k) for k in (
-                        "construction", "bagging_method", "polybag_sticker",
-                        "packing_method", "packing_in_box", "box_labeling",
-                        "ship_via", "hang_tag", "hs_code", "duty_category",
-                        # knit details: gauge_detail is the form's "gauge",
-                        # gauge is the style-code digit (ALIAS above)
-                        "gauge_detail", "gauge", "tension", "total_ends",
-                        "composition_care", "color_sequence",
-                        "based_body", "print_placement", "bottom_type",
-                        "bottom_rib", "similar_style_past", "distressed",
-                        "sleeve_category", "sleeve_length", "length_category",
-                        "yarn_type",
-                    )
-                },
+                "options": {k: lists[k] for k in _OPTION_COLS},
             }
 
 
-def add_meta(kind: str, name: str) -> None:
+# The free-text columns whose existing values the editor offers as
+# suggestions. One tuple, because meta() aggregates all of them in a single
+# scan of styles and the keys of options{} must match it exactly.
+_OPTION_COLS = (
+    "construction", "bagging_method", "polybag_sticker",
+    "packing_method", "packing_in_box", "box_labeling",
+    "ship_via", "hang_tag", "hs_code", "duty_category",
+    # knit details: gauge_detail is the form's "gauge",
+    # gauge is the style-code digit (ALIAS above)
+    "gauge_detail", "gauge", "tension", "total_ends",
+    "composition_care", "color_sequence",
+    "based_body", "print_placement", "bottom_type",
+    "bottom_rib", "similar_style_past", "distressed",
+    "sleeve_category", "sleeve_length", "length_category",
+    "yarn_type",
+)
+
+
+def add_meta(kind: str, name: str, season: str | None = None) -> None:
+    """Add one entry to a reference list.
+
+    `season` is required for a collection and ignored by everything else.
+    collections.season_id is NOT NULL and this function used to insert without
+    it, so adding a collection raised a 500 — the only caller that worked was
+    save_style, which scopes it properly. A collection is per season by design:
+    S27's BEACH is a different run from S25's BEACH.
+    """
     targets = {
         "season": None,  # handled by _season_id
         "collection": ("collections", "name"),
@@ -1198,12 +2013,18 @@ def add_meta(kind: str, name: str) -> None:
     }
     if kind not in targets:
         raise ValueError("Unknown list")
+    if kind == "collection" and not _clean(season):
+        raise ValueError("A collection belongs to a season — choose one first")
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             if kind == "season":
                 _season_id(cur, name)
             elif kind == "sub_group":
                 pass  # learned from styles.sub_group; nothing to insert
+            elif kind == "collection":
+                get_or_create(
+                    cur, "collections", "name", name,
+                    scope={"season_id": _season_id(cur, season)})
             else:
                 table, column = targets[kind]
                 get_or_create(cur, table, column, name)
@@ -1269,7 +2090,8 @@ _C_IM_RULE = _IN_IM + """
 """
 
 
-def checklist_rows(season=None, collection=None, q=None) -> list[dict]:
+def checklist_rows(season=None, collection=None, q=None,
+                   style_id=None) -> list[dict]:
     """One row per style, with the steps already done.
 
     Returns the done steps as an object keyed by step, so a tick carries its
@@ -1308,6 +2130,11 @@ def checklist_rows(season=None, collection=None, q=None) -> list[dict]:
          WHERE s.status <> 'draft'
     """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)
     args: list = [AUTO_STEPS]        # the placeholder in the SELECT binds first
+    if style_id is not None:
+        # One row, for the tick round-trip: the IM-P / C-IM rules live in
+        # this query, so the server stays the authority on what a tick
+        # changed without the client re-downloading the whole season.
+        sql += " AND s.id = %s"; args.append(int(style_id))
     if season:
         sql += " AND se.code = %s"; args.append(season)
     if collection:
@@ -1390,18 +2217,55 @@ MATRIX_FIELDS = [
 # it is writable through the same endpoint.
 HIGHLIGHT_COLOURS = ["green", "amber", "blue"]
 
-# The ring round a next-season circle. Same idea as the highlighter: a pen,
-# not a fact about the garment. Kept in step with RING_MARKS in
-# frontend/src/sections/SheetCard.jsx; frontend/test compares the two.
+# The ring round a past-season circle. Unlike the highlighter this is NOT a
+# pen: orange is derived from the season links (repeats_two_past) and nothing
+# writes it. Yellow is reserved for "ran before but unconfirmed", pending a
+# definition of confirmed — docs/caveats.md §10. Kept in step with RING_MARKS
+# in frontend/src/sections/SheetCard.jsx; frontend/test compares the two.
 RING_MARKS = ["yellow", "orange"]
-RING_KEYS = ("next_sy_mark", "next_000_mark")
 
 # The second bar. One colour today; a list so a second is CSS, not a migration.
 BAND_COLOURS = ["purple"]
 
+# Which channels a style sells through. The order is the order a click walks
+# through them on the Matrix card's number, so BOTH — the plain, unhighlighted
+# case — comes first.
+#
+# A style may also have no channel at all: 257 arrived from the workbook that
+# way and a blank is not the same as BOTH. Nothing here sets it back to blank,
+# because saying "sells through both" is an answer and leaving it empty is the
+# absence of one; the cycle only ever moves between answers.
+WHS_CHANNELS = ["BOTH", "000 ONLY", "SY ONLY"]
+
+# The same fact written twice: the channel is what the IM calls it, the two
+# flags are the tick boxes in the editor. They are not independent, and the
+# workbook never disagreed with itself — 1,207 imported styles map exactly
+# this way. So setting one sets the other, or the card and the editor show
+# contradictory things about the same garment.
+CHANNEL_SELLS = {
+    "BOTH":     (True,  True),
+    "000 ONLY": (False, True),
+    "SY ONLY":  (True,  False),
+}
+
+# RING_KEYS is deliberately NOT here any more. The circle rings are computed
+# from the season links (repeats_two_past), so accepting a written one would
+# put a hand-set value underneath a derived one with nothing to say which the
+# card was showing. The columns stay for now — the yellow rule is still open
+# and may want somewhere to record a confirmation — but nothing writes them.
+# The prices the Pricing Matrix writes. Kept apart from _MATRIX_NUMERIC
+# because that one rounds to a whole number — int(float(text)) — which is
+# right for an ends count and wrong for $115.50, where it would silently
+# store $115 and show it back as if that was what was typed.
+_MATRIX_MONEY = {
+    "whls_line_price_usd", "whls_retail_price_usd", "sy_retail_price_usd",
+    "final_sale_price_usd", "final_sample_price_usd", "price_000", "admin_pct",
+}
+
 _MATRIX_KEYS = ({f["key"] for f in MATRIX_FIELDS}
                 | {"matrix_highlight", "matrix_band", "needs_photo", "notes"}
-                | set(RING_KEYS))
+                | {"whs_channel", "colorway_tag"}
+                | _MATRIX_MONEY | {"finishing_location", "style_number"})
 
 _MATRIX_NUMERIC = {f["key"] for f in MATRIX_FIELDS if f.get("numeric")}
 
@@ -1470,6 +2334,11 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
     sets, args = [], []
     for key, value in fields.items():
         text = "" if value is None else str(value).strip()
+        if key == "colorway_tag":
+            # A code, not prose. The sheet prints TAG: C1 and never TAG: c1,
+            # and the same scheme written two ways reads as two schemes — so
+            # the case is settled here rather than left to whoever types it.
+            text = text.upper()
         if key == "needs_photo":
             # It arrives over JSON as a string, and "false" is a true one, so
             # the words are read rather than left to Python's truthiness.
@@ -1487,15 +2356,29 @@ def update_matrix_fields(style_id: int, fields: dict) -> dict:
             raise ValueError(
                 f"{text!r} is not a band colour"
                 f" — expected one of {', '.join(BAND_COLOURS)}")
-        if key in RING_KEYS and text and text not in RING_MARKS:
-            raise ValueError(
-                f"{text!r} is not a ring colour"
-                f" — expected one of {', '.join(RING_MARKS)}")
         if key == "matrix_highlight" and text and text not in HIGHLIGHT_COLOURS:
             raise ValueError(
                 f"{text!r} is not a highlight colour"
                 f" — expected one of {', '.join(HIGHLIGHT_COLOURS)}")
-        if key in _MATRIX_NUMERIC:
+        # Checked, because this one is not decoration: the sell channel is read
+        # by the sales reports, the IM export and the checklist's price step.
+        if key == "whs_channel" and text and text not in WHS_CHANNELS:
+            raise ValueError(
+                f"{text!r} is not a sell channel"
+                f" — expected one of {', '.join(WHS_CHANNELS)}")
+        if key == "whs_channel" and text:
+            # The tick boxes follow. Done here rather than left to the client
+            # so it holds whoever writes the channel — the Matrix card's
+            # number, the style editor, or an import.
+            sy, whs = CHANNEL_SELLS[text]
+            sets.append("sell_sy = %s"); args.append(sy)
+            sets.append("sell_000 = %s"); args.append(whs)
+        if key in _MATRIX_MONEY:
+            amount = _num(text)
+            if amount is None:
+                raise ValueError(f"{key} must be an amount")
+            args.append(amount)
+        elif key in _MATRIX_NUMERIC:
             try:
                 args.append(int(float(text)))
             except ValueError as exc:
@@ -1541,8 +2424,11 @@ def set_matrix_order(style_ids: list[int]) -> int:
         return 0
     with transaction() as conn:
         with conn.cursor() as cur:
+            # matrix_parked is cleared here rather than by its own call:
+            # being given a position IS being placed, and a style that was
+            # both numbered and parked would show in two places at once.
             cur.execute("""
-                UPDATE styles s SET matrix_order = pos.ord
+                UPDATE styles s SET matrix_order = pos.ord, matrix_parked = false
                   FROM unnest(%s::bigint[]) WITH ORDINALITY AS pos(id, ord)
                  WHERE s.id = pos.id
             """, (ids,))
@@ -1587,12 +2473,226 @@ def yarn_codes(min_colours: int = 5) -> list[str]:
             return [r[0] for r in cur.fetchall()]
 
 
+# The yarn materials. A colour's name always opens with one of these —
+# "YCA SCARLET MACAW - 690" — per the team; it is also what the YARN
+# ANALYSIS sheets are named after. The board shows ONLY names that
+# start this way: a whitelist, not a trim blacklist, because the BOM
+# import also swept in annotations ("HOLD RELEASE", "CANCEL RELEASE"),
+# haberdashery ("ELASTIC90 BLACK", "BENANG JAHIT") and orphans ("TBD",
+# "YELLOW") that no blacklist would ever finish enumerating.
+_YARN_MATERIALS = ("YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ")
+
+
+def _is_yarn(name) -> bool:
+    return str(name or "").strip().split(" ", 1)[0].upper() in _YARN_MATERIALS
+
+
+def color_table() -> dict:
+    """The Color Table: every yarn colour, grouped by palette.
+
+    Only real yarns via _is_yarn — trims and the import's stray rows are
+    in yarn_colors because the importer put every BOM line there, not
+    because anyone thinks of them as colours. They stay in the table
+    (their BOM lines are real); the split (docs/yarn-split.md) is where
+    they get reclassified rather than hidden.
+
+    style_count comes along so the page can say which swatches are actually
+    knitted with, without a request per colour. The full style list is a
+    separate call (color_styles) made on demand: 676 colours times a style
+    list would be most of the payload for rows nobody hovers.
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id, name FROM yarn_palettes"
+                        " ORDER BY sort_order, name")
+            palettes = [{"id": r[0], "name": r[1], "colors": []}
+                        for r in cur.fetchall()]
+            by_id = {p["id"]: p for p in palettes}
+            cur.execute("""
+                SELECT y.id, y.name, y.palette_id, y.hex,
+                       y.qty_with_proj, y.qty_without_proj,
+                       y.qty_with_proj_3m, y.qty_without_proj_3m,
+                       COALESCE(u.n, 0)
+                  FROM yarn_colors y
+                  LEFT JOIN (SELECT cy.yarn_color_id,
+                                    count(DISTINCT sc.style_id) AS n
+                               FROM colorway_yarns cy
+                               JOIN style_colorways sc ON sc.id = cy.colorway_id
+                              GROUP BY cy.yarn_color_id) u
+                         ON u.yarn_color_id = y.id
+                 ORDER BY y.name
+            """)
+            unsorted = []
+            for cid, name, pal, hexv, qw, qo, qw3, qo3, n in cur.fetchall():
+                if not _is_yarn(name):
+                    continue
+                row = {
+                    "id": cid, "name": name, "hex": hexv,
+                    "palette_id": pal if pal in by_id else None,
+                    "qty_with_proj": float(qw) if qw is not None else None,
+                    "qty_without_proj": float(qo) if qo is not None else None,
+                    "qty_with_proj_3m": float(qw3) if qw3 is not None else None,
+                    "qty_without_proj_3m": float(qo3) if qo3 is not None else None,
+                    "style_count": n,
+                }
+                (by_id[pal]["colors"] if pal in by_id else unsorted).append(row)
+            return {"palettes": palettes, "unsorted": unsorted}
+
+
+def color_styles(color_id: int) -> list[dict]:
+    """The styles knitted with one yarn colour, newest season first.
+
+    What the hover card shows. DISTINCT because a colour sits in several
+    slots of several colourways of the same style, and the question is
+    "which styles", not "how many lines".
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT s.id, se.code, s.style_name, se.season_number
+                  FROM colorway_yarns cy
+                  JOIN style_colorways sc ON sc.id = cy.colorway_id
+                  JOIN styles s ON s.id = sc.style_id
+                  JOIN seasons se ON se.id = s.season_id
+                 WHERE cy.yarn_color_id = %s
+                 ORDER BY se.season_number DESC, s.style_name
+            """, (int(color_id),))
+            return [{"style_id": r[0], "season": r[1], "style_name": r[2]}
+                    for r in cur.fetchall()]
+
+
+def create_palette(name: str) -> dict:
+    """Make a palette, or hand back the one that already has that name.
+
+    Idempotent on purpose: the second person to type "Open Color" means the
+    same group, not an error.
+    """
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("A palette needs a name")
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO yarn_palettes (name) VALUES (%s)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id, name
+            """, (name,))
+            row = cur.fetchone()
+            return {"id": row[0], "name": row[1]}
+
+
+# What the Color Table may write on a colour. Everything else on
+# yarn_colors belongs to the BOM import.
+_COLOR_FIELDS = ("palette_id", "hex", "qty_with_proj", "qty_without_proj",
+                 "qty_with_proj_3m", "qty_without_proj_3m")
+
+
+def update_yarn_color(color_id: int, fields: dict) -> dict:
+    """Write the Color Table facts on one colour. Absent keys are left alone."""
+    sets, vals = [], []
+    for key, raw in fields.items():
+        if key not in _COLOR_FIELDS:
+            raise ValueError(f"Unknown field: {key}")
+        if key == "hex":
+            value = str(raw).strip().lower() if raw not in (None, "") else None
+            if value is not None and not (
+                    len(value) == 7 and value[0] == "#"
+                    and all(c in "0123456789abcdef" for c in value[1:])):
+                raise ValueError("hex must look like #aabbcc")
+        elif key == "palette_id":
+            value = int(raw) if raw not in (None, "") else None
+        else:
+            if raw in (None, ""):
+                value = None
+            else:
+                try:
+                    value = Decimal(str(raw))
+                except InvalidOperation as exc:
+                    raise ValueError(f"{key} must be a number") from exc
+        sets.append(f"{key} = %s")
+        vals.append(value)
+    if not sets:
+        raise ValueError("Nothing to change")
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE yarn_colors SET {', '.join(sets)}"
+                " WHERE id = %s RETURNING id",
+                vals + [int(color_id)])
+            if cur.fetchone() is None:
+                raise ValueError("No such colour")
+    return {"ok": True}
+
+
+# The parts of a pullover a yarn line can be assigned to.
+#
+# Tied to the blueprint: each code is a shape on the drawing in
+# frontend/src/sections/Blueprint.jsx, and a part with no shape could not be
+# pointed at. Kept in step by frontend/test — the drawing decides what can be
+# selected, this decides what the server will store.
+#
+# A line with no part is for the whole garment, which is what every imported
+# line means. That is NOT a member of this list: it is the absence of one.
+GARMENT_PARTS = ["neck", "body", "sleeve", "cuff", "hem"]
+
+
+# The colourway naming schemes the TAG line offers.
+#
+# Offered, never enforced: update_matrix_fields takes any text, because the
+# tag that is missing from this list is exactly the one somebody needs on the
+# day a new scheme turns up, and a field that refuses it sends them to the
+# notes instead.
+#
+# These five were given by the team, and the imported data agrees with all of
+# them and adds nothing:
+#
+#   * Colour count. Splitting the 3,580 imported colourway names on "/" gives
+#     1 colour on 1,848 of them, 2 on 1,610, 3 on 122 and FOUR ON NONE. So the
+#     list stops at C1/C2/C3 because the data stops there, not arbitrarily.
+#   * Qualifiers. STRIPE appears in 106 style names and MARL in 28; INTARSIA,
+#     JACQUARD and OMBRE appear in 1, 0 and 0. The two that were given are the
+#     two that exist.
+#
+# There was nothing to read the tags themselves out of: the TAG row is in the
+# layout workbook, not in any of the five IM MASTERs (caveats.md §11).
+COLORWAY_TAGS = ["C1", "C1/C2", "C1/C2/C3", "C1 MARL", "C1 STRIPE"]
+
+
+def colorway_tags() -> list[str]:
+    """The tags the TAG field offers: the known schemes, then what is in use.
+
+    Self-teaching, like yarn_codes. The seed list keeps its own order — it
+    reads C1, C1/C2, C1/C2/C3 and then the qualifiers, which is the order
+    somebody scanning the list expects — and anything the team has typed that
+    is not on it follows, commonest first.
+
+    So "C1/C2 STRIPE", typed once by whoever needs it, is on everybody's list
+    from then on without a migration. That is the whole mechanism for growing
+    the vocabulary; there is no other source to grow it from.
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT colorway_tag AS tag, count(*) AS n
+                  FROM styles
+                 WHERE colorway_tag IS NOT NULL AND btrim(colorway_tag) <> ''
+                 GROUP BY 1
+                 ORDER BY n DESC, tag
+            """)
+            used = [r[0] for r in cur.fetchall()]
+    known = set(COLORWAY_TAGS)
+    return COLORWAY_TAGS + [t for t in used if t not in known]
+
+
 # The pen colours a colourway name can be written in. Nothing means the
 # ordinary colour, which is why it is not in the list.
 # Kept in step with COLORWAY_MARKS in frontend/src/sections/SheetCard.jsx —
 # the card decides which pen comes next, this decides which it will accept, and
 # a list that drifts means a click the server refuses. frontend/test does check.
-COLORWAY_MARKS = ["green", "red", "purple", "magenta", "blue"]
+# Green is gone from this list on purpose: it means "new this season",
+# which matrix_rows works out (new_colorways), so nothing writes it.
+# Black — no mark — means the colour was carried over.
+COLORWAY_MARKS = ["red", "purple", "magenta", "blue"]
 
 # The background behind a colourway name, as opposed to the pen it is
 # written in. Yellow first because that is the one reached for; grey is
@@ -1649,8 +2749,18 @@ def _set_colorway(style_id: int, colour: str, column: str, value: str,
             return dict(row)
 
 
-def add_colorway(style_id: int, name: str) -> dict:
-    """Add a colourway to a style, at the end of its list.
+# The bands of the ruled colourway list, top to bottom. Matches
+# COLORWAY_ZONES in frontend/src/sections/SheetCard.jsx.
+COLORWAY_ZONES = ("sample", "main", "extra")
+
+
+def add_colorway(style_id: int, name: str, zone: str = "main") -> dict:
+    """Add a colourway to a style, at the end of its band.
+
+    `zone` is the band it lands in — there is an add button under each one,
+    and a colour typed into the third band's button belongs in the third band.
+    Without it every button added to the middle one and the colour appeared
+    somewhere the person was not looking.
 
     The unique index on (style_id, ws_tag_color) does the duplicate check, so
     two people adding the same colour at once get one row and one error rather
@@ -1662,22 +2772,66 @@ def add_colorway(style_id: int, name: str) -> dict:
     colour = (name or "").strip().upper()
     if not colour:
         raise ValueError("a colourway needs a name")
+    band = (zone or "main").strip() or "main"
+    if band not in COLORWAY_ZONES:
+        raise ValueError(
+            f"{band!r} is not a band — expected one of "
+            f"{', '.join(COLORWAY_ZONES)}")
     with transaction() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
             cur.execute("SELECT 1 FROM styles WHERE id = %s", (style_id,))
             if not cur.fetchone():
                 raise ValueError(f"no style {style_id}")
             cur.execute("""
-                INSERT INTO style_colorways (style_id, ws_tag_color, sort_order)
-                SELECT %s, %s, coalesce(max(sort_order) + 1, 0)
+                INSERT INTO style_colorways (style_id, ws_tag_color, zone, sort_order)
+                SELECT %s, %s, %s, coalesce(max(sort_order) + 1, 0)
                   FROM style_colorways WHERE style_id = %s
                 ON CONFLICT (style_id, ws_tag_color) DO NOTHING
-             RETURNING ws_tag_color AS color, sort_order
-            """, (style_id, colour, style_id))
+             RETURNING ws_tag_color AS color, zone, sort_order
+            """, (style_id, colour, band, style_id))
             row = cur.fetchone()
             if not row:
                 raise ValueError(f"{colour!r} is already a colourway of this style")
             return dict(row)
+
+
+def arrange_colorways(style_id: int, items: list[dict]) -> int:
+    """Place a style's colourways: which band each is in, and in what order.
+
+    The whole list is sent, not a move, for the same reason set_matrix_order
+    takes a whole block — the server never has to work out what the screen
+    meant by "third", and there are no gaps to run out of.
+
+    A colour the caller leaves out is left exactly as it is rather than being
+    deleted or pushed to the end: dropping a row is what delete_colorway is
+    for, and a partial list arriving from a stale screen must not quietly
+    rearrange what it did not mention.
+    """
+    rows = []
+    for i, item in enumerate(items or []):
+        colour = _clean((item or {}).get("color"))
+        zone = _clean((item or {}).get("zone")) or "main"
+        if not colour:
+            continue
+        if zone not in COLORWAY_ZONES:
+            raise ValueError(
+                f"{zone!r} is not a band — expected one of "
+                f"{', '.join(COLORWAY_ZONES)}")
+        rows.append((colour, zone, i))
+    if not rows:
+        raise ValueError("nothing to arrange")
+
+    with transaction() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            moved = 0
+            for colour, zone, order in rows:
+                cur.execute("""
+                    UPDATE style_colorways SET zone = %s, sort_order = %s
+                     WHERE style_id = %s
+                       AND upper(btrim(ws_tag_color)) = upper(btrim(%s))
+                """, (zone, order, style_id, colour))
+                moved += cur.rowcount
+            return moved
 
 
 def rename_colorway(style_id: int, colour: str, name: str) -> dict:
@@ -1712,6 +2866,10 @@ def rename_colorway(style_id: int, colour: str, name: str) -> dict:
                 if cur.fetchone():
                     raise ValueError(f"{new!r} is already a colourway of this style")
                 raise ValueError(f"{old!r} is not a colourway of style {style_id}")
+            # Only once the rename has actually happened — a failed one above
+            # raises, and a history of renames that did not occur is worse
+            # than none.
+            _record_rename(cur, style_id, "colorway", old, new)
             return dict(row)
 
 

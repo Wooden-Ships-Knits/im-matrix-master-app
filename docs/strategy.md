@@ -1,4 +1,4 @@
-# IM Master — Strategy
+# PDM — Strategy
 
 **Created 2026-09-10.** How the project is sequenced and why.
 

@@ -23,11 +23,12 @@ def steps():
 
 @router.get("")
 def rows(
+    style_id: int | None = Query(None),
     season: str | None = Query(None),
     collection: str | None = Query(None),
     q: str | None = Query(None),
 ):
-    return repo.checklist_rows(season=season, collection=collection, q=q)
+    return repo.checklist_rows(style_id=style_id, season=season, collection=collection, q=q)
 
 
 @router.post("/{style_id}")
