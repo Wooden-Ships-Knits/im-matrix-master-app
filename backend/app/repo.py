@@ -2473,13 +2473,28 @@ def yarn_codes(min_colours: int = 5) -> list[str]:
             return [r[0] for r in cur.fetchall()]
 
 
+# The yarn materials. A colour's name always opens with one of these —
+# "YCA SCARLET MACAW - 690" — per the team; it is also what the YARN
+# ANALYSIS sheets are named after. The board shows ONLY names that
+# start this way: a whitelist, not a trim blacklist, because the BOM
+# import also swept in annotations ("HOLD RELEASE", "CANCEL RELEASE"),
+# haberdashery ("ELASTIC90 BLACK", "BENANG JAHIT") and orphans ("TBD",
+# "YELLOW") that no blacklist would ever finish enumerating.
+_YARN_MATERIALS = ("YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ")
+
+
+def _is_yarn(name) -> bool:
+    return str(name or "").strip().split(" ", 1)[0].upper() in _YARN_MATERIALS
+
+
 def color_table() -> dict:
     """The Color Table: every yarn colour, grouped by palette.
 
-    Trims are left out via _is_trim — a zip is in yarn_colors because the
-    importer put every BOM line there, not because anyone thinks of it as a
-    colour. The split into real tables is planned (docs/yarn-split.md);
-    until then this filter is the same one the design sheet uses.
+    Only real yarns via _is_yarn — trims and the import's stray rows are
+    in yarn_colors because the importer put every BOM line there, not
+    because anyone thinks of them as colours. They stay in the table
+    (their BOM lines are real); the split (docs/yarn-split.md) is where
+    they get reclassified rather than hidden.
 
     style_count comes along so the page can say which swatches are actually
     knitted with, without a request per colour. The full style list is a
@@ -2495,7 +2510,9 @@ def color_table() -> dict:
             by_id = {p["id"]: p for p in palettes}
             cur.execute("""
                 SELECT y.id, y.name, y.palette_id, y.hex,
-                       y.qty_with_proj, y.qty_without_proj, COALESCE(u.n, 0)
+                       y.qty_with_proj, y.qty_without_proj,
+                       y.qty_with_proj_3m, y.qty_without_proj_3m,
+                       COALESCE(u.n, 0)
                   FROM yarn_colors y
                   LEFT JOIN (SELECT cy.yarn_color_id,
                                     count(DISTINCT sc.style_id) AS n
@@ -2506,14 +2523,16 @@ def color_table() -> dict:
                  ORDER BY y.name
             """)
             unsorted = []
-            for cid, name, pal, hexv, qw, qo, n in cur.fetchall():
-                if _is_trim(name):
+            for cid, name, pal, hexv, qw, qo, qw3, qo3, n in cur.fetchall():
+                if not _is_yarn(name):
                     continue
                 row = {
                     "id": cid, "name": name, "hex": hexv,
                     "palette_id": pal if pal in by_id else None,
                     "qty_with_proj": float(qw) if qw is not None else None,
                     "qty_without_proj": float(qo) if qo is not None else None,
+                    "qty_with_proj_3m": float(qw3) if qw3 is not None else None,
+                    "qty_without_proj_3m": float(qo3) if qo3 is not None else None,
                     "style_count": n,
                 }
                 (by_id[pal]["colors"] if pal in by_id else unsorted).append(row)
@@ -2564,7 +2583,8 @@ def create_palette(name: str) -> dict:
 
 # What the Color Table may write on a colour. Everything else on
 # yarn_colors belongs to the BOM import.
-_COLOR_FIELDS = ("palette_id", "hex", "qty_with_proj", "qty_without_proj")
+_COLOR_FIELDS = ("palette_id", "hex", "qty_with_proj", "qty_without_proj",
+                 "qty_with_proj_3m", "qty_without_proj_3m")
 
 
 def update_yarn_color(color_id: int, fields: dict) -> dict:

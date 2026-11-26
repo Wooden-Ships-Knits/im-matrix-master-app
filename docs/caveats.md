@@ -652,17 +652,37 @@ styles knitted with it, click for the panel that edits the board's own facts.
   carries no colour a machine could derive, so every swatch is grey until
   somebody sets a hex in the panel. The two quantities are the same: NULL
   means nobody has said, which renders as a dash and is different from 0.
-- **Trims are left out with `_is_trim`** — the same rule the design sheet
-  uses. But the import also left non-colours that the prefix rule cannot
-  catch: `CANCEL RELEASE`, `HOLD RELEASE`, `TBD`, `SALE 04`, `BENANG JAHIT`
-  (sewing thread), `OBRAS SESUAI WARNA TOPI` (an instruction, not a colour).
-  They sit under Unsorted until the yarn split (`yarn-split.md`) separates
-  real colours from BOM noise; hiding them by hand-list here would be a
-  second copy of that decision.
+- **The board is a whitelist: a name must open with a material prefix**
+  (`_YARN_MATERIALS`: YY, YST, YCA, YAC, YTX, YP, BJ — the team's rule,
+  and the YARN ANALYSIS sheets are named after the same list). Trims fail
+  it, and so do the import's stray rows: `CANCEL RELEASE`, `HOLD RELEASE`,
+  `TBD`, `ELASTIC90 …`, `BENANG JAHIT`, `OBRAS SESUAI WARNA TOPI`. Those
+  16 rows stay in `yarn_colors` — every one of them carries real BOM lines
+  (58 in all; HOLD RELEASE alone has 28), so deleting them would silently
+  edit real styles' BOMs. The yarn split (`yarn-split.md`) is where they
+  get reclassified. `ST GEMSTONE PINE - 910` is also hidden by the rule —
+  almost certainly a YST typo, back on the board when the merge renames it.
 - **Palettes can be made, not yet renamed or deleted.** Creating one is
   idempotent (`ON CONFLICT`), so two people typing "Open Color" get one
   group. Deleting would be `ON DELETE SET NULL` — the colours fall back to
   Unsorted — but no one asked yet and an un-deletable group costs nothing.
+- **The quantities come from YARN ANALYSIS, by script.** The workbook's own
+  AV template defines the numbers (net available with / without SY
+  projection), and the physical board writes each as a pair — so each chip
+  reads `3 months / full season`, four workbook columns (`AV 3 MONTHS …` and
+  `AV FULL SEASON …` of both variants). BJ has no sheet in the workbook, so
+  BJ swatches honestly show a dash.
+  `backend/scripts/import_yarn_stock.py` (dry-run by default) matches the
+  sheets' COLOR labels against `yarn_colors.name`: 352 of the 413 real
+  yarns matched on the Nov 10 workbook. The 61 that did not are spelling
+  drift (GRAY/GREY, code variants) — the same merge material yarn-split.md
+  tracks — and trims never appear in the workbook at all. Re-run it when a
+  new YARN ANALYSIS lands; hand edits in the panel survive until then.
+- **Dragging a swatch onto a section re-palettes it** — native HTML5 drag,
+  which is a mouse gesture: touch and keyboard users do the same thing with
+  the panel's palette select, which stays for exactly that reason. The
+  board header (title, legend, Palette dropdown) is sticky, so the only
+  navigation a 400-swatch board has rides along with the scroll.
 - **The hover list is fetched per colour and cached per visit.** For a
   workhorse like YCA BREAKER WHITE that list is 660 styles (~40KB once);
   the card shows ten and says how many more.

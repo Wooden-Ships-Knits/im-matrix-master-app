@@ -627,8 +627,13 @@ export default function StyleEditor() {
 
             {/* ---------- Bottom: dynamic editor ---------- */}
             <section className="card card-pad section-card">
-              <h2 className="card-title">{SECTIONS.find((s) => s.key === section).label}</h2>
-              <div style={{ marginTop: 18 }}>
+              {/* The BOM section opens with its own BOM | Blueprint tabs,
+                  which are title-styled — a second "BOM" heading above them
+                  said the same thing twice. */}
+              {section !== 'bom' && (
+                <h2 className="card-title">{SECTIONS.find((s) => s.key === section).label}</h2>
+              )}
+              <div style={{ marginTop: section === 'bom' ? 0 : 18 }}>
                 <Body {...sectionProps} />
               </div>
             </section>

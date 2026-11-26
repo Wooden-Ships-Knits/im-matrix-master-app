@@ -33,24 +33,38 @@ export const splitColorName = (name) => {
 // said. 0 is a real answer (none left) and renders as 0.
 export const fmtQty = (v) => (v == null ? '—' : String(Number(v)));
 
+// Each chip is a pair, the way the physical board writes it: AV 3 MONTHS /
+// AV FULL SEASON. Both unknown collapses to one dash, not a dash fraction.
+export const pairQty = (m3, full) =>
+  (m3 == null && full == null ? '—' : `${fmtQty(m3)}/${fmtQty(full)}`);
+
 const SWATCH_FALLBACK = '#D9D6D0';
 
-function Swatch({ color, selected, onPick, onHover, onLeave }) {
+function Swatch({ color, selected, ghosted, onPick, onHover, onLeave, onDragStart, onDragEnd }) {
   const { label, code } = splitColorName(color.name);
   return (
     <button
       type="button"
-      className={`ct-swatch${selected ? ' ct-selected' : ''}`}
+      className={`ct-swatch${selected ? ' ct-selected' : ''}${ghosted ? ' ct-ghosted' : ''}`}
       style={{ background: color.hex || SWATCH_FALLBACK }}
       onClick={() => onPick(color)}
       onMouseEnter={(e) => onHover(color, e.currentTarget)}
       onMouseLeave={onLeave}
       onFocus={(e) => onHover(color, e.currentTarget)}
       onBlur={onLeave}
+      draggable
+      onDragStart={(e) => onDragStart(e, color)}
+      onDragEnd={onDragEnd}
     >
       <span className="ct-qtys">
-        <i className="ct-q ct-q-with">{fmtQty(color.qty_with_proj)}</i>
-        <i className="ct-q ct-q-without">{fmtQty(color.qty_without_proj)}</i>
+        <i className="ct-q ct-q-with"
+          title="With projection — 3 months / full season">
+          {pairQty(color.qty_with_proj_3m, color.qty_with_proj)}
+        </i>
+        <i className="ct-q ct-q-without"
+          title="Without projection — 3 months / full season">
+          {pairQty(color.qty_without_proj_3m, color.qty_without_proj)}
+        </i>
       </span>
       <span className="ct-name">
         {code ? <b>#{code}</b> : null}
@@ -71,6 +85,9 @@ export default function ColorTable() {
   const [form, setForm] = useState(null);           // editable board facts
   const [saving, setSaving] = useState(false);
   const [tip, setTip] = useState(null);             // {id, name, count, x, y, list}
+  const [dropSec, setDropSec] = useState();         // section id under a drag
+  const [dragSrc, setDragSrc] = useState(null);     // colour id being dragged
+  const dragId = useRef(null);                      // same, for handlers
 
   // Hover lists, fetched once per colour per visit. A ref, not state: the
   // cache changing is never a reason to re-render.
@@ -128,6 +145,8 @@ export default function ColorTable() {
       hex: color.hex || '',
       qty_with_proj: color.qty_with_proj ?? '',
       qty_without_proj: color.qty_without_proj ?? '',
+      qty_with_proj_3m: color.qty_with_proj_3m ?? '',
+      qty_without_proj_3m: color.qty_without_proj_3m ?? '',
       palette_id: color.palette_id ?? '',
     });
     api.colorStyles(color.id)
@@ -151,13 +170,40 @@ export default function ColorTable() {
     }).catch(() => { /* the count is still on screen */ });
   };
 
+  // Drag a swatch onto another section to re-palette it. Native HTML5 drag:
+  // the board is a mouse surface, and the panel's select stays as the way
+  // that also works by touch and keyboard.
+  const dragStart = (e, color) => {
+    dragId.current = color.id;
+    setTip(null);
+    e.dataTransfer.effectAllowed = 'move';
+    try { e.dataTransfer.setData('text/plain', String(color.id)); } catch { /* old engines */ }
+    // After the browser has taken its drag snapshot, not before: dimming the
+    // source synchronously would dim the snapshot too.
+    requestAnimationFrame(() => setDragSrc(color.id));
+  };
+  const dragEnd = () => { dragId.current = null; setDragSrc(null); setDropSec(undefined); };
+  const sectionDrop = (sec) => {
+    const id = dragId.current;
+    dragEnd();
+    if (id == null) return;
+    const from = sections.find((s) => s.colors.some((c) => c.id === id));
+    if (from && (from.id ?? null) === (sec.id ?? null)) return;
+    api.updateYarnColor(id, { palette_id: sec.id })
+      .then(() => load())
+      .catch((err) => setError(err.message || 'Could not move the colour'));
+  };
+
   const save = () => {
     if (!selected || !form) return;
     setSaving(true);
+    const num = (v) => (v === '' ? null : v);
     api.updateYarnColor(selected.id, {
       hex: form.hex || null,
-      qty_with_proj: form.qty_with_proj === '' ? null : form.qty_with_proj,
-      qty_without_proj: form.qty_without_proj === '' ? null : form.qty_without_proj,
+      qty_with_proj: num(form.qty_with_proj),
+      qty_without_proj: num(form.qty_without_proj),
+      qty_with_proj_3m: num(form.qty_with_proj_3m),
+      qty_without_proj_3m: num(form.qty_without_proj_3m),
       palette_id: form.palette_id === '' ? null : Number(form.palette_id),
     })
       .then(() => load())
@@ -204,8 +250,10 @@ export default function ColorTable() {
             <div>
               <h2 className="card-title">Color Table</h2>
               <div className="ct-legend">
-                <span><i className="ct-chip ct-q-with" /> qty av — with projection</span>
-                <span><i className="ct-chip ct-q-without" /> qty av — without projection</span>
+                <span><i className="ct-chip ct-q-with" /> qty av — with projection
+                  <em> · 3 mo / season</em></span>
+                <span><i className="ct-chip ct-q-without" /> qty av — without projection
+                  <em> · 3 mo / season</em></span>
               </div>
             </div>
             <div className="ct-palwrap" ref={palWrap}>
@@ -242,24 +290,36 @@ export default function ColorTable() {
           {!table && !error && <p className="ct-empty">Loading the board…</p>}
 
           <div className={selected ? 'ct-body ct-split' : 'ct-body'}>
-            <div className="ct-sections">
+            <div className={`ct-sections${dragSrc != null ? ' ct-dragging' : ''}`}>
               {sections.map((sec) => (
                 (sec.colors.length > 0 || sec.id !== null) && (
                   <div key={sec.id ?? 'unsorted'} id={`ct-sec-${sec.id ?? 'unsorted'}`}
-                    className="ct-section">
+                    className={`ct-section${dropSec === (sec.id ?? 'unsorted') ? ' ct-dropping' : ''}`}
+                    onDragOver={(e) => {
+                      if (dragId.current == null) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      setDropSec(sec.id ?? 'unsorted');
+                    }}
+                    onDragLeave={(e) => {
+                      if (!e.currentTarget.contains(e.relatedTarget)) setDropSec(undefined);
+                    }}
+                    onDrop={(e) => { e.preventDefault(); sectionDrop(sec); }}>
                     <h3>{sec.name}</h3>
                     {sec.colors.length === 0 ? (
                       <p className="ct-empty">
                         {palQuery ? 'No colour here matches the search.'
-                          : 'Nothing here yet — pick a colour and set its palette in the panel.'}
+                          : 'Nothing here yet — drag a colour in, or set its palette in the panel.'}
                       </p>
                     ) : (
                       <div className="ct-grid">
                         {sec.colors.map((c) => (
                           <Swatch key={c.id} color={c}
                             selected={selected?.id === c.id}
+                            ghosted={dragSrc === c.id}
                             onPick={pick} onHover={hover}
-                            onLeave={() => setTip(null)} />
+                            onLeave={() => setTip(null)}
+                            onDragStart={dragStart} onDragEnd={dragEnd} />
                         ))}
                       </div>
                     )}
@@ -305,15 +365,29 @@ export default function ColorTable() {
                         onChange={(e) => setForm({ ...form, hex: e.target.value })} />
                     </span>
                   </label>
-                  <label>Qty available — with projection
-                    <input className="input" type="number" step="any" min="0"
-                      value={form.qty_with_proj}
-                      onChange={(e) => setForm({ ...form, qty_with_proj: e.target.value })} />
+                  <label>Qty av — with projection · 3 months / full season
+                    <span className="ct-pairrow">
+                      <input className="input" type="number" step="any"
+                        aria-label="With projection, 3 months"
+                        value={form.qty_with_proj_3m}
+                        onChange={(e) => setForm({ ...form, qty_with_proj_3m: e.target.value })} />
+                      <input className="input" type="number" step="any"
+                        aria-label="With projection, full season"
+                        value={form.qty_with_proj}
+                        onChange={(e) => setForm({ ...form, qty_with_proj: e.target.value })} />
+                    </span>
                   </label>
-                  <label>Qty available — without projection
-                    <input className="input" type="number" step="any" min="0"
-                      value={form.qty_without_proj}
-                      onChange={(e) => setForm({ ...form, qty_without_proj: e.target.value })} />
+                  <label>Qty av — without projection · 3 months / full season
+                    <span className="ct-pairrow">
+                      <input className="input" type="number" step="any"
+                        aria-label="Without projection, 3 months"
+                        value={form.qty_without_proj_3m}
+                        onChange={(e) => setForm({ ...form, qty_without_proj_3m: e.target.value })} />
+                      <input className="input" type="number" step="any"
+                        aria-label="Without projection, full season"
+                        value={form.qty_without_proj}
+                        onChange={(e) => setForm({ ...form, qty_without_proj: e.target.value })} />
+                    </span>
                   </label>
                   <label>Palette
                     <select className="input" value={form.palette_id}

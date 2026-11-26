@@ -893,9 +893,12 @@ function SheetCard({
           const rule = zi === 0 ? null : (zi === 1 ? 'black' : 'red');
           // On paper a rule separating nothing from nothing is a stray line;
           // while editing it is the boundary you drag across, so it stays.
-          const showRule = rule && (onEdit
-            || (colours.length && (bands[COLORWAY_ZONES[zi - 1]].length
-                                   || zi === 2)));
+          // Boolean(), because `colours.length && …` is the NUMBER 0 for an
+          // empty band, and {0 && <div/>} prints a literal 0 on the card —
+          // one stray zero under every colour list on the review sheet.
+          const showRule = Boolean(rule && (onEdit
+            || (colours.length > 0 && (bands[COLORWAY_ZONES[zi - 1]].length > 0
+                                       || zi === 2))));
           return (
             <Fragment key={zone}>
               {showRule && (

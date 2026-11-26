@@ -1213,9 +1213,15 @@ is(/export default memo\(PriceCard\)/.test(
 // ---- the color table ----
 // The swatch board: name parsing and qty formatting are pure and shown on
 // every swatch, and the server-side rules each stopped a real wrong write.
+// A band rule's test must come out boolean: `colours.length && ...` is the
+// number 0 for an empty band, and React prints {0} as a literal zero — one
+// stray 0 under every colour list on the review sheet, spotted by the team.
+is(/const showRule = Boolean\(/.test(card), true,
+   'the band rule renders a rule or nothing, never a stray 0');
+
 console.log('\n-- the color table --');
 const ctSrc = fs.readFileSync('frontend/src/pages/ColorTable.jsx', 'utf8');
-const { splitColorName, fmtQty } = await import(
+const { splitColorName, fmtQty, pairQty } = await import(
   'data:text/javascript,' + encodeURIComponent(
     cut(ctSrc, 'export const splitColorName', 'const SWATCH_FALLBACK')));
 
@@ -1230,13 +1236,18 @@ is([fmtQty(null), fmtQty(0), fmtQty(3.9), fmtQty('2.50')], ['—', '0', '3.9', '
    'qty: unknown is a dash, zero is a real answer, trailing zeros go');
 
 const ctRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
-// The board shows colours, not zips: the same _is_trim the design sheet uses.
-is(/def color_table[\s\S]*?if _is_trim\(name\):\n\s*continue/.test(ctRepo), true,
-   'the board leaves trims out, with the one shared trim rule');
-// The writable surface is exactly the four board facts — everything else on
-// yarn_colors belongs to the BOM import.
-is(/_COLOR_FIELDS = \("palette_id", "hex", "qty_with_proj", "qty_without_proj"\)/.test(ctRepo),
-   true, 'the Color Table can write only its four facts');
+// The board shows only real yarns: a name must OPEN with a material prefix.
+// A whitelist, not a trim blacklist — the import also swept in annotations
+// ("HOLD RELEASE") and haberdashery ("ELASTIC90 BLACK") that no blacklist
+// would finish enumerating. The seven materials are the team's own list.
+is(/_YARN_MATERIALS = \("YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ"\)/.test(ctRepo)
+   && /def color_table[\s\S]*?if not _is_yarn\(name\):\n\s*continue/.test(ctRepo),
+   true, 'the board shows material-prefixed yarns and nothing else');
+// The writable surface is exactly the board facts — everything else on
+// yarn_colors belongs to the BOM import. Four grew to six when the chips
+// became pairs (0029): each bar carries 3 months and full season.
+is(/_COLOR_FIELDS = \("palette_id", "hex", "qty_with_proj", "qty_without_proj",\n\s*"qty_with_proj_3m", "qty_without_proj_3m"\)/.test(ctRepo),
+   true, 'the Color Table can write only its six facts');
 // Idempotent create: the second person to type "Open Color" gets the group.
 is(/ON CONFLICT \(name\) DO UPDATE SET name = EXCLUDED\.name/.test(ctRepo), true,
    'making a palette twice is one palette');
@@ -1249,6 +1260,57 @@ is(ctSrc.indexOf('live.current = true;') > 0
 // The palette dropdown is a dropdown: a click anywhere else closes it.
 is(/document\.addEventListener\('pointerdown', away\)/.test(ctSrc), true,
    'the palette panel closes on a click outside it');
+// Dragging a swatch onto another section re-palettes it; the panel's
+// select stays as the touch-and-keyboard way to do the same thing.
+is(/draggable/.test(ctSrc) && /onDrop=/.test(ctSrc)
+   && /updateYarnColor\(id, \{ palette_id: sec\.id \}\)/.test(ctSrc), true,
+   'a swatch dragged onto a section moves into that palette');
+// The stock importer feeds the chips from the workbook's full-season pair —
+// the numbers the team's own AV template quotes. Swapping in the 3-month
+// columns (or the columns drifting) must be a decision, not an accident.
+const yimp = fs.readFileSync('backend/scripts/import_yarn_stock.py', 'utf8');
+is(/COL_WITHOUT = "AV FULL SEASON \(NO PROJECTION\)"/.test(yimp)
+   && /COL_WITH = "AV FULL SEASON WITH PROJECTION"/.test(yimp)
+   && /SET qty_without_proj = %s, qty_with_proj = %s/.test(yimp), true,
+   'yarn stock maps the full-season AV pair onto the two chips');
+// The split (0030): material and colour are rows, the name is a label.
+// The BOM kept pointing at yarn_colors — that is the load-bearing choice.
+const ysplit = fs.readFileSync('backend/migrations/versions/0030_yarn_split.py', 'utf8');
+is(/CREATE TABLE yarn_materials/.test(ysplit)
+   && /CREATE TABLE colors/.test(ysplit)
+   && /MATERIALS = \["YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ"\]/.test(ysplit)
+   && !/ALTER TABLE colorway_yarns/.test(ysplit), true,
+   'the yarn split adds registries and never touches the BOM');
+
+// The duplicate merges are a literal mapping — the file is the record of
+// the repoint — and the one answered human call is pinned: BLACK B 1708
+// and 1708 B are DIFFERENT yarns, so that pair must never appear in it.
+const ymerge = fs.readFileSync('backend/scripts/merge_yarn_duplicates.py', 'utf8');
+is(/\("YCA BLACK B - 1708 B", "YCA BLACK B -1708 B"\)/.test(ymerge)
+   && /\("BJ ALMOND BUTTER - 735", "BJ ALMOND BUTTER"\)/.test(ymerge), true,
+   'the spacing and spelling merges are recorded literally');
+is(/\("YCA BLACK B - 1708 B", "YCA BLACK B - 1708"\)/.test(ymerge)
+   || /\("YCA BLACK B - 1708", "YCA BLACK B - 1708 B"\)/.test(ymerge), false,
+   'confirmed-different yarns are never merged (answered 24 Nov 2026)');
+
+// The physical board writes each bar as a pair — AV 3 MONTHS / AV FULL
+// SEASON — so the importer carries four columns and the chip shows both.
+is(/COL_WITH_3M = "AV 3 MONTHS WITH PROJECTION"/.test(yimp)
+   && /qty_without_proj_3m = %s, qty_with_proj_3m = %s/.test(yimp), true,
+   'and the 3-month half of each pair rides along');
+is([pairQty(null, null), pairQty(3.9, 3.9), pairQty(null, 5)],
+   ['—', '3.9/3.9', '—/5'],
+   'a chip pair reads 3mo/season, or one dash when nobody has said');
+// Chips and the name label are flex rows, not absolute corners: the wide
+// pairs were painting straight over the name box. (Read here: ctCss is
+// declared further down, after this importer block.)
+is(/\.ct-swatch \{[^}]*flex-direction: column/s
+     .test(fs.readFileSync('frontend/src/styles.css', 'utf8')), true,
+   'a swatch stacks chips over name — nothing overlays the numbers');
+
+const ctCss = fs.readFileSync('frontend/src/styles.css', 'utf8');
+is(/\.ct-head \{[^}]*position: sticky/s.test(ctCss), true,
+   'the board header (and its Palette control) rides along as you scroll');
 
 console.log('\n-- code splitting --');
 const auApp = fs.readFileSync('frontend/src/App.jsx', 'utf8');

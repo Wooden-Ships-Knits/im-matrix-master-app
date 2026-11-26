@@ -1,24 +1,37 @@
 /* ================= PDM design tokens ================= */
+/* The revamp lives here first: same cream-and-green identity, with the
+   separation work moved from hard borders to layered shadows, one easing
+   curve for everything that moves, and the focus ring on the deep green the
+   app already used for emphasis. v1.0 is the tag to diff against. */
 :root {
-  --bg: #F8F6F2;
+  --bg: #F7F5F0;
   --card: #FFFFFF;
   --primary: #3F4345;
-  --border: #E5E2DD;
-  --text: #2A2A2A;
+  --border: #E6E2DA;
+  --border-strong: #D4CFC5; /* hover state of anything with a border */
+  --text: #26262A;
   --muted: #6E6E6E;
   --success: #6D8B74;
 
-  --band: #E9E6E0;          /* header band */
-  --inset: #F1EFEA;         /* grey panels inside cards */
+  --band: #ECE9E2;          /* header band */
+  --inset: #F2F0EA;         /* grey panels inside cards */
   --tile: #D9D6D0;          /* inactive section tile */
   --green-deep: #2F6B5C;    /* table headers + search */
   --tan: #A97E52;           /* home card labels */
   --danger: #C0473B;
   --danger-soft: #FBEDEB;
 
-  --radius: 12px;
-  --shadow: 0 1px 2px rgba(42, 42, 42, 0.05), 0 4px 14px rgba(42, 42, 42, 0.05);
-  --focus: 0 0 0 3px rgba(109, 139, 116, 0.35);
+  /* The two voices: Fraunces NAMES things (the wordmark, titles, style
+     names) the way a garment label would; Inter stays the working hand
+     for data, forms and controls. */
+  --display: 'Fraunces', 'Georgia', serif;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --shadow: 0 1px 2px rgba(35, 33, 28, 0.04), 0 6px 20px rgba(35, 33, 28, 0.05);
+  --shadow-lift: 0 2px 6px rgba(35, 33, 28, 0.07), 0 14px 34px rgba(35, 33, 28, 0.11);
+  --focus: 0 0 0 3px rgba(47, 107, 92, 0.22);
+  --ease: cubic-bezier(0.25, 0.6, 0.3, 1);
 }
 
 * { box-sizing: border-box; }
@@ -26,12 +39,30 @@ html { font-size: 16px; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  /* A linen weave under everything: two perpendicular hairline grids at
+     1.5% ink. Felt more than seen — flat colour reads as a screen, a
+     faint weave reads as cloth. */
+  background:
+    repeating-linear-gradient(0deg, rgba(42, 40, 34, 0.015) 0 1px,
+      transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(42, 40, 34, 0.015) 0 1px,
+      transparent 1px 4px),
+    var(--bg);
   color: var(--text);
   font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 1.03rem;
   line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+::selection { background: rgba(47, 107, 92, 0.18); }
+
+/* Thin, quiet scrollbars everywhere a panel scrolls. */
+* { scrollbar-width: thin; scrollbar-color: #C9C4BA transparent; }
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-thumb { background: #C9C4BA; border-radius: 99px; }
+::-webkit-scrollbar-track { background: transparent; }
 
 #root { min-height: 100vh; display: flex; flex-direction: column; }
 
@@ -41,11 +72,28 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 :focus-visible { outline: none; box-shadow: var(--focus); border-radius: 8px; }
 
 /* ================= Header band ================= */
+/* The header went dark in the revamp: deep pine, white wordmark, light
+   links — and a herringbone weave in the surface, two hairline diagonal
+   stripes crossed at 4.5% white, the way a knit catches light. Quiet
+   enough to read as texture, never as pattern. var(--band) still holds
+   the old cream for the two patterns that borrow it. */
 .band {
-  background: var(--band);
-  border-bottom: 1px solid var(--border);
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.045) 0 2px,
+      transparent 2px 9px),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.045) 0 2px,
+      transparent 2px 9px),
+    #2B3732;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
   padding: 18px 32px;
 }
+.band .logo { color: #fff; }
+.band .logo-expand { color: rgba(240, 243, 238, 0.5); }
+.band-meta label { color: #C8CFC6; }
+.band .btn-ghost { color: #E6EAE4; border-color: rgba(255, 255, 255, 0.26); background: transparent; }
+.band .btn-ghost:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(255, 255, 255, 0.42); }
+.band .btn-dark { background: rgba(255, 255, 255, 0.13); color: #fff; }
+.band .btn-dark:hover { background: rgba(255, 255, 255, 0.22); filter: none; }
 .band-row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
 
 /* The wordmark is two pieces now: the abbreviation carries the size, the
@@ -60,9 +108,11 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   white-space: nowrap;
 }
 .logo-mark {
-  font-size: 2.1rem;
-  font-weight: 800;
-  letter-spacing: -0.03em;
+  font-family: var(--display);
+  font-size: 2.2rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  font-variation-settings: 'opsz' 60;
 }
 .logo-expand {
   font-size: 0.82rem;
@@ -83,11 +133,12 @@ input, select, textarea { font-family: inherit; color: var(--text); }
 
 .band-link {
   display: inline-flex; align-items: center; gap: 7px;
-  color: var(--text); text-decoration: none;
+  color: #D8DED6; text-decoration: none;
   font-weight: 600; font-size: 1rem;
   padding: 8px 12px; border-radius: 10px;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease);
 }
-.band-link:hover { background: rgba(63, 67, 69, 0.08); }
+.band-link:hover { background: rgba(255, 255, 255, 0.09); color: #fff; }
 
 .band-meta {
   margin-left: auto;
@@ -108,13 +159,15 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   border: none; border-radius: 999px;
   font-weight: 700; font-size: 1rem;
   padding: 10px 22px; min-height: 44px;
-  transition: filter 0.12s ease, transform 0.05s ease;
+  box-shadow: 0 1px 2px rgba(35, 33, 28, 0.10);
+  transition: filter 0.14s var(--ease), transform 0.14s var(--ease),
+              box-shadow 0.14s var(--ease);
 }
-.btn:hover { filter: brightness(1.06); }
-.btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.btn:hover { filter: brightness(1.05); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(35, 33, 28, 0.16); }
+.btn:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(35, 33, 28, 0.10); }
+.btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; box-shadow: none; }
 
-.btn-save { background: var(--success); color: #fff; }
+.btn-save { background: var(--green-deep); color: #fff; }
 .btn-dark { background: var(--primary); color: #fff; }
 .btn-search { background: var(--green-deep); color: #fff; padding: 10px 28px; }
 .btn-danger { background: var(--danger); color: #fff; }
@@ -123,8 +176,9 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   background: transparent; color: var(--text);
   border: 1.5px solid var(--border); border-radius: 10px;
   font-weight: 600; padding: 8px 16px; min-height: 40px;
+  box-shadow: none;
 }
-.btn-ghost:hover { background: var(--inset); filter: none; }
+.btn-ghost:hover { background: var(--inset); border-color: var(--border-strong); filter: none; transform: none; box-shadow: none; }
 .btn-ghost.danger { color: var(--danger); border-color: #EAD4D1; }
 .btn-ghost.danger:hover { background: var(--danger-soft); }
 
@@ -146,26 +200,36 @@ input, select, textarea { font-family: inherit; color: var(--text); }
   display: inline-flex; align-items: center; justify-content: center;
   width: 40px; height: 40px; border-radius: 10px;
   border: 1.5px solid var(--border); background: #fff; color: var(--muted);
+  transition: background 0.14s var(--ease), color 0.14s var(--ease),
+              border-color 0.14s var(--ease);
 }
-.icon-btn:hover { background: var(--inset); color: var(--text); }
+.icon-btn:hover { background: var(--inset); color: var(--text); border-color: var(--border-strong); }
 .icon-btn.danger:hover { background: var(--danger-soft); color: var(--danger); border-color: #EAD4D1; }
 
 /* ================= Forms ================= */
+/* Quiet labels over inputs: the value is the loud part of a form, not the
+   caption. Same size family as .group-label so the editor reads as one
+   labelling system instead of two. */
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field > label { font-weight: 700; font-size: 0.95rem; color: var(--text); }
-.field .hint { font-size: 0.83rem; color: var(--muted); font-weight: 500; }
+.field > label {
+  font-weight: 600; font-size: 0.82rem; color: #55564F;
+  letter-spacing: 0.01em;
+}
+.field .hint { font-size: 0.78rem; color: var(--muted); font-weight: 500; }
 
 .input, select.input, textarea.input {
   width: 100%;
   background: #fff;
   border: 1.5px solid var(--border);
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  font-size: 1rem;
-  min-height: 46px;
+  border-radius: var(--radius-sm);
+  padding: 9px 13px;
+  font-size: 0.97rem;
+  min-height: 44px;
+  transition: border-color 0.14s var(--ease), box-shadow 0.14s var(--ease);
 }
 textarea.input { min-height: 88px; resize: vertical; }
-.input:focus { outline: none; border-color: var(--success); box-shadow: var(--focus); }
+.input:hover { border-color: var(--border-strong); }
+.input:focus { outline: none; border-color: var(--green-deep); box-shadow: var(--focus); }
 .input::placeholder { color: #B4B0A9; }
 
 select.input {
@@ -190,20 +254,21 @@ select.input {
 }
 .check input { position: absolute; opacity: 0; width: 0; height: 0; }
 .check .box {
-  width: 26px; height: 26px; border-radius: 8px;
-  border: 2px solid var(--border); background: #fff;
+  width: 24px; height: 24px; border-radius: 7px;
+  border: 1.5px solid #CCC7BE; background: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  color: transparent; transition: all 0.12s ease;
+  color: transparent; transition: all 0.12s var(--ease);
 }
-.check input:checked + .box { background: var(--primary); border-color: var(--primary); color: #fff; }
+.check:hover .box { border-color: var(--green-deep); }
+.check input:checked + .box { background: var(--green-deep); border-color: var(--green-deep); color: #fff; }
 .check input:focus-visible + .box { box-shadow: var(--focus); }
 
 /* ================= Combobox ================= */
 .combo { position: relative; }
 .combo-list {
   position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; right: 0;
-  background: #fff; border: 1.5px solid var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); max-height: 280px; overflow-y: auto; padding: 6px;
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow-lift); max-height: 280px; overflow-y: auto; padding: 6px;
 }
 .combo-option {
   display: block; width: 100%; text-align: left;
@@ -225,11 +290,20 @@ select.input {
 }
 .card-pad { padding: 22px 24px; }
 
+/* Titles speak Fraunces, and the accent under them is a running stitch —
+   pine thread, five dashes — instead of a solid bar. The one motif the
+   whole app repeats, because it is the one thing every garment has. */
 .card-title {
-  font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em;
-  margin: 0 0 4px; padding-bottom: 10px;
-  border-bottom: 2px solid var(--text);
-  display: inline-block;
+  font-family: var(--display);
+  font-size: 1.35rem; font-weight: 600; letter-spacing: 0;
+  margin: 0 0 4px; padding-bottom: 12px;
+  display: inline-block; position: relative;
+}
+.card-title::after {
+  content: ''; position: absolute; left: 0; bottom: 5px;
+  width: 58px; height: 3px;
+  background: repeating-linear-gradient(90deg,
+    var(--green-deep) 0 7px, transparent 7px 12px);
 }
 
 /* ================= Home ================= */
@@ -238,30 +312,45 @@ select.input {
   flex: 1; display: flex; align-items: center; justify-content: center;
   gap: 56px; flex-wrap: wrap; padding: 60px 24px;
 }
+/* White cards, filled icon chips. The old beige tiles with dashed icon
+   frames were the mock-up's wireframe boxes shipped as the product. */
 .home-card {
   width: 320px; min-height: 280px;
-  background: #EFEDE7;
+  background: var(--card);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 24px;
+  box-shadow: var(--shadow);
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 26px;
   text-decoration: none;
-  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+  transition: transform 0.18s var(--ease), box-shadow 0.18s var(--ease),
+              border-color 0.18s var(--ease);
 }
 .home-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 28px rgba(42, 42, 42, 0.10);
-  background: #F3F1EC;
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lift);
+  border-color: rgba(47, 107, 92, 0.35);
 }
 .home-card .icon-frame {
   width: 108px; height: 108px;
-  border: 2px dashed #C9C5BD; border-radius: 22px;
+  border: none; border-radius: 28px;
+  background: rgba(47, 107, 92, 0.08);
   display: flex; align-items: center; justify-content: center;
-  color: var(--muted);
+  color: var(--green-deep);
+  transition: background 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.home-card:hover .icon-frame {
+  background: rgba(47, 107, 92, 0.14);
+  transform: scale(1.04);
 }
 .home-card .label {
-  font-size: 1.5rem; font-weight: 700; color: var(--tan); letter-spacing: 0.01em;
+  font-family: var(--display);
+  font-size: 1.65rem; font-weight: 600; color: var(--tan); letter-spacing: 0.01em;
 }
-.home-foot { text-align: center; color: var(--muted); padding: 0 24px 40px; font-size: 0.95rem; }
+.home-foot {
+  text-align: center; color: var(--muted); padding: 0 24px 40px;
+  font-size: 0.78rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.18em;
+}
 
 /* ================= Editor layout ================= */
 .editor-grid {
@@ -286,9 +375,13 @@ select.input {
 .style-photo {
   position: relative; width: 100%; aspect-ratio: 3 / 3.6;
   border-radius: var(--radius); overflow: hidden;
-  background: var(--inset); border: 1px solid var(--border);
+  background: var(--inset); border: 1.5px dashed #CFC9BF;
   display: flex; align-items: center; justify-content: center;
+  transition: border-color 0.14s var(--ease), background 0.14s var(--ease);
 }
+.style-photo:hover { border-color: rgba(47, 107, 92, 0.5); background: #F4F3EC; }
+/* Once a photo is in, the dashed "drop here" edge has nothing to say. */
+.style-photo:has(img) { border: 1px solid var(--border); }
 .style-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .style-photo .placeholder { color: #B9B5AD; display: flex; flex-direction: column; align-items: center; gap: 10px; font-weight: 600; }
 /* Under the photo: where this style sits on the Matrix layout. */
@@ -314,16 +407,24 @@ select.input {
 /* section tiles */
 .tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
 @media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+/* White tiles with a quiet border, instead of slabs of grey — the active
+   one keeps its dark fill, so the selected section still reads first. */
 .tile {
-  border: none; border-radius: var(--radius);
-  background: var(--tile); color: #5A5E60;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); color: #5A5E60;
   min-height: 108px; padding: 16px 10px;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
   font-weight: 700; font-size: 1rem;
-  transition: background 0.12s ease, color 0.12s ease, transform 0.08s ease;
+  transition: background 0.14s var(--ease), color 0.14s var(--ease),
+              border-color 0.14s var(--ease), transform 0.1s var(--ease),
+              box-shadow 0.14s var(--ease);
 }
-.tile:hover { background: #CFCCC5; transform: translateY(-1px); }
-.tile.active { background: var(--primary); color: #fff; }
+.tile:hover {
+  background: rgba(47, 107, 92, 0.05); color: var(--green-deep);
+  border-color: rgba(47, 107, 92, 0.4);
+  transform: translateY(-1px); box-shadow: 0 4px 12px rgba(35, 33, 28, 0.07);
+}
+.tile.active { background: var(--primary); border-color: var(--primary); color: #fff; }
 .tile svg { opacity: 0.85; }
 
 /* section editor */
@@ -366,7 +467,7 @@ select.input {
 
 /* ================= Browse ================= */
 .query-card { padding: 20px 24px; margin-bottom: 24px; }
-.query-title { font-weight: 800; font-size: 1.15rem; margin: 0 0 14px; }
+.query-title { font-family: var(--display); font-weight: 600; font-size: 1.3rem; margin: 0 0 14px; }
 .query-grid {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: 16px; align-items: end;
@@ -381,11 +482,12 @@ select.input {
   width: 100%; background: none; border: none;
   display: flex; align-items: center; gap: 14px;
   padding: 18px 20px; text-align: left;
+  transition: background 0.14s var(--ease);
 }
-.acc-head:hover { background: #FCFBF8; }
+.acc-head:hover { background: #FBF9F5; }
 .acc-head .caret { color: var(--text); flex-shrink: 0; transition: transform 0.15s ease; }
 .acc-head .caret.open { transform: rotate(90deg); }
-.acc-name { font-weight: 800; font-size: 1.12rem; letter-spacing: 0.01em; text-transform: uppercase; }
+.acc-name { font-family: var(--display); font-weight: 600; font-size: 1.18rem; letter-spacing: 0.04em; text-transform: uppercase; }
 .acc-count { color: var(--muted); font-size: 0.95rem; font-weight: 500; white-space: nowrap; }
 .acc-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 .badge-draft {
@@ -395,7 +497,7 @@ select.input {
 }
 .acc-body { padding: 4px 20px 22px; }
 
-.cw-title { font-weight: 800; font-size: 1.05rem; margin: 18px 4px 10px; text-transform: uppercase; }
+.cw-title { font-family: var(--display); font-weight: 600; font-size: 1.1rem; margin: 18px 4px 10px; text-transform: uppercase; letter-spacing: 0.04em; }
 .data-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
 .data-table { width: 100%; border-collapse: collapse; font-size: 0.97rem; }
 .data-table th {
@@ -434,14 +536,16 @@ select.input {
 
 .dialog-backdrop {
   position: fixed; inset: 0; z-index: 90;
-  background: rgba(42, 42, 42, 0.4);
+  background: rgba(38, 36, 32, 0.38);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center; padding: 24px;
 }
 .dialog {
-  background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  background: #fff; border-radius: 18px; box-shadow: 0 24px 70px rgba(20, 18, 14, 0.28);
   max-width: 460px; width: 100%; padding: 26px 28px;
 }
-.dialog h3 { margin: 0 0 8px; font-size: 1.25rem; font-weight: 800; }
+.dialog h3 { margin: 0 0 8px; font-family: var(--display); font-size: 1.35rem; font-weight: 600; }
 .dialog p { margin: 0 0 22px; color: var(--muted); font-size: 1rem; }
 /* Wraps because a three-button row (Cancel / Discard / Save changes) is
    wider than the dialog on a narrow screen. */
@@ -518,8 +622,9 @@ select.input {
      breakpoint is how the six segments ran out of the card on mid-size
      windows. On a wide screen nothing wraps and nothing changes. */
   flex-wrap: wrap;
-  padding: 8px; background: var(--inset);
+  padding: 10px; background: #fff;
   border: 1px solid var(--border); border-radius: var(--radius);
+  box-shadow: inset 0 1px 3px rgba(35, 33, 28, 0.04);
 }
 .sku-part { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 0 0 auto; }
 .sku-part > .input, .sku-part > * > .input { text-align: center; padding-inline: 6px; }
@@ -528,8 +633,9 @@ select.input {
 .sku-val {
   display: flex; align-items: center; justify-content: center;
   height: 40px; min-width: 42px; padding: 0 10px;
-  background: var(--tile); border-radius: 8px;
-  font-weight: 700; font-variant-numeric: tabular-nums; color: var(--primary);
+  background: #313D38; border-radius: 8px;
+  font-weight: 700; font-variant-numeric: tabular-nums; color: #fff;
+  letter-spacing: 0.04em;
 }
 .sku-cap {
   font-size: 0.66rem; font-weight: 700; letter-spacing: 0.06em;
@@ -714,7 +820,11 @@ select.input {
 .sheet-bar {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  background: var(--band); padding: 12px 20px; border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 12px 20px; border-bottom: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgba(35, 33, 28, 0.04);
 }
 .sheet-bar-title { font-weight: 700; margin-right: auto; }
 .sheet-empty { padding: 24px; }
@@ -855,8 +965,13 @@ select.input {
 .card-title.tab {
   background: none; border: 0; padding: 0 0 8px; cursor: pointer;
   color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px;
+  transition: color 0.14s var(--ease), border-color 0.14s var(--ease);
 }
-.card-title.tab.on { color: var(--text); border-bottom-color: var(--primary); }
+/* Tabs carry their own underline; the green accent bar that every plain
+   card-title now wears would put a bar under the INACTIVE tab too. */
+.card-title.tab::after { content: none; }
+.card-title.tab:hover { color: var(--text); }
+.card-title.tab.on { color: var(--text); border-bottom-color: var(--green-deep); }
 .card-title.tab:focus-visible { outline: 0; box-shadow: var(--focus); }
 
 .mfl-search { margin-top: 16px; }
@@ -1138,14 +1253,14 @@ select.input {
 .chk-step { min-width: 46px; }
 .chk-cell { text-align: center; }
 .chk-box {
-  width: 22px; height: 22px; border-radius: 5px; cursor: pointer;
-  border: 1.5px solid #c4c4c4; background: #fff; color: #fff;
+  width: 22px; height: 22px; border-radius: 6px; cursor: pointer;
+  border: 1.5px solid #CCC7BE; background: #fff; color: #fff;
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 0; transition: background 100ms ease, border-color 100ms ease;
+  padding: 0; transition: background 0.12s var(--ease), border-color 0.12s var(--ease);
 }
-.chk-box:hover { border-color: #8a8a8a; }
-.chk-box.on { background: #1b1b1b; border-color: #1b1b1b; }
-.chk-box:focus-visible { outline: 2px solid #1b1b1b; outline-offset: 2px; }
+.chk-box:hover { border-color: var(--green-deep); }
+.chk-box.on { background: var(--green-deep); border-color: var(--green-deep); }
+.chk-box:focus-visible { outline: none; box-shadow: var(--focus); }
 
 .chk-count {
   text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
@@ -2025,8 +2140,11 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .login-card {
   width: 100%; max-width: 380px;
   display: flex; flex-direction: column; gap: 10px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 20px; box-shadow: var(--shadow);
+  padding: 30px 28px;
 }
-.login-logo { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.01em; margin: 0; }
+.login-logo { font-family: var(--display); font-size: 1.9rem; font-weight: 600; letter-spacing: 0; margin: 0; }
 .login-card .card-sub { margin: 0 0 8px; }
 .login-label { font-size: 0.82rem; font-weight: 700; }
 .login-go { justify-content: center; margin-top: 4px; }
@@ -2045,8 +2163,8 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 }
 
 .band-guest {
-  font-size: 0.82rem; font-weight: 700; color: #777;
-  border: 1px solid var(--border, #ddd); border-radius: 999px; padding: 4px 11px;
+  font-size: 0.82rem; font-weight: 700; color: #C8CFC6;
+  border: 1px solid rgba(255, 255, 255, 0.28); border-radius: 999px; padding: 4px 11px;
 }
 
 /* ===================== The development band =====================
@@ -2230,10 +2348,10 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
    is shaped like a field but is plainly not one to type in. */
 .chan-readout {
   display: block;
-  padding: 9px 11px;
-  border: 1.5px dashed var(--border);
-  border-radius: 10px;
-  background: #faf8f5;
+  padding: 9px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--inset);
   font-weight: 700;
   color: var(--text);
   min-height: 1.25rem;
@@ -2736,9 +2854,15 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
    right-hand panel when one is picked. ct- prefixed throughout — the price
    sheet taught what sheet classes do to editor classes with the same name. */
 
+/* Sticky, so the Palette control rides along as the board scrolls — the
+   board is 400+ swatches tall and the dropdown is its only navigation. */
 .ct-head {
   display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap;
-  margin-bottom: 20px;
+  position: sticky; top: 0; z-index: 25;
+  background: var(--card);
+  margin: -22px -24px 20px; padding: 18px 24px 14px;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 .ct-head > div:first-child { margin-right: auto; }
 .ct-legend {
@@ -2753,7 +2877,9 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   background: var(--card); border: 1px solid var(--primary);
   border-radius: 999px; padding: 9px 18px;
   font-size: 0.95rem; font-weight: 600;
+  transition: background 0.14s var(--ease), box-shadow 0.14s var(--ease);
 }
+.ct-palbtn:hover { background: var(--inset); box-shadow: 0 2px 8px rgba(35, 33, 28, 0.08); }
 .ct-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 30;
   width: 250px; background: var(--card); border: 1px solid var(--border);
@@ -2775,8 +2901,14 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .ct-addpal button:hover { color: var(--text); }
 
 .ct-split { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
-.ct-section { margin-bottom: 30px; }
-.ct-section h3 { margin: 0 0 12px; font-size: 1.25rem; }
+.ct-section { margin-bottom: 30px; border-radius: var(--radius); }
+.ct-section h3 { margin: 0 0 12px; font-family: var(--display); font-size: 1.35rem; font-weight: 600; }
+/* A section lights up while a dragged swatch is over it. */
+.ct-section.ct-dropping {
+  background: rgba(47, 107, 92, 0.05);
+  outline: 2px dashed rgba(47, 107, 92, 0.5); outline-offset: 8px;
+}
+.ct-section.ct-dropping h3 { color: var(--green-deep); }
 .ct-grid {
   display: grid; gap: 14px;
   grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
@@ -2785,29 +2917,46 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
    crush them: fewer per row, same size. */
 .ct-split .ct-grid { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 
+/* No resting shadow: 428 of them is a repaint storm, and it is what left
+   shadow-and-label trails across the grid while a swatch was dragged. The
+   shadow appears on the one swatch under the pointer, and never mid-drag.
+   Flex column, not absolute corners: the chips and the name are real rows,
+   so a two-line name and a wide pair ("-1039.91/1299.83") stack instead of
+   painting over each other, and the swatch grows to hold them. */
 .ct-swatch {
-  position: relative; display: block; width: 100%; aspect-ratio: 4 / 3;
+  position: relative; display: flex; flex-direction: column;
+  justify-content: space-between; align-items: flex-start; gap: 6px;
+  width: 100%; min-height: 96px;
   border: 1px solid rgba(42, 42, 42, 0.18); border-radius: 6px;
-  padding: 0; box-shadow: var(--shadow);
+  padding: 5px; cursor: grab;
 }
-.ct-swatch:hover { transform: translateY(-1px); }
+.ct-swatch:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
+.ct-swatch:active { cursor: grabbing; }
+.ct-dragging .ct-swatch { transition: none; }
+.ct-dragging .ct-swatch:hover { transform: none; box-shadow: none; }
+.ct-swatch.ct-ghosted { opacity: 0.35; }
 .ct-swatch.ct-selected { outline: 3px solid var(--green-deep); outline-offset: 1px; }
-.ct-qtys { position: absolute; top: 5px; left: 5px; display: grid; gap: 2px; justify-items: start; }
+.ct-qtys { display: grid; gap: 2px; justify-items: start; max-width: 100%; }
 .ct-q {
-  display: inline-block; min-width: 26px; padding: 1px 4px; border-radius: 2px;
+  display: inline-block; min-width: 26px; max-width: 100%; padding: 1px 4px;
+  border-radius: 2px; overflow: hidden;
   font-style: normal; font-size: 0.56rem; font-weight: 700; line-height: 1.3;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
   color: #fff; text-align: center;
 }
 .ct-q-with { background: #3BA23B; }
 .ct-q-without { background: #4F5BD5; }
 .ct-name {
-  position: absolute; left: 8%; right: 8%; bottom: 10%;
+  align-self: stretch; margin: 0 2px;
   background: #fff; border-radius: 2px; padding: 3px 2px;
   display: grid; justify-items: center; gap: 0;
   font-size: 0.56rem; font-weight: 600; line-height: 1.25; color: #111;
   text-transform: uppercase; overflow: hidden;
 }
 .ct-name b { font-size: 0.6rem; }
+.ct-legend em { font-style: normal; text-transform: none; letter-spacing: 0; opacity: 0.75; }
+.ct-pairrow { display: flex; gap: 8px; }
+.ct-pairrow .input { flex: 1; min-width: 0; }
 
 .ct-tip {
   position: fixed; z-index: 50; width: 270px; pointer-events: none;
@@ -2835,7 +2984,7 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   width: 120px; height: 120px; border-radius: 6px;
   border: 1px solid rgba(42, 42, 42, 0.18);
 }
-.ct-detail-title { margin: 0; font-size: 1.15rem; }
+.ct-detail-title { margin: 0; font-family: var(--display); font-size: 1.25rem; font-weight: 600; }
 .ct-detail-card {
   background: var(--card); border: 1px solid var(--border); border-radius: 12px;
   padding: 14px 16px;

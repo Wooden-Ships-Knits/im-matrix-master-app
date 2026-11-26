@@ -1,6 +1,14 @@
 # Splitting the yarn list into Material and Colour
 
-A plan, not a change. Nothing in this document has been applied.
+EXECUTED 25 Nov 2026 as far as the data allowed: migration `0030_yarn_split`
+created `yarn_materials` (7 rows) and `colors` (284 rows, `family` ready and
+empty — the workbook's COLOR FAMILY column is itself empty), parsed
+material/colour/code onto all 394 yarn rows, and `merge_yarn_duplicates.py`
+collapsed the 18 safe duplicates the day before. One correction to §1: the
+existing `materials` table turned out to be per-season costing rows (five
+copies of NEW GRASSY, one per season, each with a price), so the registry is
+the NEW `yarn_materials`, and `materials` keeps its real job. Still open:
+the trims' home (style_trims vs BOM) and YP TX 030/031.
 
 Every number here was measured against the live database on 17 November 2026
 (676 `yarn_colors`, 8,461 BOM lines over 3,574 colourways) and against
@@ -148,7 +156,7 @@ with no code.
 
 | rows | why |
 |---|---|
-| `YCA BLACK B - 1708 B` #38 (103), `- 1708` #103 (43), `-1708 B` #25 (36), `-1708` #51 (3) | **Two codes, 1708 and 1708 B.** The spacing variants are clearly one row each, but whether 1708 and 1708 B are the same yarn is a question for whoever buys it. 185 BOM lines ride on the answer. |
+| ~~`YCA BLACK B` × 4~~ | **ANSWERED 24 Nov 2026: 1708 and 1708 B are different yarns.** The spacing variants were merged (`merge_yarn_duplicates.py`); the two coded rows stay separate, correctly. |
 | `YP TX 030` #360, `YP TX 031` #359 vs `YTX - 030` #396, `YTX - 031` #350 | Typo or a real YP colour? 2 lines either way. |
 
 **3 groups, 8 rows, 84 BOM lines** — four fifths of the whole merge, sitting
