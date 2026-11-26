@@ -8,6 +8,7 @@ state equals the payload" is true by construction (flow.md §3).
 Field names here match what the React client already sends. The mapping to the
 v2 tables lives in this one module so the rest of the code speaks v2.
 """
+import re
 from decimal import Decimal, InvalidOperation
 
 from psycopg.rows import dict_row
@@ -2487,6 +2488,32 @@ def _is_yarn(name) -> bool:
     return str(name or "").strip().split(" ", 1)[0].upper() in _YARN_MATERIALS
 
 
+# The YARN ANALYSIS status column per season, best first. The tabs disagree:
+# YCA keeps an old and a new S27 column, YAC spells one "S27 YARN STATUS NEW"
+# with no dash, and F26 has a NEW and an OLD. The newest wins, as PPIC reads
+# it — the old ones stay in the batch for anyone who wants the history.
+SEASON_COLS = {
+    "S26": ("S26 YARN STATUS",),
+    "F26": ("F26 YARN STATUS - NEW", "F26 YARN STATUS", "F26 YARN STATUS - OLD"),
+    "S27": ("S27 YARN STATUS - NEW", "S27 YARN STATUS NEW", "S27 YARN STATUS",
+            "S27 YARN STATUS - OLD"),
+    "F27": ("F27 YARN STATUS",),
+    "S28": ("S28 YARN STATUS",),
+}
+
+
+def _palette_per_season(status: dict | None) -> dict:
+    """{season: the status PPIC wrote}, for the seasons the board groups by."""
+    out = {}
+    for season, cols in SEASON_COLS.items():
+        for col in cols:
+            value = (status or {}).get(col)
+            if value:
+                out[season] = value
+                break
+    return out
+
+
 def color_table() -> dict:
     """The Color Table: every yarn colour, grouped by palette.
 
@@ -2495,6 +2522,13 @@ def color_table() -> dict:
     because anyone thinks of them as colours. They stay in the table
     (their BOM lines are real); the split (docs/yarn-split.md) is where
     they get reclassified rather than hidden.
+
+    The kilos are NOT on yarn_colors any more (0031). They come from the
+    newest loaded YARN ANALYSIS batch through v_yarn_stock_latest, so the
+    figures have a file, a stock date and a sha256 behind them, and a
+    re-import can never overwrite something a person typed: the two live in
+    different tables. `source` is that provenance, for the page to show, and
+    `queue` is how many rows of that file nobody could place.
 
     style_count comes along so the page can say which swatches are actually
     knitted with, without a request per colour. The full style list is a
@@ -2510,10 +2544,13 @@ def color_table() -> dict:
             by_id = {p["id"]: p for p in palettes}
             cur.execute("""
                 SELECT y.id, y.name, y.palette_id, y.hex,
-                       y.qty_with_proj, y.qty_without_proj,
-                       y.qty_with_proj_3m, y.qty_without_proj_3m,
-                       COALESCE(u.n, 0)
+                       l.qty_with_proj, l.qty_without_proj,
+                       l.qty_with_proj_3m, l.qty_without_proj_3m,
+                       l.o4_now, l.on_hand_kg, c.family,
+                       COALESCE(u.n, 0), l.detail->'status'
                   FROM yarn_colors y
+                  LEFT JOIN v_yarn_stock_latest l ON l.yarn_color_id = y.id
+                  LEFT JOIN colors c ON c.id = y.color_id
                   LEFT JOIN (SELECT cy.yarn_color_id,
                                     count(DISTINCT sc.style_id) AS n
                                FROM colorway_yarns cy
@@ -2523,7 +2560,8 @@ def color_table() -> dict:
                  ORDER BY y.name
             """)
             unsorted = []
-            for cid, name, pal, hexv, qw, qo, qw3, qo3, n in cur.fetchall():
+            for (cid, name, pal, hexv, qw, qo, qw3, qo3,
+                 o4, on_hand, family, n, status) in cur.fetchall():
                 if not _is_yarn(name):
                     continue
                 row = {
@@ -2533,10 +2571,145 @@ def color_table() -> dict:
                     "qty_without_proj": float(qo) if qo is not None else None,
                     "qty_with_proj_3m": float(qw3) if qw3 is not None else None,
                     "qty_without_proj_3m": float(qo3) if qo3 is not None else None,
+                    "o4": o4, "on_hand": float(on_hand) if on_hand is not None else None,
+                    "family": family,
+                    "pal": _palette_per_season(status),
                     "style_count": n,
                 }
                 (by_id[pal]["colors"] if pal in by_id else unsorted).append(row)
-            return {"palettes": palettes, "unsorted": unsorted}
+            changes = open_changes(cur)
+            return {"palettes": palettes, "unsorted": unsorted,
+                    "source": stock_source(cur), "queue": review_counts(cur),
+                    # The deltas ride along with the board so a swatch can
+                    # show what the open changes would leave it with, without
+                    # a second request per colour.
+                    "changes": {"delta": changes["delta"],
+                                "subs": len(changes["subs"]),
+                                "proposals": len(changes["proposals"])}}
+
+
+def stock_source(cur) -> dict:
+    """Which file the figures on the board come from, and when it was read."""
+    cur.execute("""
+        SELECT b.id, b.file_name, b.file_modified_at, b.loaded_at, b.notes,
+               (SELECT max(stock_on) FROM yarn_stock_lines WHERE batch_id = b.id),
+               (SELECT count(*) FROM yarn_stock_lines WHERE batch_id = b.id),
+               (SELECT count(*) FROM yarn_stock_lines
+                 WHERE batch_id = b.id AND yarn_color_id IS NOT NULL)
+          FROM import_batches b
+         WHERE b.id = latest_import_batch('yarn_analysis')
+    """)
+    row = cur.fetchone()
+    if row is None:
+        return {}
+    return {"batch_id": row[0], "file": row[1],
+            "file_modified": row[2].isoformat() if row[2] else None,
+            "loaded_at": row[3].isoformat() if row[3] else None,
+            "notes": row[4] or [],
+            "stock_on": row[5].isoformat() if row[5] else None,
+            "rows": row[6], "placed": row[7]}
+
+
+def review_counts(cur) -> dict:
+    """Open questions per rule, for the badge on the page."""
+    cur.execute("""
+        SELECT r.code, r.severity, r.title, count(i.id) FILTER (WHERE i.status = 'open')
+          FROM review_rules r
+          LEFT JOIN review_items i ON i.rule_code = r.code
+         GROUP BY r.code, r.severity, r.title, r.code
+         ORDER BY r.code
+    """)
+    rules = [{"code": r[0], "severity": r[1], "title": r[2], "open": r[3]}
+             for r in cur.fetchall()]
+    return {"open": sum(r["open"] for r in rules), "rules": rules}
+
+
+def review_queue(status: str = "open", limit: int = 400) -> list[dict]:
+    """The queue itself: what a load could not place, newest sighting first.
+
+    Each item carries the candidates the resolver already found, so the
+    answer is usually a click rather than a search.
+    """
+    if status not in ("open", "confirmed", "dismissed", "all"):
+        raise ValueError("status must be open, confirmed, dismissed or all")
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT i.id, i.rule_code, r.severity, r.title, r.description,
+                       i.raw_value, i.locator, i.detail, i.status,
+                       i.seen_at, b.file_name
+                  FROM review_items i
+                  JOIN review_rules r ON r.code = i.rule_code
+                  LEFT JOIN import_batches b ON b.id = i.batch_id
+                 WHERE (%s = 'all' OR i.status = %s)
+                 ORDER BY (r.severity = 'error') DESC, i.rule_code, i.raw_value
+                 LIMIT %s
+            """, (status, status, int(limit)))
+            return [{"id": r[0], "rule": r[1], "severity": r[2], "title": r[3],
+                     "description": r[4], "raw": r[5], "locator": r[6],
+                     "detail": r[7] or {}, "status": r[8],
+                     "seen_at": r[9].isoformat() if r[9] else None,
+                     "file": r[10]}
+                    for r in cur.fetchall()]
+
+
+def answer_review(item_id: int, yarn_color_id: int | None, who: str | None = None,
+                  dismiss: bool = False) -> dict:
+    """Answer one question: this text means that yarn, or leave it alone.
+
+    Confirming writes the alias, so the answer holds for every load after
+    this one — that is the whole point of the queue. Dismissing closes the
+    item without teaching the resolver anything, for a row that is simply
+    not ours.
+    """
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT raw_value, status FROM review_items WHERE id = %s",
+                        (int(item_id),))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError("No such review item")
+            raw, status = row
+            if status != "open":
+                raise ValueError(f"That question is already {status}")
+            if dismiss:
+                cur.execute("UPDATE review_items SET status = 'dismissed',"
+                            " closed_at = now(), closed_by = %s WHERE id = %s",
+                            (who, int(item_id)))
+                return {"ok": True, "status": "dismissed"}
+            if yarn_color_id in (None, ""):
+                raise ValueError("Pick the yarn this text means")
+            cur.execute("SELECT name FROM yarn_colors WHERE id = %s",
+                        (int(yarn_color_id),))
+            yarn = cur.fetchone()
+            if yarn is None:
+                raise ValueError("No such colour")
+            cur.execute("""
+                INSERT INTO yarn_aliases (alias_text, source_code, yarn_color_id,
+                                          confirmed_by, note)
+                VALUES (%s, 'yarn_analysis', %s, %s, 'confirmed in the review queue')
+                ON CONFLICT (alias_text, source_code) DO UPDATE
+                   SET yarn_color_id = EXCLUDED.yarn_color_id,
+                       confirmed_by = EXCLUDED.confirmed_by,
+                       confirmed_at = now()
+            """, (raw, int(yarn_color_id), who))
+            cur.execute("UPDATE review_items SET status = 'confirmed',"
+                        " closed_at = now(), closed_by = %s WHERE id = %s",
+                        (who, int(item_id)))
+            # The figure is in the batch already; point it at the yarn now so
+            # the board shows it without waiting for the next import.
+            cur.execute("""
+                UPDATE yarn_stock_lines l
+                   SET yarn_color_id = %s, resolved_by = 'alias'
+                 WHERE l.batch_id = latest_import_batch('yarn_analysis')
+                   AND upper(btrim(regexp_replace(l.yarn_text, '\\s+', ' ', 'g'))) = %s
+                   AND l.yarn_color_id IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM yarn_stock_lines k
+                                    WHERE k.batch_id = l.batch_id
+                                      AND k.yarn_color_id = %s)
+            """, (int(yarn_color_id), raw, int(yarn_color_id)))
+            return {"ok": True, "status": "confirmed",
+                    "yarn": yarn[0], "lines_placed": cur.rowcount}
 
 
 def color_styles(color_id: int) -> list[dict]:
@@ -2581,10 +2754,501 @@ def create_palette(name: str) -> dict:
             return {"id": row[0], "name": row[1]}
 
 
-# What the Color Table may write on a colour. Everything else on
-# yarn_colors belongs to the BOM import.
-_COLOR_FIELDS = ("palette_id", "hex", "qty_with_proj", "qty_without_proj",
-                 "qty_with_proj_3m", "qty_without_proj_3m")
+# ---------------------------------------------------------------- changes
+# A sub has to stay inside the yarn type: YST and YY are the same yarn in two
+# counts, YP and YTX likewise, and nothing else is interchangeable. Proposing
+# acrylic where cotton is knitted is not a colour decision.
+_YARN_GROUP = {"YST": "yst", "YY": "yst", "YCA": "yca", "YAC": "yac",
+               "YP": "yp", "YTX": "yp", "BJ": "bj"}
+
+
+def _group(name) -> str:
+    return _YARN_GROUP.get(str(name or "").strip().split(" ", 1)[0].upper(), "?")
+
+
+def _yarn(cur, color_id: int) -> tuple[int, str]:
+    cur.execute("SELECT id, name FROM yarn_colors WHERE id = %s", (int(color_id),))
+    row = cur.fetchone()
+    if row is None:
+        raise ValueError("No such colour")
+    return row[0], row[1]
+
+
+def _same_group(a: str, b: str) -> None:
+    if _group(a) != _group(b) or _group(a) == "?":
+        raise ValueError(f"Different yarn type: {a.split(' ')[0]} cannot stand in "
+                         f"for {b.split(' ')[0]}")
+
+
+def open_changes(cur) -> dict:
+    """Every open sub and proposal, and what they do to each yarn's AV.
+
+    The delta is the whole point: a colour short by 40 kg that two open
+    changes have already covered is not short any more, and the board has
+    to say so before anyone orders yarn.
+    """
+    cur.execute("""
+        SELECT id, short_id, short_label, sub_id, sub_label, kg, note, who,
+               created_at
+          FROM yarn_subs WHERE status = 'open' ORDER BY id
+    """)
+    subs = [{"id": r[0], "short_id": r[1], "short_label": r[2], "sub_id": r[3],
+             "sub_label": r[4], "kg": float(r[5]), "note": r[6], "who": r[7],
+             "created_at": r[8].isoformat() if r[8] else None}
+            for r in cur.fetchall()]
+    cur.execute("""
+        SELECT p.id, p.colorway_id, p.season, p.style_name, p.colorway_name,
+               p.slots, p.from_id, p.from_label, p.to_id, p.to_label, p.kg,
+               p.note, p.who, p.created_at
+          FROM yarn_proposals p WHERE p.status = 'open' ORDER BY p.id
+    """)
+    proposals = [{"id": r[0], "colorway_id": r[1], "season": r[2],
+                  "style_name": r[3], "colorway_name": r[4], "slots": r[5],
+                  "from_id": r[6], "from_label": r[7], "to_id": r[8],
+                  "to_label": r[9], "kg": float(r[10]) if r[10] is not None else None,
+                  "note": r[11], "who": r[12],
+                  "created_at": r[13].isoformat() if r[13] else None}
+                 for r in cur.fetchall()]
+
+    # The short colour gains the kilos, the colour standing in gives them up.
+    delta: dict[int, float] = {}
+    for s in subs:
+        delta[s["short_id"]] = delta.get(s["short_id"], 0) + s["kg"]
+        delta[s["sub_id"]] = delta.get(s["sub_id"], 0) - s["kg"]
+    for p in proposals:
+        if p["kg"]:
+            delta[p["from_id"]] = delta.get(p["from_id"], 0) + p["kg"]
+            delta[p["to_id"]] = delta.get(p["to_id"], 0) - p["kg"]
+    return {"subs": subs, "proposals": proposals,
+            "delta": {str(k): round(v, 2) for k, v in delta.items() if v}}
+
+
+def color_changes() -> dict:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            return open_changes(cur)
+
+
+def change_history(limit: int = 200) -> list[dict]:
+    """Closed subs and proposals, newest first — why we stopped proposing it."""
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT 'sub' AS kind, id, short_label, sub_label, kg, status,
+                       closed_at, closed_by, note, who, created_at, NULL, NULL
+                  FROM yarn_subs WHERE status <> 'open'
+                UNION ALL
+                SELECT 'proposal', id, from_label, to_label, kg, status,
+                       closed_at, closed_by, note, who, created_at,
+                       season, style_name
+                  FROM yarn_proposals WHERE status <> 'open'
+                 ORDER BY closed_at DESC NULLS LAST
+                 LIMIT %s
+            """, (int(limit),))
+            return [{"kind": r[0], "id": r[1], "from": r[2], "to": r[3],
+                     "kg": float(r[4]) if r[4] is not None else None,
+                     "status": r[5],
+                     "closed_at": r[6].isoformat() if r[6] else None,
+                     "closed_by": r[7], "note": r[8], "who": r[9],
+                     "created_at": r[10].isoformat() if r[10] else None,
+                     "season": r[11], "style_name": r[12]}
+                    for r in cur.fetchall()]
+
+
+def save_sub(short_id: int, sub_id: int, kg, who=None, note=None) -> dict:
+    """Use `kg` of `sub_id` to cover `short_id`. kg 0 withdraws the pair.
+
+    One open sub per pair: saving again replaces the old one, which is kept
+    as history rather than edited.
+    """
+    try:
+        kg = round(float(kg), 2)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Kilos must be a number") from exc
+    if kg < 0 or kg > 100000:
+        raise ValueError("Kilos must be between 0 and 100,000")
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            short_id, short_label = _yarn(cur, short_id)
+            sub_id, sub_label = _yarn(cur, sub_id)
+            if short_id == sub_id:
+                raise ValueError("A colour cannot stand in for itself")
+            _same_group(sub_label, short_label)
+            cur.execute("SELECT id FROM yarn_subs WHERE status = 'open'"
+                        "   AND short_id = %s AND sub_id = %s", (short_id, sub_id))
+            cur_row = cur.fetchone()
+            if cur_row:
+                cur.execute("UPDATE yarn_subs SET status = %s, closed_at = now(),"
+                            " closed_by = %s WHERE id = %s",
+                            ("withdrawn" if kg == 0 else "replaced", who, cur_row[0]))
+            if kg == 0:
+                return {"ok": True, "withdrawn": cur_row[0] if cur_row else None}
+            cur.execute("""
+                INSERT INTO yarn_subs (short_id, short_label, sub_id, sub_label,
+                                       kg, note, who)
+                VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
+            """, (short_id, short_label, sub_id, sub_label, kg,
+                  (note or None), (who or None)))
+            return {"ok": True, "id": cur.fetchone()[0],
+                    "replaced": cur_row[0] if cur_row else None}
+
+
+def withdraw_sub(sub_row_id: int, who=None) -> dict:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE yarn_subs SET status = 'withdrawn',"
+                        " closed_at = now(), closed_by = %s"
+                        " WHERE id = %s AND status = 'open'",
+                        (who, int(sub_row_id)))
+            if cur.rowcount == 0:
+                raise ValueError("That sub is not open")
+    return {"ok": True}
+
+
+def color_colorways(color_id: int) -> list[dict]:
+    """The colourways knitted with this colour, with any open proposal.
+
+    What the panel lists under the styles: a proposal is made against one
+    colourway, not against a style, because that is where a yarn sits.
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT sc.id, se.code, s.style_name, sc.ws_tag_color,
+                       array_agg(cy.slot ORDER BY cy.slot),
+                       p.id, p.to_id, p.to_label, p.kg, s.id
+                  FROM colorway_yarns cy
+                  JOIN style_colorways sc ON sc.id = cy.colorway_id
+                  JOIN styles s ON s.id = sc.style_id
+                  JOIN seasons se ON se.id = s.season_id
+                  LEFT JOIN yarn_proposals p
+                         ON p.colorway_id = sc.id AND p.from_id = cy.yarn_color_id
+                        AND p.status = 'open'
+                 WHERE cy.yarn_color_id = %s
+                 GROUP BY sc.id, se.code, s.id, s.style_name, sc.ws_tag_color,
+                          se.season_number, p.id, p.to_id, p.to_label, p.kg
+                 ORDER BY se.season_number DESC, s.style_name
+            """, (int(color_id),))
+            return [{"colorway_id": r[0], "season": r[1], "style_name": r[2],
+                     "colorway_name": r[3], "slots": r[4], "style_id": r[9],
+                     "proposal": ({"id": r[5], "to_id": r[6], "to_label": r[7],
+                                   "kg": float(r[8]) if r[8] is not None else None}
+                                  if r[5] else None)}
+                    for r in cur.fetchall()]
+
+
+def save_proposal(colorway_id: int, from_id: int, to_id: int, kg=None,
+                  who=None, note=None) -> dict:
+    """Propose `to_id` instead of `from_id` in one colourway.
+
+    Proposing the original yarn back (to_id == from_id) withdraws the open
+    proposal — the ERP's gesture of dropping a swatch back where it came
+    from, in a form that also works from a select.
+    """
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT sc.id, se.code, s.style_name, sc.ws_tag_color,
+                       array_agg(cy.slot ORDER BY cy.slot)
+                  FROM style_colorways sc
+                  JOIN styles s ON s.id = sc.style_id
+                  JOIN seasons se ON se.id = s.season_id
+                  JOIN colorway_yarns cy ON cy.colorway_id = sc.id
+                 WHERE sc.id = %s AND cy.yarn_color_id = %s
+                 GROUP BY sc.id, se.code, s.style_name, sc.ws_tag_color
+            """, (int(colorway_id), int(from_id)))
+            cw = cur.fetchone()
+            if cw is None:
+                raise ValueError("That colourway does not knit with this colour")
+            from_id, from_label = _yarn(cur, from_id)
+            to_id, to_label = _yarn(cur, to_id)
+
+            cur.execute("SELECT id FROM yarn_proposals WHERE status = 'open'"
+                        "   AND colorway_id = %s AND from_id = %s",
+                        (int(colorway_id), from_id))
+            cur_row = cur.fetchone()
+            if to_id == from_id:
+                if cur_row:
+                    cur.execute("UPDATE yarn_proposals SET status = 'withdrawn',"
+                                " closed_at = now(), closed_by = %s WHERE id = %s",
+                                (who, cur_row[0]))
+                return {"ok": True, "withdrawn": cur_row[0] if cur_row else None}
+
+            _same_group(to_label, from_label)
+            # What this colourway would knit with after the OTHER open
+            # proposals on it: the yarns it has, less the ones proposed away,
+            # plus the ones proposed in. Proposing a yarn it already uses
+            # would merge two slots into one, silently.
+            cur.execute("SELECT yarn_color_id FROM colorway_yarns WHERE colorway_id = %s",
+                        (int(colorway_id),))
+            yarns = {r[0] for r in cur.fetchall()}
+            cur.execute("""SELECT from_id, to_id FROM yarn_proposals
+                            WHERE status = 'open' AND colorway_id = %s AND from_id <> %s""",
+                        (int(colorway_id), from_id))
+            others = cur.fetchall()
+            rest = (yarns - {from_id} - {o[0] for o in others}) | {o[1] for o in others}
+            if to_id in rest:
+                raise ValueError("This colourway already knits with that colour")
+
+            if kg in (None, ""):
+                kilos = None
+            else:
+                try:
+                    kilos = round(float(kg), 2)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("Kilos must be a number") from exc
+                if kilos < 0 or kilos > 100000:
+                    raise ValueError("Kilos must be between 0 and 100,000")
+
+            if cur_row:
+                cur.execute("UPDATE yarn_proposals SET status = 'replaced',"
+                            " closed_at = now(), closed_by = %s WHERE id = %s",
+                            (who, cur_row[0]))
+            cur.execute("""
+                INSERT INTO yarn_proposals (colorway_id, season, style_name,
+                    colorway_name, slots, from_id, from_label, to_id, to_label,
+                    kg, note, who)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+            """, (cw[0], cw[1], cw[2], cw[3],
+                  ",".join(f"C{s}" for s in cw[4]), from_id, from_label,
+                  to_id, to_label, kilos, (note or None), (who or None)))
+            return {"ok": True, "id": cur.fetchone()[0],
+                    "replaced": cur_row[0] if cur_row else None}
+
+
+def withdraw_proposal(proposal_id: int, who=None) -> dict:
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE yarn_proposals SET status = 'withdrawn',"
+                        " closed_at = now(), closed_by = %s"
+                        " WHERE id = %s AND status = 'open'",
+                        (who, int(proposal_id)))
+            if cur.rowcount == 0:
+                raise ValueError("That proposal is not open")
+    return {"ok": True}
+
+
+# PPIC writes substitutes in prose: "Platinum, Shelter grey, Silver lining".
+# Split on the separators they use, then match each piece against the colour
+# names of the same yarn type. Nothing is matched across types, and a piece
+# that matches nothing is simply not offered.
+_SPLIT = re.compile(r",|/|;|&|\bVS\b|\bOR\b|\bAND\b|\bTHEN\b|\?", re.I)
+_STRIP = re.compile(r"\bY(ST|CA|AC|Y|P|TX)\b|-?\s*\d{3,4}\b|\(.*?\)", re.I)
+
+
+def _colour_key(text: str) -> str:
+    """A colour name as both spellings write it. GRAY and GREY are the same
+    colour and the two spellings are both in use on both sides."""
+    return re.sub(r"\bGREY\b", "GRAY", " ".join(str(text or "").split()).upper())
+
+
+def sub_candidates(color_id: int) -> list[dict]:
+    """Substitutes PPIC named for this yarn, matched to colours we have.
+
+    Theirs is the only opinion here: no colour distance, no cleverness. The
+    notes come from the loaded batch, so they change when the file does.
+    """
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT y.name,
+                       l.detail->'notes'->>'POTENTIAL SUBS',
+                       l.detail->'notes'->>'COLOR LOOK SIMILAR'
+                  FROM yarn_colors y
+                  LEFT JOIN v_yarn_stock_latest l ON l.yarn_color_id = y.id
+                 WHERE y.id = %s
+            """, (int(color_id),))
+            row = cur.fetchone()
+            if row is None:
+                raise ValueError("No such colour")
+            name, subs_note, similar_note = row
+            group = _group(name)
+
+            # Every colour of the same yarn type, by colour name.
+            cur.execute("""
+                SELECT y.id, y.name, c.name,
+                       l.qty_without_proj, l.qty_with_proj
+                  FROM yarn_colors y
+                  JOIN colors c ON c.id = y.color_id
+                  LEFT JOIN v_yarn_stock_latest l ON l.yarn_color_id = y.id
+                 WHERE y.id <> %s
+            """, (int(color_id),))
+            by_colour: dict[str, dict] = {}
+            for cid, label, colour, av, avp in cur.fetchall():
+                if _group(label) != group:
+                    continue
+                by_colour.setdefault(_colour_key(colour), {
+                    "id": cid, "name": label,
+                    "av": float(av) if av is not None else None,
+                    "av_proj": float(avp) if avp is not None else None})
+
+            out, seen, missing = [], set(), []
+            for note, why in ((subs_note, "subs"), (similar_note, "similar")):
+                if not note:
+                    continue
+                for piece in _SPLIT.split(note):
+                    key = _colour_key(_STRIP.sub(" ", piece))
+                    if len(key) < 3:
+                        continue
+                    hit = by_colour.get(key)
+                    if hit is None:
+                        # PPIC abbreviates ("GUNMETA"): one unique prefix match
+                        # is an answer, two is a guess and is left alone.
+                        near = [v for k, v in by_colour.items() if k.startswith(key)]
+                        hit = near[0] if len(near) == 1 and len(key) >= 5 else None
+                    if hit is None:
+                        # Named by PPIC, not a yarn of ours — most of their
+                        # catalogue is not in our BOM. Say so rather than
+                        # drop it, or the note looks unread.
+                        missing.append(piece.strip())
+                    elif hit["id"] not in seen:
+                        seen.add(hit["id"])
+                        out.append({**hit, "why": why, "as_written": piece.strip()})
+            return {"notes": {"subs": subs_note, "similar": similar_note},
+                    "candidates": out, "unmatched": missing}
+
+
+def changes_csv() -> str:
+    """The open changes as the team writes them in NOTE PERUBAHAN.
+
+    Each row carries the AV of both colours now and after every open change,
+    because the question an approver asks is "and then what is left".
+    """
+    import csv as _csv
+    import io as _io
+
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            changes = open_changes(cur)
+            cur.execute("""
+                SELECT yarn_color_id, qty_with_proj FROM v_yarn_stock_latest
+            """)
+            av = {r[0]: (float(r[1]) if r[1] is not None else None)
+                  for r in cur.fetchall()}
+
+    delta = {int(k): v for k, v in changes["delta"].items()}
+
+    def pair(yid):
+        now = av.get(yid)
+        if now is None:
+            return "", ""
+        return f"{now:.1f}", f"{now + delta.get(yid, 0):.1f}"
+
+    buf = _io.StringIO()
+    w = _csv.writer(buf, delimiter=";")
+    w.writerow(["DATE", "STATUS", "SEASON", "STYLE", "COLOURWAY", "SLOT",
+                "FROM YARN", "TO YARN", "KG MOVED", "AV FROM NOW",
+                "AV FROM AFTER", "AV TO NOW", "AV TO AFTER", "NOTE", "BY"])
+    for p in changes["proposals"]:
+        fa, fb = pair(p["from_id"])
+        ta, tb = pair(p["to_id"])
+        w.writerow([(p["created_at"] or "")[:10], "SUB COLOR (PROPOSAL)",
+                    p["season"] or "", p["style_name"] or "",
+                    p["colorway_name"] or "", p["slots"] or "",
+                    p["from_label"], p["to_label"],
+                    f"{p['kg']:.2f}" if p["kg"] else "",
+                    fa, fb, ta, tb, p["note"] or "", p["who"] or ""])
+    for s in changes["subs"]:
+        fa, fb = pair(s["short_id"])
+        ta, tb = pair(s["sub_id"])
+        w.writerow([(s["created_at"] or "")[:10], "SUB COLOR (KG)", "", "", "", "",
+                    s["short_label"], s["sub_label"], f"{s['kg']:.2f}",
+                    fa, fb, ta, tb, s["note"] or "", s["who"] or ""])
+    # A BOM so Excel opens it as UTF-8 without being asked.
+    return "﻿" + buf.getvalue()
+
+
+# ---------------------------------------------------------------- CSAT
+_CSAT_NAME = re.compile(r"^(default|page-([2-9]|[1-9]\d{1,2}))$")
+
+
+def csat_pages() -> dict:
+    """The pages, in order, with how many colours each holds."""
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT name, title, focus_id, jsonb_array_length(items), updated_at
+                  FROM csat_pages ORDER BY
+                       (CASE WHEN name = 'default' THEN 1
+                             ELSE substr(name, 6)::int END)
+            """)
+            return {"pages": [{"name": r[0], "title": r[1], "focus_id": r[2],
+                               "n": r[3],
+                               "updated_at": r[4].isoformat() if r[4] else None}
+                              for r in cur.fetchall()]}
+
+
+def csat_page(name: str = "default") -> dict:
+    with pool.connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT name, title, focus_id, items, updated_at, updated_by"
+                        "  FROM csat_pages WHERE name = %s", (name,))
+            row = cur.fetchone()
+            if row is None:
+                return {"name": name, "title": None, "focus_id": None,
+                        "items": [], "updated_at": None, "updated_by": None}
+            return {"name": row[0], "title": row[1], "focus_id": row[2],
+                    "items": row[3] or [],
+                    "updated_at": row[4].isoformat() if row[4] else None,
+                    "updated_by": row[5]}
+
+
+def save_csat(name: str, items, title=None, focus_id=None, who=None) -> dict:
+    """Place up to 300 colours on one page. x is a share of the width."""
+    name = str(name or "default")
+    if not _CSAT_NAME.match(name):
+        raise ValueError('A page is "default" or "page-<n>"')
+    if not isinstance(items, list) or len(items) > 300:
+        raise ValueError("A page holds at most 300 colours")
+    clean, seen = [], set()
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM yarn_colors")
+            known = {r[0] for r in cur.fetchall()}
+            for it in items:
+                try:
+                    y, x, top = int(it["y"]), float(it["x"]), float(it["top"])
+                except (KeyError, TypeError, ValueError) as exc:
+                    raise ValueError("Each colour needs y, x and top") from exc
+                if y in known and y not in seen:
+                    seen.add(y)
+                    clean.append({"y": y, "x": round(min(max(x, 0.0), 1.0), 4),
+                                  "top": round(min(max(top, 0.0), 20000.0), 1)})
+            if focus_id not in (None, "") and int(focus_id) not in known:
+                focus_id = None
+            cur.execute("""
+                INSERT INTO csat_pages (name, title, focus_id, items, updated_at, updated_by)
+                VALUES (%s, %s, %s, %s, now(), %s)
+                ON CONFLICT (name) DO UPDATE
+                   SET title = EXCLUDED.title, focus_id = EXCLUDED.focus_id,
+                       items = EXCLUDED.items, updated_at = now(),
+                       updated_by = EXCLUDED.updated_by
+            """, (name, (str(title).strip()[:60] or None) if title else None,
+                  int(focus_id) if focus_id not in (None, "") else None,
+                  json.dumps(clean), who))
+    return csat_page(name)
+
+
+def delete_csat(name: str) -> dict:
+    """Page 1 is cleared, never deleted: there is always somewhere to start."""
+    if not _CSAT_NAME.match(str(name or "")):
+        raise ValueError('A page is "default" or "page-<n>"')
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            if name == "default":
+                cur.execute("UPDATE csat_pages SET items = '[]'::jsonb,"
+                            " focus_id = NULL, updated_at = now() WHERE name = 'default'")
+                return {"ok": True, "cleared": "default"}
+            cur.execute("DELETE FROM csat_pages WHERE name = %s", (name,))
+    return {"ok": True, "deleted": name}
+
+
+# What the Color Table may write on a colour: the two facts a person owns.
+# The kilos used to be here too and are not any more (0031) — they belong to
+# the file that states them, in yarn_stock_lines, where no screen can edit
+# them and no import can overwrite a person's work.
+_COLOR_FIELDS = ("palette_id", "hex")
 
 
 def update_yarn_color(color_id: int, fields: dict) -> dict:
@@ -2599,16 +3263,8 @@ def update_yarn_color(color_id: int, fields: dict) -> dict:
                     len(value) == 7 and value[0] == "#"
                     and all(c in "0123456789abcdef" for c in value[1:])):
                 raise ValueError("hex must look like #aabbcc")
-        elif key == "palette_id":
-            value = int(raw) if raw not in (None, "") else None
         else:
-            if raw in (None, ""):
-                value = None
-            else:
-                try:
-                    value = Decimal(str(raw))
-                except InvalidOperation as exc:
-                    raise ValueError(f"{key} must be a number") from exc
+            value = int(raw) if raw not in (None, "") else None
         sets.append(f"{key} = %s")
         vals.append(value)
     if not sets:

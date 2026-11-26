@@ -137,6 +137,38 @@ export const api = {
     request('/api/colors/palettes', {
       method: 'POST', body: JSON.stringify({ name }),
     }),
+  // The import's open questions, and the answer to one. Confirming writes an
+  // alias, so the next import places that row by itself.
+  colorReview: (status = 'open') =>
+    request(`/api/colors/review?status=${encodeURIComponent(status)}`),
+  answerReview: (itemId, payload) =>
+    request(`/api/colors/review/${itemId}`, {
+      method: 'POST', body: JSON.stringify(payload),
+    }),
+
+  // Changes people propose: kilos of one colour covering another's
+  // shortage, and yarn swaps per colourway. Neither touches the BOM.
+  colorChanges: () => request('/api/colors/changes'),
+  colorChangeHistory: () => request('/api/colors/changes/history'),
+  colorColorways: (colorId) => request(`/api/colors/${colorId}/colorways`),
+  colorCandidates: (colorId) => request(`/api/colors/${colorId}/candidates`),
+  saveColorSub: (payload) =>
+    request('/api/colors/subs', { method: 'POST', body: JSON.stringify(payload) }),
+  withdrawColorSub: (id) =>
+    request(`/api/colors/subs/${id}`, { method: 'DELETE' }),
+  saveProposal: (payload) =>
+    request('/api/colors/proposals', { method: 'POST', body: JSON.stringify(payload) }),
+  withdrawProposal: (id) =>
+    request(`/api/colors/proposals/${id}`, { method: 'DELETE' }),
+
+  // CSAT — the Color Sequence Adjustment Table: colours laid out freely on
+  // shared pages to compare them. Positions only.
+  csatPages: () => request('/api/colors/csat'),
+  csatPage: (name) => request(`/api/colors/csat/${name}`),
+  saveCsat: (name, payload) =>
+    request(`/api/colors/csat/${name}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  deleteCsat: (name) =>
+    request(`/api/colors/csat/${name}`, { method: 'DELETE' }),
 
   // The operator's preparation checklist, read as a grid for a whole season.
   checklistSteps: () => request('/api/checklist/steps'),

@@ -1232,8 +1232,19 @@ is(splitColorName('YCA BLACK B - 1708 B'), { label: 'YCA BLACK B', code: '1708 B
 is(splitColorName('BJ SANDSTONE'), { label: 'BJ SANDSTONE', code: '' },
    'a name with no code is all label, not a crash');
 is(splitColorName(null), { label: '', code: '' }, 'and so is no name at all');
-is([fmtQty(null), fmtQty(0), fmtQty(3.9), fmtQty('2.50')], ['—', '0', '3.9', '2.5'],
-   'qty: unknown is a dash, zero is a real answer, trailing zeros go');
+// One decimal, everywhere kilos are printed: the workbook carries three
+// because its formulas do, but a chip is read at a glance across a desk.
+is([fmtQty(null), fmtQty(0), fmtQty(3.9), fmtQty('2.50'), fmtQty(15.163),
+    fmtQty(-23.659)],
+   ['—', '0.0', '3.9', '2.5', '15.2', '-23.7'],
+   'qty: one decimal, unknown is a dash, zero is a real answer');
+is(pairQty(16.601, 15.163), '16.6/15.2',
+   'and a chip pair rounds both halves the same way');
+// One rule in one place: CSAT is handed the board's formatter rather than
+// carrying a second copy of it.
+is(/fmt\(c\.qty_with_proj\)/.test(fs.readFileSync('frontend/src/sections/CsatBoard.jsx', 'utf8'))
+   && /<CsatBoard colors=\{allColors\} fmt=\{fmtQty\}/.test(ctSrc), true,
+   'CSAT prints kilos with the same formatter, not its own');
 
 const ctRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
 // The board shows only real yarns: a name must OPEN with a material prefix.
@@ -1243,11 +1254,14 @@ const ctRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
 is(/_YARN_MATERIALS = \("YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ"\)/.test(ctRepo)
    && /def color_table[\s\S]*?if not _is_yarn\(name\):\n\s*continue/.test(ctRepo),
    true, 'the board shows material-prefixed yarns and nothing else');
-// The writable surface is exactly the board facts — everything else on
-// yarn_colors belongs to the BOM import. Four grew to six when the chips
-// became pairs (0029): each bar carries 3 months and full season.
-is(/_COLOR_FIELDS = \("palette_id", "hex", "qty_with_proj", "qty_without_proj",\n\s*"qty_with_proj_3m", "qty_without_proj_3m"\)/.test(ctRepo),
-   true, 'the Color Table can write only its six facts');
+// The writable surface is exactly the two facts a PERSON owns. It was six
+// until 0031 moved the kilos into yarn_stock_lines: a figure PPIC states
+// and a figure someone typed must not share a column, or an import wipes
+// the typing (which is what used to happen).
+is(/_COLOR_FIELDS = \("palette_id", "hex"\)/.test(ctRepo), true,
+   'the Color Table can write only its two facts');
+is(/_COLOR_FIELDS = \([^)]*qty_/.test(ctRepo), false,
+   'and the kilos are not among them — they belong to the file that states them');
 // Idempotent create: the second person to type "Open Color" gets the group.
 is(/ON CONFLICT \(name\) DO UPDATE SET name = EXCLUDED\.name/.test(ctRepo), true,
    'making a palette twice is one palette');
@@ -1265,13 +1279,17 @@ is(/document\.addEventListener\('pointerdown', away\)/.test(ctSrc), true,
 is(/draggable/.test(ctSrc) && /onDrop=/.test(ctSrc)
    && /updateYarnColor\(id, \{ palette_id: sec\.id \}\)/.test(ctSrc), true,
    'a swatch dragged onto a section moves into that palette');
-// The stock importer feeds the chips from the workbook's full-season pair —
-// the numbers the team's own AV template quotes. Swapping in the 3-month
+// The pipeline feeds the chips from the workbook's full-season pair — the
+// numbers the team's own AV template quotes. Swapping in the 3-month
 // columns (or the columns drifting) must be a decision, not an accident.
-const yimp = fs.readFileSync('backend/scripts/import_yarn_stock.py', 'utf8');
-is(/COL_WITHOUT = "AV FULL SEASON \(NO PROJECTION\)"/.test(yimp)
-   && /COL_WITH = "AV FULL SEASON WITH PROJECTION"/.test(yimp)
-   && /SET qty_without_proj = %s, qty_with_proj = %s/.test(yimp), true,
+// The headers are found by regex in the extractor; the mapping onto the
+// board's four columns is made once, in the loader's INSERT.
+const yext = fs.readFileSync('backend/scripts/extract_yarn_analysis.py', 'utf8');
+const yload = fs.readFileSync('backend/scripts/load_yarn_stock.py', 'utf8');
+is(/"av_full": \[r"\^AV FULL SEASON \\\(NO PROJECTION\\\)\$"\]/.test(yext)
+   && /"av_full_proj": \[r"\^AV FULL SEASON WITH PROJECTION\$"\]/.test(yext)
+   && /qty_without_proj, qty_with_proj, qty_without_proj_3m, qty_with_proj_3m/.test(yload)
+   && /l\["ya"\]\.get\("av_full"\), l\["ya"\]\.get\("av_full_proj"\)/.test(yload), true,
    'yarn stock maps the full-season AV pair onto the two chips');
 // The split (0030): material and colour are rows, the name is a label.
 // The BOM kept pointing at yarn_colors — that is the load-bearing choice.
@@ -1294,12 +1312,12 @@ is(/\("YCA BLACK B - 1708 B", "YCA BLACK B - 1708"\)/.test(ymerge)
    'confirmed-different yarns are never merged (answered 24 Nov 2026)');
 
 // The physical board writes each bar as a pair — AV 3 MONTHS / AV FULL
-// SEASON — so the importer carries four columns and the chip shows both.
-is(/COL_WITH_3M = "AV 3 MONTHS WITH PROJECTION"/.test(yimp)
-   && /qty_without_proj_3m = %s, qty_with_proj_3m = %s/.test(yimp), true,
+// SEASON — so the pipeline carries four columns and the chip shows both.
+is(/"av_3m_proj": \[r"\^AV 3 MONTHS WITH PROJECTION\$"\]/.test(yext)
+   && /l\["ya"\]\.get\("av_3m"\), l\["ya"\]\.get\("av_3m_proj"\)/.test(yload), true,
    'and the 3-month half of each pair rides along');
 is([pairQty(null, null), pairQty(3.9, 3.9), pairQty(null, 5)],
-   ['—', '3.9/3.9', '—/5'],
+   ['—', '3.9/3.9', '—/5.0'],
    'a chip pair reads 3mo/season, or one dash when nobody has said');
 // Chips and the name label are flex rows, not absolute corners: the wide
 // pairs were painting straight over the name box. (Read here: ctCss is
@@ -1311,6 +1329,152 @@ is(/\.ct-swatch \{[^}]*flex-direction: column/s
 const ctCss = fs.readFileSync('frontend/src/styles.css', 'utf8');
 is(/\.ct-head \{[^}]*position: sticky/s.test(ctCss), true,
    'the board header (and its Palette control) rides along as you scroll');
+
+console.log('\n-- the yarn pipeline (0031) --');
+const ynames = fs.readFileSync('backend/app/yarn_names.py', 'utf8');
+const y31 = fs.readFileSync('backend/migrations/versions/0031_yarn_pipeline.py', 'utf8');
+const ystage = fs.readFileSync('backend/scripts/stage_import.py', 'utf8');
+
+// One vocabulary, two uses: the parse and the board filter must name the
+// same seven yarn bases or a yarn resolves and then fails to appear.
+const sevens = (src, re) => (src.match(re) || [])[0];
+is(sevens(ynames, /YARN_PREFIXES = \("YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ"\)/)
+   && sevens(ctRepo, /_YARN_MATERIALS = \("YY", "YST", "YCA", "YAC", "YTX", "YP", "BJ"\)/)
+   ? true : false, true,
+   'the resolver and the board name the same seven yarn bases');
+// A code must look like a code. The four qty figures of a row whose code
+// reads "ELASTIC" were never yarn kilos; that row is a question instead.
+is(/CODE = r"\[0-9\]\+\(\?: \?\[A-Z\]\)\?"/.test(ynames), true,
+   'a supplier code is digits with at most one letter');
+// Order matters: a person's confirmed alias beats every rule below it, and
+// the written text beats the parse (our identity is still the whole label).
+is(ynames.indexOf('FROM yarn_aliases') < ynames.indexOf('FROM yarn_colors WHERE')
+   || ynames.indexOf('FROM yarn_aliases') < ynames.indexOf('SELECT id FROM yarn_colors'),
+   true, 'a confirmed alias is tried before anything is parsed');
+// Code + name, never code alone: that is the rule that stops one yarn
+// becoming two (PPIC's 087 is BLUE BIRD, ours is CORNISH BLUE).
+is(/return cid, "code_and_name"/.test(ynames)
+   && /return None, "code_name_conflict"/.test(ynames), true,
+   'a code under another colour name is refused, not guessed');
+// No loader may invent a yarn. The workbook is PPIC's whole catalogue;
+// our table is what the BOM has used, and the gap is a question.
+is(/INSERT INTO yarn_colors/.test(yload) || /INSERT INTO yarn_colors/.test(yext),
+   false, 'the pipeline never creates a yarn');
+// 820 of 1210 rows are colours we have never knitted with. A row becomes a
+// question when it holds kilos — except a code-name conflict, which is
+// about identity and asks with zero stock.
+is(/def carries_figures/.test(yload)
+   && /ALWAYS_ASK = \{"code_name_conflict"\}/.test(yload)
+   && /reason in ALWAYS_ASK or carries_figures\(ya\)/.test(yload), true,
+   'only a row with kilos is a question — a conflict always is');
+// The list ends at the pivot's Grand Total; below it is scratch (YCA keeps
+// a loose "YCA RAW WHITE Total" down there).
+is(/if label\.startswith\("GRAND"\):\n\s*return/.test(yext), true,
+   'the yarn list ends at Grand Total');
+// PPIC starts next month's file by copying this one and adding an empty ON
+// HAND column, so "newest by name" is not "newest with figures".
+is(/READY_SHARE = 0\.5/.test(yext)
+   && /NOT_OFFICIAL = re\.compile\(r"COPY\|TEST\|TEMPLATE\|BACK \?UP\|BEFORE\|FREEZE/.test(yext),
+   true, 'the newest file with its stock filled in is the one read');
+// Staging never moves the board: readers take the newest LOADED batch.
+is(/INSERT INTO import_batches[\s\S]*?'staged'/.test(ystage)
+   && !/SET status = 'loaded'/.test(ystage)
+   && /SET status = 'loaded', loaded_at = now\(\)/.test(yload)
+   && /WHERE source_code = p_source AND status = 'loaded'/.test(y31)
+   && /WHERE l\.batch_id = latest_import_batch\('yarn_analysis'\)/.test(y31), true,
+   'a staged batch changes nothing until it is loaded');
+// The qty columns are gone from yarn_colors, and the figures already on the
+// board were moved into a batch rather than dropped.
+is(/ALTER TABLE yarn_colors "\n\s*\+ ", "\.join\(f"DROP COLUMN \{c\}" for c in QTY\)/.test(y31)
+   && /migrated from yarn_colors/.test(y31), true,
+   'the kilos left yarn_colors, and the board kept its numbers');
+// Answering a question teaches the resolver. Without the alias write the
+// queue is a list that fills up again on every import.
+is(/INSERT INTO yarn_aliases \(alias_text, source_code, yarn_color_id,/.test(ctRepo)
+   && /UPDATE review_items SET status = 'confirmed'/.test(ctRepo), true,
+   'confirming a question writes the alias that answers it next time');
+// The page says which file it is showing, and shows the figures as text.
+is(/table\?\.source\?\.file/.test(ctSrc) && /stock \{fmtDay\(table\.source\.stock_on\)\}/.test(ctSrc),
+   true, 'the board names the file its kilos come from');
+is(/qty_with_proj: num\(form\.qty_with_proj\)/.test(ctSrc), false,
+   'and no longer offers the kilos as inputs');
+
+console.log('\n-- the decisions layer (0032) --');
+const y32 = fs.readFileSync('backend/migrations/versions/0032_color_decisions.py', 'utf8');
+const csatSrc = fs.readFileSync('frontend/src/sections/CsatBoard.jsx', 'utf8');
+const { palKey, o4Key, yarnGroup, round2 } = await import(
+  'data:text/javascript,' + encodeURIComponent(
+    cut(ctSrc, 'export const O4_SECTIONS', 'const SWATCH_FALLBACK')
+    + '\nexport const round2 = (v) => Math.round(Number(v) * 100) / 100;'));
+
+// A sub stays inside the yarn type. YST and YY are one yarn in two counts,
+// YP and YTX likewise; acrylic standing in for cotton is not a colour
+// decision. The screen must offer exactly what the server would accept.
+is([yarnGroup('YST BLACK - 1'), yarnGroup('YY BLACK - 1'), yarnGroup('YCA BLACK - 1'),
+    yarnGroup('YP X - 1'), yarnGroup('YTX - 031'), yarnGroup('STAMP SILVER')],
+   ['yst', 'yst', 'yca', 'yp', 'yp', '?'],
+   'the yarn groups: YST=YY, YP=YTX, and a trim is in none of them');
+is(/_YARN_GROUP = \{"YST": "yst", "YY": "yst", "YCA": "yca", "YAC": "yac",\n\s*"YP": "yp", "YTX": "yp", "BJ": "bj"\}/.test(ctRepo), true,
+   'and the server groups them the same way');
+is(/def _same_group[\s\S]*?raise ValueError\(f"Different yarn type/.test(ctRepo), true,
+   'a cross-type sub is refused by the server, not just hidden by the page');
+
+// Suggestions are not stock: the BOM is written by the style editor and by
+// nothing in the decisions layer. Checked on the section of repo.py that
+// holds it, not the whole file — the editor's two INSERTs are legitimate.
+const decisions = ctRepo.slice(
+  ctRepo.indexOf('# ---------------------------------------------------------------- changes'),
+  ctRepo.indexOf('# What the Color Table may write on a colour'));
+is(decisions.length > 2000, true, 'the decisions section of repo.py is found');
+is(/(INSERT INTO|UPDATE|DELETE FROM)\s+colorway_yarns/.test(decisions)
+   || /colorway_yarns/.test(y32), false,
+   'proposing a swap never touches the BOM');
+// Nothing is deleted: a change that is closed keeps its row and its reason.
+is(/status IN \('open', 'replaced', 'withdrawn'\)/.test(y32)
+   && !/DELETE FROM yarn_subs|DELETE FROM yarn_proposals/.test(ctRepo), true,
+   'closed changes are kept, never deleted');
+// One open change per pair and per colourway+yarn, enforced by the database
+// rather than by whoever writes the next endpoint.
+is(/CREATE UNIQUE INDEX yarn_subs_one_open[\s\S]*?WHERE status = 'open'/.test(y32)
+   && /CREATE UNIQUE INDEX yarn_proposals_one_open[\s\S]*?WHERE status = 'open'/.test(y32),
+   true, 'one open sub per pair, one open proposal per colourway and yarn');
+// Dropping a swatch back where it came from withdraws the proposal — the
+// ERP's gesture, in a form that also works from a select.
+is(/if to_id == from_id:[\s\S]{0,400}status = 'withdrawn'/.test(ctRepo), true,
+   'proposing the original yarn back withdraws the proposal');
+// The sign convention IS the feature: the short colour gains the kilos and
+// the colour standing in gives them up. Flip it and every figure lies.
+is(/delta\[s\["short_id"\]\] = delta\.get\(s\["short_id"\], 0\) \+ s\["kg"\]/.test(ctRepo)
+   && /delta\[s\["sub_id"\]\] = delta\.get\(s\["sub_id"\], 0\) - s\["kg"\]/.test(ctRepo), true,
+   'a sub adds kilos to the short colour and takes them off the stand-in');
+is(/w\.writerow\(\["DATE", "STATUS", "SEASON", "STYLE", "COLOURWAY", "SLOT",/.test(ctRepo)
+   && /"AV FROM NOW",/.test(ctRepo), true,
+   'the CSV carries both colours AV before and after');
+
+// The board can be read three ways; only the team's own palettes are a drop
+// target, because O4 and the season palette are PPIC's words, not ours.
+is([o4Key('OVERSTOCK'), o4Key('OBSOLETE BELOW 1 KG'), o4Key('OPEN COLOR'), o4Key(null)],
+   ['over', 'obsolete', 'open', 'active'],
+   'O4 sections come from the status the file states');
+is([palKey('CORE PERMANENT GD EMBRO ONLY'), palKey('CORE PERMANENT'), palKey('REGULAR'),
+    palKey('SELL OUT'), palKey('?'), palKey(''), palKey('SELL OUR')],
+   ['coregd', 'core', 'regular', 'sellout', 'tbd', 'none', 'other'],
+   'the season palette groups as PPIC writes it, typos included');
+is(/draggable=\{draggable\}/.test(ctSrc)
+   && /draggable=\{groupBy === 'palette'\}/.test(ctSrc)
+   && /if \(dragId\.current == null \|\| !sec\.drop\) return;/.test(ctSrc), true,
+   'dragging is off in the O4 and season views — they are not ours to rearrange');
+
+// CSAT holds positions and nothing else, and page 1 is cleared, never gone.
+is(/items\s+jsonb NOT NULL DEFAULT '\[\]'::jsonb/.test(y32)
+   && /items = \[\{y, x, top\}\]/.test(y32)
+   // x normalised on write, so a narrower screen shows the same layout
+   && /"x": round\(min\(max\(x, 0\.0\), 1\.0\), 4\)/.test(ctRepo), true,
+   'a CSAT page stores positions, with x as a share of the width');
+is(/if name == "default":[\s\S]{0,200}SET items = '\[\]'::jsonb/.test(ctRepo), true,
+   'CSAT page 1 is cleared, never deleted');
+is(/SAVE_AFTER_MS/.test(csatSrc) && /setTimeout\(/.test(csatSrc), true,
+   'a drag saves itself — CSAT is a desk, not a form');
 
 console.log('\n-- code splitting --');
 const auApp = fs.readFileSync('frontend/src/App.jsx', 'utf8');

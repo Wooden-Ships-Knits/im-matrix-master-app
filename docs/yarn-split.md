@@ -10,6 +10,17 @@ copies of NEW GRASSY, one per season, each with a price), so the registry is
 the NEW `yarn_materials`, and `materials` keeps its real job. Still open:
 the trims' home (style_trims vs BOM) and YP TX 030/031.
 
+**Followed on 26 Nov 2026** by `0031_yarn_pipeline` (`docs/yarn-pipeline.md`),
+which gave the import the rules this document kept asking for: a code must
+look like a code, a code under another colour name is refused rather than
+matched, and the rows that place on nothing are a review queue instead of
+terminal output. Two of this file's loose ends now have a home there —
+`YP TISTA` sits in the queue, and the six codeless BJ rows were re-parsed by
+0031 so the table agrees with the resolver. The counts moved too: the parse
+accepts 392 of the 394 yarn rows (162 trims and 104 other rows are correctly
+not yarns), and the only two it refuses are YP TX 030 and YP TX 031 — the
+pair this document left open, written with no dash at all.
+
 Every number here was measured against the live database on 17 November 2026
 (676 `yarn_colors`, 8,461 BOM lines over 3,574 colourways) and against
 `YARN ANALYSIS NOV 10.xlsx`.

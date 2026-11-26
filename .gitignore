@@ -29,3 +29,5 @@ frontend/dist/
 *.xlsx
 
 notebooks/
+# Import artifacts — business data, regenerable from the source workbooks
+backend/import/

@@ -644,14 +644,18 @@ The swatch board (`/colors`, migration 0028): the season's yarn colours under
 team-named palettes, two kilos-available numbers per swatch, hover for the
 styles knitted with it, click for the panel that edits the board's own facts.
 
-- **The board owns four columns and nothing else** — `palette_id`, `hex`,
-  `qty_with_proj`, `qty_without_proj` on `yarn_colors` (`_COLOR_FIELDS`).
-  The names still belong to the BOM import; renaming a colour here would
-  silently detach it from every bill of materials that typed it.
+- **The board owns two columns and nothing else** — `palette_id` and `hex`
+  on `yarn_colors` (`_COLOR_FIELDS`). It owned the four qty columns too
+  until 0031 moved the kilos into `yarn_stock_lines`, where the file that
+  states them is named: a stated figure and a typed figure must not share
+  a column, or an import wipes the typing (§18). The names still belong to
+  the BOM import; renaming a colour here would silently detach it from
+  every bill of materials that typed it.
 - **The swatch colour is typed in by a person.** "YST ARTIC FOX - 507"
   carries no colour a machine could derive, so every swatch is grey until
-  somebody sets a hex in the panel. The two quantities are the same: NULL
-  means nobody has said, which renders as a dash and is different from 0.
+  somebody sets a hex in the panel. The kilos are the opposite: nobody
+  types them, and NULL means the loaded file says nothing about that
+  colour, which renders as a dash and is different from 0.
 - **The board is a whitelist: a name must open with a material prefix**
   (`_YARN_MATERIALS`: YY, YST, YCA, YAC, YTX, YP, BJ — the team's rule,
   and the YARN ANALYSIS sheets are named after the same list). Trims fail
@@ -672,12 +676,11 @@ styles knitted with it, click for the panel that edits the board's own facts.
   reads `3 months / full season`, four workbook columns (`AV 3 MONTHS …` and
   `AV FULL SEASON …` of both variants). BJ has no sheet in the workbook, so
   BJ swatches honestly show a dash.
-  `backend/scripts/import_yarn_stock.py` (dry-run by default) matches the
-  sheets' COLOR labels against `yarn_colors.name`: 352 of the 413 real
-  yarns matched on the Nov 10 workbook. The 61 that did not are spelling
-  drift (GRAY/GREY, code variants) — the same merge material yarn-split.md
-  tracks — and trims never appear in the workbook at all. Re-run it when a
-  new YARN ANALYSIS lands; hand edits in the panel survive until then.
+  Since 0031 they arrive through the import pipeline in §18, which
+  places 352 of the workbook's 1210 colour rows on our 394 board yarns.
+  The page names the file, its stock date and the day it was read, because
+  a board of stated figures that does not say where they were stated is a
+  rumour.
 - **Dragging a swatch onto a section re-palettes it** — native HTML5 drag,
   which is a mouse gesture: touch and keyboard users do the same thing with
   the panel's palette select, which stays for exactly that reason. The
@@ -692,7 +695,97 @@ styles knitted with it, click for the panel that edits the board's own facts.
   ever while the network tab showed a 200. The flag is re-armed inside the
   effect body, and the test suite pins that.
 
-## 18. Open
+## 18. The yarn import pipeline
+
+Migration 0031 and `backend/scripts/{extract_yarn_analysis,stage_import,
+load_yarn_stock,yarn_sync}.py`. The shape is the ERP project's
+(`database-manangement-erp`, `erp/db/load` + `erp/app/builder`), ported to
+our tables — they read the same workbook, so reading it two different ways
+was the drift worth closing. Full account: `docs/yarn-pipeline.md`.
+
+- **Four stages, each with one job.** Extract (read-only, writes JSON
+  lines + a meta with sha256) → stage (one `import_batches` row, raw rows
+  kept under `sheet!row_no`) → load (`yarn_stock_lines`, one row per yarn
+  per batch) → the board reads `v_yarn_stock_latest`. `yarn_sync.py` runs
+  all of it; the stages stay separate because their failures are separate.
+- **A staged batch changes nothing.** Readers take the newest *loaded*
+  batch (`latest_import_batch`), so a half-done import, or one of a file
+  PPIC has not finished, leaves the board exactly as it was.
+- **Re-reading the same file is a no-op**, by sha256. That is what makes
+  "run it again" safe to tell anyone.
+- **The resolver refuses to guess** (`app/yarn_names.py`): a confirmed
+  alias, then the written text, then prefix + code *with the colour name
+  agreeing*. A code that is ours under another name is a question, not a
+  match — the Nov 10 file has four (PPIC's 087 is BLUE BIRD, ours is
+  CORNISH BLUE), and that rule is what stops one yarn becoming two.
+- **A code has to look like a code**: digits with at most one letter. BJ
+  sewing thread is the exception — six of its 37 rows are written by
+  colour alone, and no code is coming for them, so BJ parses name-only.
+- **Only a row with kilos becomes a question.** The workbook is PPIC's
+  whole catalogue (1210 colours); our table is what the BOM has used. 820
+  rows place on nothing, 99 of them hold stock — those are the queue, and
+  the other 721 are simply not our business. A code-name conflict asks
+  with zero stock, because it is about identity.
+- **Answering teaches the resolver.** The Color Table's "to check" dialog
+  writes a `yarn_aliases` row and places that row's figures at once; the
+  next import needs no human. Dismissing closes the question without
+  teaching anything, for a colour we genuinely do not stock.
+- **The workbook is never opened by the browser or the host.** Homebrew
+  Python's `pyexpat` is broken on this machine, so all parsing runs in the
+  backend container, which sees the workbook through a read-only mount:
+  `${YARN_ANALYSIS_DIR:-.}:/app/source:ro`. Point `YARN_ANALYSIS_DIR` at
+  the Drive folder and the extractor picks the newest file itself. This
+  replaced copying an 8MB xlsx into `backend/` before every run.
+- **Which file is authoritative is a rule, not a habit.** PPIC starts next
+  month's file by copying this one and adding an empty ON HAND column, so
+  a file whose newest ON HAND column holds under half the previous
+  column's kilos is passed over and the reason is written into the batch
+  notes. COPY/TEST/BACKUP/FREEZE names are never read.
+- **The list ends at Grand Total.** YCA keeps a loose `YCA RAW WHITE
+  Total` below its pivot; rows down there are scratch and never load.
+
+## 19. Colour decisions: subs, proposals and CSAT
+
+Migration 0032, the second half of the ERP's Color Board
+(`erp/app/color_board_api.py`) ported onto our tables. 0031 made the board
+state what PPIC's file says; this is what the team wants to do about it.
+
+- **Three readings of one board.** Palette (the groups the team dragged
+  together), O4 status and season palette — the last two straight out of
+  YARN ANALYSIS: 101 Overstock, 26 Obsolete, and CORE PERMANENT / CORE
+  PERMANENT GD / REGULAR / SELL OUT / "?" per season. Dragging is off in
+  PPIC's two views, because those groups are not ours to rearrange.
+- **A sub stays inside the yarn type.** YST and YY are one yarn in two
+  counts, YP and YTX likewise; everything else is refused by the server and
+  never offered by the page (`_YARN_GROUP`, `yarnGroup`).
+- **Nothing here touches the BOM or the figures.** A proposal is a
+  suggestion about a colourway, written in its own table with the labels
+  spelled out; `colorway_yarns` is written by the style editor and by
+  nothing in this layer.
+- **Nothing is deleted.** open → replaced / withdrawn, with `closed_at` and
+  `closed_by`, because "why did we stop proposing that" is asked months
+  later. One open change per pair, and per colourway + yarn, enforced by a
+  partial unique index rather than by whoever writes the next endpoint.
+- **The kilos are typed, not derived.** The ERP computes them from the
+  order book times kg-per-piece; PDM has neither an order book nor a
+  per-garment weight, so `kg` is stated by the person proposing and the
+  AV-after figures move only for the changes that carry one. A proposal
+  without kilos is still a record of the intent.
+- **The sign convention is the feature.** A sub adds kilos to the short
+  colour and takes them off the colour standing in; a swap frees the yarn
+  it replaces. Flip either and every figure on the board lies — pinned in
+  the test suite for that reason.
+- **Substitutes come from PPIC's prose, matched by name.** 145 yarns carry
+  POTENTIAL SUBS / COLOR LOOK SIMILAR notes; 80 of them name at least one
+  colour we actually hold (GRAY and GREY are normalised, since both
+  spellings are in use on both sides). The rest are listed as "also named,
+  not ours" rather than dropped, or the note looks unread. No colour
+  distance, no nearest-hex cleverness: only one of 394 swatches has a hex.
+- **CSAT** (the team's name for the ERP's playground) is a shared desk:
+  positions only, x stored as a share of the page width, saved by itself
+  700ms after a drag. Page 1 is cleared, never deleted.
+
+## 20. Open
 
 - No cutover date, no data owner (§2). Both are `strategy.md` parallel-track items.
 - The Phase 0 checklist (`logic.md` §6) — eleven unconfirmed rules.

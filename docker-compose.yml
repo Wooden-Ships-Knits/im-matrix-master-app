@@ -47,6 +47,16 @@ services:
       # Style photos. A named volume, so it behaves the same on the VM as on a
       # laptop, and survives a rebuild. Back this up alongside pg_dump.
       - uploads:/app/data/uploads
+      # The team's workbooks, READ-ONLY, for the yarn import
+      # (docs/yarn-pipeline.md). Here and not only in the dev overlay,
+      # because the monthly import is run against whichever stack holds the
+      # live data. The default is the project folder; YARN_ANALYSIS_DIR
+      # points it at the Drive's YARN ANALYSIS folder on the VM.
+      - ${YARN_ANALYSIS_DIR:-.}:/app/source:ro
+      # Extract artifacts (jsonl + meta). A named volume: the production
+      # container has no bind-mounted source tree to write them into, and
+      # they are the audit trail of what was read.
+      - imports:/app/import
     ports:
       # For `npm run dev`: vite on :5173 proxies /api here (vite.config.js).
       # Host 8085 because 8080 is taken by ppic-order-export on this machine.
@@ -76,3 +86,4 @@ services:
 volumes:
   pgdata:
   uploads:
+  imports:

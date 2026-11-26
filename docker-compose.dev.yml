@@ -23,6 +23,17 @@ services:
       # The source, so uvicorn --reload sees an edit. The uploads volume from
       # the base file still mounts over /app/data/uploads.
       - ./backend:/app
+      # Where the team's workbooks are read FROM, read-only. The default is
+      # the project folder, which is where YARN ANALYSIS NOV 10.xlsx sits
+      # today; point YARN_ANALYSIS_DIR at the Drive folder
+      # ("…/PTIF SERVER/YARN ANALYSIS/2026/11. NOV") and the extractor picks
+      # the newest file itself. It replaced copying an 8MB xlsx into backend/
+      # before every import, which was one `git add` away from the repository.
+      - ${YARN_ANALYSIS_DIR:-.}:/app/source:ro
+      # In development the extract artifacts land on the host, in
+      # backend/import (gitignored), where they can be read without docker.
+      # This replaces the base file's named volume, same container path.
+      - ./backend/import:/app/import
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload"

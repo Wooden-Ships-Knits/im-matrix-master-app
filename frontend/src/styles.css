@@ -2900,6 +2900,198 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 }
 .ct-addpal button:hover { color: var(--text); }
 
+/* Which file the kilos come from, said on the page. A board of stated
+   figures with no statement of where they were stated is a rumour. */
+.ct-source { margin: 9px 0 0; font-size: 0.78rem; color: var(--muted); }
+.ct-source b { color: var(--text); font-weight: 600; }
+.ct-source span + span::before { content: ''; }
+.ct-headacts { display: flex; align-items: center; gap: 12px; }
+/* Amber, not red: a row to check is a question, not a failure. */
+.ct-qbtn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #FBF4E6; border: 1px solid #E3CB9B; color: #7A5B1F;
+  border-radius: 999px; padding: 8px 15px;
+  font-size: 0.85rem; font-weight: 600;
+  transition: background 0.14s var(--ease);
+}
+.ct-qbtn:hover { background: #F6E9CE; }
+
+/* The file's own figures, in the panel but never as inputs. */
+.ct-stated dl { margin: 0; display: grid; gap: 9px; }
+.ct-stated dl > div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.ct-stated dt { font-size: 0.8rem; color: var(--muted); }
+.ct-stated dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.ct-stated dd em {
+  font-style: normal; font-weight: 400; font-size: 0.72rem;
+  color: var(--muted); margin-left: 6px;
+}
+.ct-stated .ct-foot { margin: 13px 0 0; font-size: 0.72rem; color: var(--muted); }
+
+/* The review queue. Tall lists scroll the backdrop, not the dialog, so a
+   long queue reads as one page. */
+.dialog-backdrop.rev-back { align-items: flex-start; overflow-y: auto; padding: 40px 16px; }
+.rev-dialog { position: relative; max-width: 680px; }
+.rev-intro { margin: 0 0 18px; font-size: 0.9rem; }
+.rev-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.rev-item {
+  border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 12px 14px;
+}
+.rev-error { border-left-color: var(--danger); }
+.rev-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.rev-head b { font-size: 0.96rem; }
+.rev-why { font-size: 0.78rem; color: var(--muted); }
+.rev-loc {
+  margin-left: auto; font-size: 0.72rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.rev-note { margin: 7px 0 0; font-size: 0.82rem; color: var(--muted); }
+.rev-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.btn-small { padding: 7px 13px; font-size: 0.84rem; }
+.rev-pick { margin-top: 11px; }
+.rev-pick ul { list-style: none; margin: 8px 0 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.rev-pick li { border-bottom: 1px solid var(--border); }
+.rev-pick li button {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  padding: 8px 4px; font-size: 0.9rem; font-weight: 600;
+}
+.rev-pick li button:hover { color: var(--green-deep); }
+
+/* Three readings of one board. A segmented control, because they are
+   mutually exclusive views of the same colours, not filters that stack. */
+.ct-group { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; }
+.ct-group button {
+  background: var(--card); border: none; padding: 8px 14px;
+  font-size: 0.85rem; font-weight: 600; color: var(--muted);
+}
+.ct-group button + button { border-left: 1px solid var(--border); }
+.ct-group button:hover { background: var(--inset); color: var(--text); }
+.ct-group button.on { background: var(--green-deep); color: #fff; }
+.ct-season { width: auto; padding: 8px 10px; font-weight: 600; }
+.ct-chbtn {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: #EDF4F0; border: 1px solid #BBD4C7; color: var(--green-deep);
+  border-radius: 999px; padding: 8px 15px; font-size: 0.85rem; font-weight: 600;
+  transition: background 0.14s var(--ease);
+}
+.ct-chbtn:hover { background: #E2EEE8; }
+.ct-count {
+  font-family: var(--font); font-size: 0.72rem; font-weight: 600;
+  color: var(--muted); vertical-align: 3px; margin-left: 7px;
+}
+.ct-secnote { margin: -6px 0 12px; font-size: 0.78rem; color: var(--muted); }
+/* A colour an open change would move: a dashed ring, so it reads as
+   provisional rather than as a state of the yarn. */
+.ct-changed { outline: 2px dashed var(--green-deep); outline-offset: 2px; }
+
+.ct-after { margin: 12px 0 0; font-size: 0.82rem; }
+.ct-after em { font-style: normal; color: var(--muted); }
+.ct-subs label { display: grid; gap: 5px; font-size: 0.82rem; color: var(--muted); margin-bottom: 10px; }
+.ct-candlist, .ct-cwlist { list-style: none; margin: 0; padding: 0; }
+.ct-candlist li { border-bottom: 1px solid var(--border); }
+.ct-candlist li button {
+  display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+  width: 100%; background: none; border: none; padding: 9px 2px;
+  font-size: 0.9rem; font-weight: 600; text-align: left;
+}
+.ct-candlist li button:disabled { opacity: 0.45; }
+.ct-candlist li button:not(:disabled):hover { color: var(--green-deep); }
+.ct-candlist i, .ct-swap i {
+  font-style: normal; font-weight: 400; font-size: 0.78rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.ct-cwlist li { border-bottom: 1px solid var(--border); padding: 8px 0; }
+.ct-cwrow { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+.ct-cwrow span { font-size: 0.86rem; }
+.ct-cwrow i { font-style: normal; color: var(--muted); font-size: 0.76rem; }
+.ct-proposed {
+  margin: 6px 0 0; font-size: 0.8rem; color: var(--green-deep);
+  display: flex; gap: 8px; align-items: baseline; justify-content: space-between;
+}
+.ct-swap { margin-top: 8px; }
+.ct-swap ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.ct-swap li button {
+  display: flex; justify-content: space-between; gap: 10px; width: 100%;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  padding: 7px 2px; font-size: 0.86rem; font-weight: 600; text-align: left;
+}
+.ct-swap li button:hover { color: var(--green-deep); }
+
+.chg-head {
+  margin: 18px 0 10px; font-size: 0.74rem; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted);
+}
+.chg-nums { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; }
+.chg-av { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chg-av b { color: var(--text); }
+.chg-av b.short { color: var(--danger); }
+.chg-nums em { font-style: normal; font-size: 0.78rem; color: var(--green-deep); }
+.chg-nums em.chg-nokg { color: var(--muted); }
+.chg-foot { margin-top: 18px; }
+.chg-foot .btn { display: inline-flex; align-items: center; gap: 7px; text-decoration: none; }
+.chg-hist { list-style: none; margin: 14px 0 0; padding: 0; font-size: 0.82rem; }
+.chg-hist li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.chg-hist i { font-style: normal; color: var(--muted); }
+
+/* CSAT — the Color Sequence Adjustment Table. A desk, not a form: the
+   cards are moved with the pointer and the layout saves itself. */
+.ct-chbtn.on { background: var(--green-deep); border-color: var(--green-deep); color: #fff; }
+.csat { margin-top: 4px; }
+.csat-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+.csat-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-right: auto; }
+.csat-tabs button {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--inset); border: 1px solid var(--border);
+  border-radius: 999px; padding: 7px 14px; font-size: 0.85rem; font-weight: 600;
+  color: var(--muted);
+}
+.csat-tabs button:hover { color: var(--text); }
+.csat-tabs button.on { background: var(--card); color: var(--text); border-color: var(--primary); }
+.csat-tabs i { font-style: normal; font-size: 0.72rem; opacity: 0.7; }
+.csat-new { padding: 7px 10px !important; }
+.csat-title { max-width: 230px; }
+.csat-add { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
+.csat-add .input { width: 240px; }
+.csat-add ul { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; }
+.csat-add li button {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+  padding: 6px 12px; font-size: 0.82rem; font-weight: 600;
+}
+.csat-add li button:hover { border-color: var(--green-deep); color: var(--green-deep); }
+.csat-add li i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.12); }
+.csat-saved { margin-left: auto; font-size: 0.76rem; color: var(--muted); }
+.csat-area {
+  position: relative; min-height: 70vh;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--inset);
+  background-image: radial-gradient(rgba(42, 40, 34, 0.09) 1px, transparent 1px);
+  background-size: 22px 22px;
+  overflow: hidden;
+  touch-action: none;           /* a drag is a drag, not a scroll */
+}
+.csat-hint { position: absolute; inset: 24px auto auto 24px; max-width: 420px; }
+.csat-card {
+  position: absolute; width: 120px; cursor: grab;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  padding: 8px; user-select: none;
+}
+.csat-card.dragging { cursor: grabbing; box-shadow: var(--shadow-lift); z-index: 5; }
+.csat-chip { display: block; height: 54px; border-radius: 7px; border: 1px solid rgba(0,0,0,0.1); }
+.csat-name { display: block; margin-top: 7px; font-size: 0.68rem; font-weight: 600; line-height: 1.25; }
+.csat-av {
+  display: block; margin-top: 3px; font-size: 0.68rem; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.csat-x {
+  position: absolute; top: 4px; right: 4px; width: 20px; height: 20px;
+  display: grid; place-items: center; border: none; border-radius: 50%;
+  background: rgba(255, 255, 255, 0.86); color: var(--muted); opacity: 0;
+}
+.csat-card:hover .csat-x { opacity: 1; }
+.csat-x:hover { color: var(--danger); }
+
 .ct-split { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 28px; align-items: start; }
 .ct-section { margin-bottom: 30px; border-radius: var(--radius); }
 .ct-section h3 { margin: 0 0 12px; font-family: var(--display); font-size: 1.35rem; font-weight: 600; }
