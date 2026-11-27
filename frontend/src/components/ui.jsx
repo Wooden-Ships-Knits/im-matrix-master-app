@@ -136,11 +136,24 @@ export function PriceInput({ value, onChange, ...rest }) {
   );
 }
 
-export function CheckBox({ label, checked, onChange }) {
+/**
+ * A checkbox.
+ *
+ * `tone` makes it a channel box instead of a plain one: a filled circle in
+ * that channel's colour, with no tick in it. Red is SY and pink is 000
+ * everywhere else in the app — the Matrix number cell, the repeat circles on
+ * a card — so the box that SETS the channel is drawn the same way as every
+ * box that reports it. A tick would say only "on", which is the one thing the
+ * label beside it already says.
+ *
+ * Checked is still a fill against an outline, so it does not rest on telling
+ * red from pink.
+ */
+export function CheckBox({ label, checked, onChange, tone = null }) {
   return (
-    <label className="check">
+    <label className={`check${tone ? ` check-${tone}` : ''}`}>
       <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
-      <span className="box"><Check size={17} strokeWidth={3.2} /></span>
+      <span className="box">{!tone && <Check size={17} strokeWidth={3.2} />}</span>
       {label}
     </label>
   );

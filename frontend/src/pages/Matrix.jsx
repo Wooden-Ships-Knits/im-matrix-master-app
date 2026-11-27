@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette, SwatchBook } from 'lucide-react';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette, SwatchBook, Filter } from 'lucide-react';
 import { Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
@@ -12,6 +12,8 @@ import ImportStyle from '../sections/ImportStyle.jsx';
 import PriceCard from '../sections/PriceCard.jsx';
 import Wordmark from '../components/Wordmark.jsx';
 import TbdTray from '../sections/TbdTray.jsx';
+import LegendKey from '../sections/LegendKey.jsx';
+import ColumnFilter from '../components/ColumnFilter.jsx';
 
 /**
  * Matrix Master, as the team sets it up.
@@ -24,6 +26,40 @@ import TbdTray from '../sections/TbdTray.jsx';
  * The order is saved on the style, not in this browser — it is a decision the
  * team makes together, and the printed sheet reads the same column.
  */
+/**
+ * A cell's value on the Attributes grid, as the text the cell SHOWS.
+ *
+ * Not the column underneath it. Weight is the reason: stored as 0.2435 and
+ * shown as "0,244", a filter built on the stored number would offer a list
+ * of values that appear nowhere on the screen being filtered.
+ */
+export const cellText = (r, key) => {
+  if (key === 'name') return r.name || '';
+  if (key === 'weight_sm') return commaDecimal(roundFixed(r.weight_sm, 3));
+  return String(r[key] ?? '');
+};
+
+/**
+ * Order two cells, for the column-header sort.
+ *
+ * `numeric`, so "3GG" sorts before "12GG" rather than after it — these
+ * columns are full of numbers written inside words.
+ *
+ * Blanks go last BOTH ways, as a spreadsheet does: an empty cell is the
+ * absence of an answer, not the smallest one, so it belongs at the end
+ * whichever direction the answers run in. That is why the direction is
+ * applied inside the comparator rather than by negating its result —
+ * negating it sent every blank to the TOP of a Z-A sort, which is how this
+ * was first written and what frontend/test/sheet.test.mjs now holds shut.
+ */
+export const compare = (a, b, dir = 'asc') => {
+  if (a === b) return 0;
+  if (a === '') return 1;
+  if (b === '') return -1;
+  const cmp = a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+  return dir === 'desc' ? -cmp : cmp;
+};
+
 /**
  * One style's row on the Attributes grid, memoised.
  *
@@ -128,6 +164,19 @@ export default function Matrix() {
   const [season, setSeason] = useState(params.get('season') || '');
   const [collection, setCollection] = useState(params.get('collection') || '');
   const [query, setQuery] = useState('');
+  // The Attributes grid's column filters, the spreadsheet's own kind.
+  //   colFilters  { [column key]: string[] } — the values kept. A key that
+  //               is absent is a column with no filter, which is not the
+  //               same as one keeping every value it can see today: a style
+  //               added tomorrow has to appear without anyone clearing
+  //               anything.
+  //   colSort     { key, dir } or null. One column at a time, like the
+  //               spreadsheet — two sorts at once is a thing people ask for
+  //               and then cannot read.
+  // Both are the grid's alone. The Layout tab shows the arrangement the team
+  // saved, and a sort applied over here must not silently reorder it.
+  const [colFilters, setColFilters] = useState({});
+  const [colSort, setColSort] = useState(null);
   const [tab, setTab] = useState(params.get('tab') === 'layout' ? 'layout' : 'grid');
   // Which of the two sheets the page is showing. The season and collection
   // pickers are shared, so this is a mode rather than another tab —
@@ -249,6 +298,65 @@ export default function Matrix() {
     const waiting = (rows || []).filter((r) => r.matrix_parked);
     return q ? waiting.filter((r) => matches(r, q)) : waiting;
   }, [rows, query]);
+
+  const columns = useMemo(
+    () => [
+      { key: 'name', label: 'Style' },
+      { key: 'weight_sm', label: 'Weight S/M (kg)' },
+      ...fields.map((f) => ({ key: f.key, label: f.label })),
+    ],
+    [fields],
+  );
+
+  const byText = (a, b) => compare(a, b);
+
+  const passes = (r, except = null) => Object.entries(colFilters).every(
+    ([key, kept]) => key === except || !kept || kept.includes(cellText(r, key)));
+
+  const gridRows = useMemo(() => {
+    const out = shown.filter((r) => passes(r));
+    if (!colSort) return out;
+    // A copy: `shown` is memoised and feeds the Layout tab, which must keep
+    // the saved arrangement whatever this grid is sorted by.
+    return [...out].sort(
+      (a, b) => compare(cellText(a, colSort.key), cellText(b, colSort.key), colSort.dir));
+  }, [shown, colFilters, colSort]);
+
+  // What each column offers to tick. Counted over the rows the OTHER columns
+  // allow, the way a spreadsheet does, so narrowing one column narrows the
+  // choices in the next — plus whatever this column already keeps, or a
+  // value could be ticked off and then be impossible to tick back on.
+  const colOptions = useMemo(() => {
+    const out = {};
+    for (const c of columns) {
+      const seen = new Set(colFilters[c.key] || []);
+      for (const r of shown) if (passes(r, c.key)) seen.add(cellText(r, c.key));
+      out[c.key] = [...seen].sort(byText);
+    }
+    return out;
+  }, [shown, colFilters, columns]);
+
+  const filterCount = Object.values(colFilters).filter(Boolean).length;
+  const clearColumns = () => { setColFilters({}); setColSort(null); };
+
+  const setColumnFilter = (key, kept) => setColFilters((was) => {
+    const next = { ...was };
+    // Deleted rather than set to null, so `filterCount` and `passes` both
+    // read "no filter" off the same fact.
+    if (kept === null) delete next[key]; else next[key] = kept;
+    return next;
+  });
+
+  const headFilter = (c) => (
+    <ColumnFilter
+      label={c.label}
+      values={colOptions[c.key] || []}
+      selected={colFilters[c.key] ?? null}
+      onChange={(kept) => setColumnFilter(c.key, kept)}
+      sort={colSort?.key === c.key ? colSort.dir : null}
+      onSort={(dir) => setColSort(dir ? { key: c.key, dir } : null)}
+    />
+  );
 
   // Collections keep server order; only the cards inside one are arrangeable,
   // because which collection a style belongs to is data, not layout.
@@ -963,18 +1071,40 @@ export default function Matrix() {
 
         {sheet === 'master' && tab === 'grid' && shown.length > 0 && (
           <section className="card chk-card">
+            {filterCount > 0 && (
+              <div className="colf-applied">
+                <Filter size={13} aria-hidden="true" />
+                <span>
+                  {gridRows.length} of {shown.length} styles
+                  {' · '}{filterCount} column{filterCount === 1 ? '' : 's'} filtered
+                </span>
+                <button type="button" className="btn-chip ghost" onClick={clearColumns}>
+                  <X size={14} /> Clear filters
+                </button>
+              </div>
+            )}
+            {gridRows.length === 0 && (
+              <p className="result-count colf-empty">
+                No style gets past the column filters.
+              </p>
+            )}
             <div className="chk-scroll">
               <table className="chk-grid mx-grid">
                 <thead>
                   <tr>
-                    <th className="chk-style">Style</th>
-                    <th>Weight S/M (kg)</th>
-                    {fields.map((f) => <th key={f.key}>{f.label}</th>)}
+                    {columns.map((c) => (
+                      <th key={c.key} className={c.key === 'name' ? 'chk-style' : undefined}>
+                        <span className="colf-head">
+                          <span>{c.label}</span>
+                          {headFilter(c)}
+                        </span>
+                      </th>
+                    ))}
                     <th className="mx-del-col" aria-label="Remove" />
                   </tr>
                 </thead>
                 <tbody>
-                  {shown.map((r) => (
+                  {gridRows.map((r) => (
                     <AttrRow
                       key={r.id}
                       r={r}
@@ -1133,21 +1263,32 @@ export default function Matrix() {
 
         {/* Only on the Layout tab, and only once a collection is chosen —
             a parked style has to know which block it belongs to, and the
-            tray is for arranging, which is what that tab is for. */}
+            tray is for arranging, which is what that tab is for. The Legend
+            rides along under it: it explains the marks on the cards, which
+            is the same tab and the same moment.
+
+            One stack, not two fixed widgets. The tray's height changes as
+            styles are parked, so anything pinned under it by its own top
+            would end up overlapping. */}
         {sheet === 'master' && tab === 'layout' && season && (
-          <TbdTray
-            items={parked}
-            collection={collection}
-            season={season}
-            busy={creating || !collection}
-            onAdd={addParked}
-            // Deletes for real — the tray asks first, in the tray. Routing
-            // this through confirmDelete pointed it at a confirm that only
-            // the Attributes table can draw.
-            onDelete={deleteStyle}
-            onDragStart={setDragging}
-            onDragEnd={() => { setDragging(null); setOver(null); }}
-          />
+          <div className="float-stack">
+            <TbdTray
+              items={parked}
+              collection={collection}
+              season={season}
+              busy={creating || !collection}
+              onAdd={addParked}
+              // Deletes for real — the tray asks first, in the tray. Routing
+              // this through confirmDelete pointed it at a confirm that only
+              // the Attributes table can draw.
+              onDelete={deleteStyle}
+              onDragStart={setDragging}
+              onDragEnd={() => { setDragging(null); setOver(null); }}
+            />
+            {/* What goes in it is the LEGEND array in LegendKey.jsx — the
+                rows are written by hand, not read from the database. */}
+            <LegendKey />
+          </div>
         )}
 
         {/* Rendered once for the page, not once per block: it is a modal, and

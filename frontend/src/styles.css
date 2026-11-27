@@ -2261,15 +2261,32 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   color: var(--muted);
 }
 
-/* ---- The TBD tray ----
-   Styles that exist but have no place on the sheet yet. Fixed to the viewport,
-   because the whole point is that the drop target is one short drag away
-   wherever you have scrolled to. */
-.tbd-tray {
+/* ---- The floating stack ----
+   The widgets that hover over the sheet — the TBD tray, and the Legend under
+   it. They are stacked by one container rather than each pinned to its own
+   top, because the tray's height changes as styles are parked: a second
+   widget with a top of its own would overlap it or leave a hole. Add another
+   widget by putting it in the stack; nothing needs measuring. */
+.float-stack {
   position: fixed;
   top: 84px;
   right: 18px;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  /* The column is as tall as the viewport, so without this the gaps between
+     the widgets would swallow clicks meant for the sheet behind them. */
+  pointer-events: none;
+}
+.float-stack > * { pointer-events: auto; }
+
+/* ---- The TBD tray ----
+   Styles that exist but have no place on the sheet yet. It hovers, because
+   the whole point is that the drop target is one short drag away wherever
+   you have scrolled to. */
+.tbd-tray {
   width: 236px;
   background: #fff;
   border: 1.5px solid var(--border);
@@ -2331,13 +2348,92 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 }
 .tbd-bin:hover { color: #b91c1c; background: rgba(185, 28, 28, 0.08); }
 
-/* It is a working tool, not part of the sheet. */
-@media print { .tbd-tray { display: none; } }
+/* They are working tools, not part of the sheet. */
+@media print { .float-stack { display: none; } }
 
-/* Narrow screens have no room beside the grid, so it goes to the bottom
-   corner where it overlaps least. */
+/* Narrow screens have no room beside the grid, so the stack goes to the
+   bottom corner where it overlaps least. */
 @media (max-width: 900px) {
-  .tbd-tray { top: auto; bottom: 14px; right: 14px; width: 200px; }
+  .float-stack { top: auto; bottom: 14px; right: 14px; }
+  .tbd-tray { width: 200px; }
+  .legend-key { width: 200px; }
+}
+
+/* ---- The Legend ----
+   Says what the colours and marks on a card mean. Same shape as the tray
+   above it, deliberately: they are the same kind of thing. */
+.legend-key {
+  width: 236px;
+  background: #fff;
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.13);
+  font-size: 0.82rem;
+  overflow: hidden;
+}
+.legend-key.shut { width: 150px; }
+
+.legend-head {
+  display: flex; align-items: center; gap: 7px;
+  width: 100%; padding: 9px 11px;
+  background: var(--band, #ece7e1); border: 0;
+  font: inherit; font-weight: 700; color: var(--text);
+  cursor: pointer; text-align: left;
+}
+.legend-head:hover { background: rgba(63, 67, 69, 0.1); }
+.legend-title { flex: 1; letter-spacing: 0.04em; }
+
+/* Capped and scrolled: a long key must not push itself off the screen,
+   and the stack above it cannot scroll for it. */
+.legend-body {
+  padding: 10px 11px 12px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.legend-empty { margin: 0; font-size: 0.74rem; color: var(--muted); line-height: 1.45; }
+
+.legend-list { list-style: none; margin: 0; padding: 0; }
+.legend-list li {
+  display: flex; align-items: flex-start; gap: 8px;
+  margin-bottom: 7px;
+}
+.legend-list li:last-child { margin-bottom: 0; }
+
+/* The chip is a fixed size whether it holds a colour or a letter, so the
+   labels line up down the left edge. */
+.legend-swatch, .legend-mark {
+  flex: none;
+  width: 18px; height: 18px;
+  margin-top: 1px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+}
+.legend-mark {
+  display: flex; align-items: center; justify-content: center;
+  background: #faf8f5;
+  font-size: 0.68rem; font-weight: 700; line-height: 1;
+}
+/* A circle where the card draws a circle. The repeat dots are the only
+   round key, and squaring them here would be a legend for a different
+   sheet. */
+.legend-swatch.round { border-radius: 50%; }
+
+/* A divider, not a row: it has no chip, so it does not line up with the
+   keys under it and should not pretend to. */
+.legend-group {
+  display: block;
+  margin: 11px 0 5px;
+  font-size: 0.66rem; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--muted);
+}
+.legend-list li.legend-group:first-child { margin-top: 0; }
+
+.legend-text { min-width: 0; }
+.legend-label { display: block; font-size: 0.76rem; font-weight: 600; }
+.legend-note {
+  display: block; margin-top: 1px;
+  font-size: 0.72rem; color: var(--muted); line-height: 1.4;
 }
 
 /* The tick/cross gate on a tray chip, the same shape the colourway rows and
@@ -3207,4 +3303,147 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 @media (max-width: 980px) {
   .ct-split { grid-template-columns: 1fr; }
   .ct-detail { order: -1; position: static; }
+}
+
+/* ============ The column filter on the Attributes grid ============
+   The spreadsheet's funnel: sort, search, tick what to keep. Shaped after
+   the workbook the Matrix replaces, because that is the one place the team
+   already knows how to narrow a column down. */
+.colf-head {
+  display: inline-flex; align-items: center; gap: 5px;
+  /* The header cell centres its text; the funnel rides with it rather than
+     being pinned to the cell's right edge, where a short label would leave
+     it floating a long way from the word it belongs to. */
+  max-width: 100%;
+}
+.chk-grid thead .chk-style .colf-head { justify-content: flex-start; }
+
+.colf { position: relative; display: inline-flex; flex: none; }
+.colf-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 19px; height: 19px; padding: 0;
+  border: 1px solid transparent; border-radius: 5px;
+  background: transparent; color: #a0a0a0; cursor: pointer;
+}
+.colf-btn:hover { color: var(--text); background: rgba(63, 67, 69, 0.09); }
+.colf-btn:focus-visible { outline: 2px solid var(--green-deep, #2f6b5c); outline-offset: 1px; }
+/* A column that is filtering, or sorting, says so without being opened —
+   a hidden filter is how a spreadsheet lies to you. */
+.colf-btn.on, .colf-btn.sorted { color: var(--green-deep, #2f6b5c); }
+.colf-btn.on { background: #e3ede5; border-color: #bcd4c2; }
+
+/* Fixed, not absolute: the grid scrolls sideways inside .chk-scroll, and
+   overflow-x:auto makes that a scroll box on both axes — a panel inside the
+   header would be clipped by it with no way out. Positioned from the
+   button's rect instead, and moved with it on scroll. */
+.colf-panel {
+  position: fixed; z-index: 60;
+  background: #fff; border: 1.5px solid var(--border); border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.17);
+  padding: 8px; font-weight: 400; letter-spacing: 0;
+  text-align: left; text-transform: none; font-size: 0.82rem;
+}
+
+.colf-sorts { display: flex; gap: 5px; }
+.colf-sort {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 5px 6px; border: 1.5px solid var(--border); border-radius: 7px;
+  background: #fff; font: inherit; font-size: 0.74rem; font-weight: 600;
+  color: var(--text); cursor: pointer; white-space: nowrap;
+}
+.colf-sort:hover { border-color: #9a9a9a; }
+.colf-sort.on { background: #e3ede5; border-color: var(--green-deep, #2f6b5c); color: var(--green-deep, #2f6b5c); }
+
+.colf-find {
+  display: flex; align-items: center; gap: 5px;
+  margin-top: 7px; padding: 4px 6px;
+  border: 1.5px solid var(--border); border-radius: 7px; color: var(--muted);
+}
+.colf-find:focus-within { border-color: var(--green-deep, #2f6b5c); }
+.colf-find-input {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+  font: inherit; font-size: 0.76rem; color: var(--text);
+}
+.colf-find-clear {
+  flex: none; display: inline-flex; padding: 2px; border: 0; border-radius: 4px;
+  background: none; color: var(--muted); cursor: pointer;
+}
+.colf-find-clear:hover { color: var(--text); background: rgba(63, 67, 69, 0.1); }
+
+.colf-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 7px 2px 4px; font-size: 0.72rem; color: var(--muted);
+}
+.colf-link {
+  border: 0; background: none; padding: 0; font: inherit; font-size: 0.72rem;
+  font-weight: 700; color: var(--green-deep, #2f6b5c); cursor: pointer;
+}
+.colf-link:hover { text-decoration: underline; }
+.colf-link:disabled { color: #bbb; cursor: default; text-decoration: none; }
+.colf-n { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* Capped and scrolled — a yarn column has hundreds of values and the panel
+   still has to fit on the screen it opened over. */
+.colf-list {
+  list-style: none; margin: 0; padding: 0;
+  max-height: 232px; overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+.colf-row {
+  display: flex; align-items: flex-start; gap: 7px;
+  padding: 4px 3px; cursor: pointer; border-radius: 5px;
+}
+.colf-row:hover { background: rgba(63, 67, 69, 0.07); }
+.colf-tick {
+  flex: none; width: 15px; height: 15px; margin-top: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1.5px solid #CCC7BE; border-radius: 4px; background: #fff; color: #fff;
+}
+.colf-tick.on { background: var(--green-deep, #2f6b5c); border-color: var(--green-deep, #2f6b5c); }
+/* The real checkbox is kept in the DOM and only visually hidden, so the row
+   stays a checkbox to a screen reader and to the keyboard. */
+.colf-row:focus-within .colf-tick { outline: 2px solid var(--green-deep, #2f6b5c); outline-offset: 1px; }
+.colf-val { min-width: 0; font-size: 0.76rem; line-height: 1.35; overflow-wrap: anywhere; }
+.colf-val.blank { color: var(--muted); font-style: italic; }
+.colf-none { padding: 8px 3px; font-size: 0.74rem; color: var(--muted); }
+
+.colf-reset {
+  width: 100%; margin-top: 7px; padding: 5px;
+  border: 1.5px solid var(--border); border-radius: 7px; background: #fff;
+  font: inherit; font-size: 0.74rem; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.colf-reset:hover { border-color: #9a9a9a; }
+
+/* Said above the grid as well as on each funnel: with thirteen columns
+   scrolling sideways, the one that is filtering can be off screen. */
+.colf-applied {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px; padding: 7px 10px;
+  background: #e3ede5; border: 1px solid #bcd4c2; border-radius: 8px;
+  font-size: 0.78rem; color: var(--green-deep, #2f6b5c);
+}
+.colf-applied .btn-chip { margin-left: auto; }
+.colf-empty { margin: 0 0 10px; }
+
+/* A working control, not part of the sheet. */
+@media print { .colf, .colf-panel, .colf-applied { display: none !important; } }
+
+/* ---- Sold through, in the channel's own colours ----
+   A filled circle rather than a ticked square: red is SY and pink is 000
+   everywhere else — the Matrix number cell, the two repeat circles above a
+   card's photo — and this is the screen where that fact is set, so it is
+   drawn the way it will be read. The tick is dropped because it only ever
+   said "on", which the label beside it already says.
+
+   Written with both classes so these beat `.check input:checked + .box`
+   whatever order the file ends up in; equal specificity would leave it to
+   source order. The two hexes are the same --chan-* the cards use. */
+.check.check-sy .box, .check.check-whs .box { border-radius: 50%; }
+.check.check-sy:hover .box  { border-color: #9c1f14; }
+.check.check-whs:hover .box { border-color: #a63cb0; }
+.check.check-sy input:checked + .box {
+  background: var(--chan-sy); border-color: #9c1f14;
+}
+.check.check-whs input:checked + .box {
+  background: var(--chan-000); border-color: #a63cb0;
 }

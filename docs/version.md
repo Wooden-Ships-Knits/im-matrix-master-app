@@ -4,6 +4,163 @@ Newest first. A version is cut when the project changes phase, not on a schedule
 
 ---
 
+> **A gap in this file.** It records v0.1 and then nothing until v1.1. The app
+> was designed, built, loaded with real data and shown to the team in between,
+> and none of that was written down here — read the git log for `v1.0`
+> (2026-11-24) and the commits around it instead. v1.1 begins **after the two
+> `hide features` commits** of 2026-11-26, the point at which the rebuild
+> started being walked through with the team one screen at a time.
+
+---
+
+## v1.1 — the team walkthrough
+
+**2026-11-27** · base `07ce3cc` · **in the working tree, not yet committed**
+
+Everything below sits in the working tree, uncommitted, so this version has no
+commit hash yet.
+
+The phase this cuts: the app stopped being built for the people building it
+and started being shown to the people who will use it. v1.0 was the whole
+surface; the two `hide features` commits narrowed what the front door offers;
+this version makes the two screens that are still showing — **Matrix Master
+Layout** and **Matrix Master Attributes** — stand on their own in front of
+someone who has never seen them.
+
+### Where it starts
+
+The boundary is `07ce3cc`. The two commits named `hide features`, immediately
+before it, did this, and are **not** part of v1.1:
+
+| Commit | What it hid |
+|---|---|
+| `a44b14e` | Five of seven home cards; the band links on Matrix and the style editor; the Pricing Matrix tab. Also fixed the doubled yarn label (`YST YST RED PAPRIKA - 893 - 893`) and removed the unused `yarn_label()` helper. |
+| `07ce3cc` | The database name and reset warning in the DEVELOPMENT banner. |
+
+Nothing there was deleted — every route still works, and every hidden block is
+commented out in place with the date and the reason.
+
+### Added
+
+**A Legend on the Matrix Master Layout tab** — `frontend/src/sections/LegendKey.jsx`
+(new, 153 lines). A second floating panel under the TBD tray, saying what the
+colours and marks on a card mean. Collapsible, remembered per browser, hidden
+when printing.
+
+Its contents are one array, `LEGEND`, written by hand — nothing is read from
+the database. 17 keys are filled in, all of them read off the card code and
+`styles.css`:
+
+| Group | Keys |
+|---|---|
+| The number | pink = 000 only · red = SY only · white = both |
+| Above the photo | the two repeat circles, filled / hollow / orange-ringed, and "no circles = not a repeat" |
+| Colourways | the three bands and their rules · yellow vs grey row · green vs black name |
+| At the foot | filled vs outlined step chip |
+
+**Column filters on the Matrix Master Attributes grid** —
+`frontend/src/components/ColumnFilter.jsx` (new, 205 lines). The funnel the
+workbook has, on every column header: sort A→Z / Z→A, a search box over the
+values, and a tick list of every distinct value. `(Blank)` is a real, tickable
+value, because "which styles still have no Construction" is what this grid gets
+asked most.
+
+Behaviour worth knowing, all of it deliberate:
+
+- Filtering one column narrows the choices offered in the next, as Excel does —
+  but a value a column already keeps stays in its own list, so nothing can be
+  ticked off and then be impossible to tick back on.
+- Unticking the last value returns the column to **no filter**, not to a list
+  that happens to name every value. A style added tomorrow appears without
+  anyone clearing anything.
+- Sorting and filtering belong to the Attributes grid alone. The Layout tab
+  keeps the arrangement the team saved.
+- A bar above the grid says how many styles are showing and how many columns
+  are filtering, with one **Clear filters** button — with thirteen columns
+  scrolling sideways, the column doing the filtering is usually off screen.
+
+**`PDM FEATURE CHECKLIST.gs`** (new, 237 lines, project root). A Google Apps
+Script that builds the team's feature checklist as a native Google Sheet —
+64 features across six apps, a Status dropdown, the Features cell greying on
+Done and staying yellow otherwise, and a Progress tab counting each block. Run
+once against the sheet; it rebuilds both tabs from scratch, so it is not to be
+re-run after PICs are filled in.
+
+The live sheet is `14nGCueDTUQ6zSL7paNVj9Mz6JZdML2uhBtTAPGEY_ZU`. It has since
+been edited by hand: PICs assigned, **Color Table renamed to Yarn Automation**,
+and the repeated App names cleared so each shows once per block. The Progress
+tab was rewritten to count by row range rather than by App name, because
+clearing those names broke the `COUNTIFS` the script generates. **The script
+and the live sheet have diverged — the sheet is the real artefact.**
+
+### Changed
+
+- **The TBD tray no longer positions itself.** `.tbd-tray` lost its own
+  `position: fixed` / `top` / `right` / `z-index` and now sits in a new
+  `.float-stack`, a fixed column holding both hovering widgets. The tray's
+  height changes as styles are parked, so anything pinned under it by its own
+  `top` would overlap it or leave a hole. Add a third widget by putting it in
+  the stack; nothing needs measuring.
+- **`compare` and `cellText` were lifted out of the `Matrix` component** to
+  module scope and exported, so the drift pins can import the real functions
+  instead of copies of them.
+- `frontend/src/styles.css` — +229 / −10. `.float-stack`, `.legend-*`,
+  `.colf-*`. All three hidden when printing.
+- `frontend/src/pages/Matrix.jsx` — +160 / −19.
+
+### Fixed
+
+- **Z→A sorting put blanks first.** The sort direction was applied by negating
+  the comparator, which flipped the blanks-last rule along with everything
+  else. A blank is the absence of an answer, not the smallest one, so it
+  belongs last whichever way the answers run. The direction is now applied
+  inside `compare`. Found by a test written against the new code, before it
+  reached anyone.
+
+### Deleted
+
+Nothing. No file, route, column or behaviour was removed in v1.1.
+
+### Tests
+
+`frontend/test/sheet.test.mjs` — +40 lines, four new pins under
+*the Attributes grid sorts the way a spreadsheet does*:
+
+- A→Z reads the numbers inside the words (`3GG` before `12GG`)
+- Z→A reverses them
+- A→Z puts blanks last
+- **and Z→A puts them last too, not first** — the pin for the bug above
+
+Each was mutation-tested: the exact original negation was reintroduced and the
+blanks pin failed on it. The pins import the real `format.js`, because a
+`toFixed()` stand-in rounded `0.2435` down to `0,243` — which is the very thing
+`roundFixed` exists to get right, so a pin built on the stub would have
+asserted the bug. Full suite passes.
+
+### Still open
+
+1. **Nine legend keys have no meaning recorded** — the three highlighter-bar
+   colours, the purple band and its star, and the four hand pens on colourway
+   names. They are applied by hand and the app stores no meaning for them, so
+   only the person marking them can say. They sit commented out at the foot of
+   `LEGEND` with their colours already filled in.
+2. **`APP_PASSWORD` on the VM** — the team was given `admin123`. Unless the
+   VM's `.env` says so, that password does not work.
+3. **No username field exists.** The login takes one shared password. Whether
+   to add a real `admin` box, or go straight to company-domain sign-in, is
+   undecided.
+4. **`PDM FEATURE CHECKLIST.xlsx` is still in the project root**, superseded by
+   the Google Sheet and kept only as a backup.
+5. **Band links on the other pages still point everywhere** — Browse,
+   Checklist, Report, Color Table and Design were not narrowed the way Matrix
+   and the style editor were.
+6. **What "Done" means on the checklist** — built, or usable with real data.
+   Several IM Master rows are marked Done while the measurements, trims,
+   photos, the eleven Matrix attribute columns and the S25–F26 season rates
+   are all still empty.
+
+---
+
 ## v0.1 — design complete, nothing built
 
 **2026-09-21** · commit `c3ac3a8` · 21 commits · 16 documents · 4,794 lines

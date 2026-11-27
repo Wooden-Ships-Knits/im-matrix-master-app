@@ -568,9 +568,13 @@ export default function StyleEditor() {
                   <div>
                     <div className="group-label">Sold through</div>
                     <div className="checks-row">
-                      <CheckBox label="SY" checked={form.sell_sy}
+                      {/* Drawn in the channel's own colour rather than as a
+                          tick: red is SY and pink is 000 on every card and
+                          every Matrix number, and this is where that fact is
+                          set. */}
+                      <CheckBox label="SY" tone="sy" checked={form.sell_sy}
                         onChange={(v) => setChannel(v, form.sell_000)} />
-                      <CheckBox label="000" checked={form.sell_000}
+                      <CheckBox label="000" tone="whs" checked={form.sell_000}
                         onChange={(v) => setChannel(form.sell_sy, v)} />
                     </div>
                     <div className="chan-row">

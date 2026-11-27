@@ -1507,6 +1507,46 @@ const rebuilt = [...pyFiles('backend/app'), ...pyFiles('backend/scripts')]
   .filter((f) => /concat_ws\([^)]*prefix|yarn_label\s*\(/.test(fs.readFileSync(f, 'utf8')));
 is(rebuilt, [], 'no query anywhere assembles a yarn label out of prefix and code');
 
+console.log('\n-- the Attributes grid sorts the way a spreadsheet does --');
+const mx = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
+const { compare, cellText } = await import(
+  'data:text/javascript,' + encodeURIComponent(
+    // The real format.js, not a stand-in. A toFixed() stub rounded 0.2435
+    // down to 0,243 — which is the very thing roundFixed was written to get
+    // right, so a pin built on the stub would have asserted the bug.
+    fs.readFileSync('frontend/src/format.js', 'utf8').replaceAll('export ', '')
+    // cut() searches for the end marker from the start of the file, so each
+    // one has to be a string that appears nowhere earlier. Both slices run
+    // to the next declaration, carrying its doc comment along — complete
+    // block comments, so they parse.
+    + cut(mx, 'export const cellText =', 'export const compare =')
+      .replace('export const', 'const')
+    + cut(mx, 'export const compare =', 'const AttrRow = memo(')
+      .replace('export const', 'const')
+    + '\nexport { compare, cellText };'));
+
+// "3GG" before "12GG": these columns hold numbers written inside words, and
+// a plain string sort puts 12 first.
+is(['12GG', '3GG', '5GG'].sort((a, b) => compare(a, b)), ['3GG', '5GG', '12GG'],
+   'A-Z reads the numbers inside the words');
+is(['12GG', '3GG', '5GG'].sort((a, b) => compare(a, b, 'desc')), ['12GG', '5GG', '3GG'],
+   'Z-A reverses them');
+
+// The bug this pin exists for: the direction was applied by negating the
+// comparator, which sent every blank to the TOP of a Z-A sort. A blank is
+// the absence of an answer, so it belongs last whichever way the answers run.
+is(['B', '', 'A'].sort((a, b) => compare(a, b)), ['A', 'B', ''],
+   'A-Z puts blanks last');
+is(['B', '', 'A'].sort((a, b) => compare(a, b, 'desc')), ['B', 'A', ''],
+   'and Z-A puts them last too, not first');
+
+// The filter list is built from what the cell shows, not what it stores.
+is(cellText({ weight_sm: 0.2435 }, 'weight_sm'), '0,244',
+   'weight filters on the rounded, comma-written figure the cell shows');
+is(cellText({ weight_sm: null }, 'weight_sm'), '',
+   'and an unweighed style is a blank, not "null"');
+is(cellText({ gg: null }, 'gg'), '', 'an empty column cell is the blank value');
+
 console.log('\n-- code splitting --');
 const auApp = fs.readFileSync('frontend/src/App.jsx', 'utf8');
 is(/import Login from '\.\/pages\/Login\.jsx'/.test(auApp), true,
