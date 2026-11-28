@@ -13,12 +13,223 @@ Newest first. A version is cut when the project changes phase, not on a schedule
 
 ---
 
+## v1.1b — channels on the colourway, and a sheet you can strip down
+
+**2026-11-28** · base `9b39985` · commit hash to be filled in
+
+A letter rather than v1.2, because nothing here changes what the project is
+doing: it is the same screen-at-a-time walkthrough v1.1 began, two days
+further on. The next whole number is for the next phase.
+
+v1.1 ended with the colourway pens specified but half of them undrawable:
+the legend said pink meant "new colour, 000 only" and the app had nowhere to
+record that a colour was 000-only. The bulk of this version gives that fact
+a home, and the rest is what the walkthrough turned up along the way — two
+switches on the print toolbar, a one-channel card that no longer draws a
+half it cannot use, and a layout gap that turned out to be a real bug.
+
+### Added
+
+**A channel on each colourway**, in the style editor's BOM section beside
+Remove: two tick boxes, SY and 000, in the channel's own colours. A garment
+sold on both channels can still have one colour that only goes to wholesale —
+which is exactly what the pink pens on the Matrix card mean.
+
+- **A box the style does not sell through is shut, not merely faded.** A
+  colour cannot go where the garment does not. A style with no channel
+  recorded bars nothing, because most rows are in that state and shutting
+  every box on all of them would make the control look broken.
+- A disabled box still shows its stored value, so a style narrowed to one
+  channel after its colours were set reads as the contradiction it is rather
+  than quietly losing what it said.
+- A colour just typed in starts with **no channel**, not with both ticked.
+  "Nobody has said" is the truth about it; BOTH is an answer nobody gave.
+
+**Checklist and Details switches on the print toolbar**, beside the style
+count. Either one unticked takes that block off every card on the sheet: the
+prepared-steps chips, and the attribute rows at the foot. Both on by default,
+and off is carried in the URL (`?checklist=0`, `?details=0`) rather than in
+React state — the toolbar is `display: none` when printing, so a sheet set up
+a particular way has to be a link.
+
+- The row estimate is told about it. `cardHeightMm` drops the blocks it is
+  not printing, so the "needs more rows than fit" warning stops budgeting
+  for ten attribute rows that are switched off and telling the operator to
+  halve a page that would have fitted.
+- `SheetCard` gained a `details` prop, defaulting to on. The checklist needed
+  nothing new: it already draws nothing for an empty `steps`.
+
+**What three of the four hand pens mean**, as a *Misc* block at the foot of
+the legend's Colourway font colour section:
+
+| pen | meaning |
+| --- | --- |
+| blue | Discontinued colour for SY |
+| purple | Year round colour |
+| red | Hold colour for SY |
+
+- Nothing derives these — someone picks them by clicking a colourway name —
+  so the legend is the only record of what they mean. The same four
+  meanings are written above `COLORWAY_MARKS` in `SheetCard.jsx`, where the
+  pens are applied, and a test pins the two to stay in step.
+- They match where the card already offers them (`ZONE_PENS`): purple
+  between the rules, red and blue below the red rule — and two of the three
+  are about SY, which is the band under the red rule. That agreement is
+  evidence the model is right, not a coincidence worth leaving unremarked.
+- **Magenta stays out of Misc.** It is the pink in the band grid — "new
+  colour, 000 only" — so it answers the same two questions as the
+  green/black base rather than saying something extra. All four hand pens
+  are now accounted for.
+- The legend writes the hexes out by hand rather than reading them from the
+  stylesheet, so a pin compares each Misc swatch against `--pen-*` in
+  `styles.css`. A pen recoloured there and not here would leave the key
+  describing a colour the card no longer draws.
+
+**`frontend/src/channel.js`** (new). `channelOf`, `channelParts` and
+`styleAllows` — one vocabulary for the style, the colourway and the card. The
+words "BOTH" / "SY ONLY" / "000 ONLY" are now written out in three places
+(this file, `SheetCard.jsx`, `repo.py`), and the tests compare the three lists
+rather than trusting them.
+
+### Changed
+
+- **`style_colorways.whs_channel` is now written by the editor.** It had been
+  carried over blindly on every save — `save_style` deletes and re-inserts the
+  colourway rows, and restored the old value because "the editor never had"
+  it. It does now. A payload that omits the key still means "leave it alone",
+  so a client that does not know the field cannot blank it; an empty string
+  means "nobody has said", which is a real answer and not the same as BOTH.
+  A value outside the vocabulary is refused rather than stored.
+- `load_style` returns each colourway's `whs_channel`.
+- `CheckBox` takes `disabled` and `title`.
+- The legend's keys were rewritten with the team several times: the pens are
+  set out band by band, no key names its own colour, sections are ruled off,
+  the panel is 520px with the keys in two columns, the repeat rings are drawn
+  as rings rather than fills, and a yellow ring was added for "not sure it is
+  a repeat".
+- **Bands 1 and 2 share one heading.** They take an identical set of four
+  pens, and printing the set twice invited the reader to hunt for a
+  difference that is not there — and left two lists to keep in step the next
+  time a pen changes. A heading can now carry `also`, a second band name
+  under the first with an "&" between them.
+- **A black X now sits inside every filled repeat dot**, on the card and in
+  the legend — the mark the Matrix Master workbook puts there. Drawn as two
+  percentage-sized bars so it scales with the dot, which is 9px on the printed
+  sheet, 12px on the Matrix screen and 7px in a one-row block.
+- **A one-channel card no longer has a half it cannot use.** An SY-only style
+  used to draw all three bands and strike out the colours above the red rule.
+  It now draws one band — the SY-ONLY list — with no sample band, no 000 list
+  and no black rule above it. A 000-only style loses the band below the red
+  rule, and keeps its sample colour: the sample band and the 000 list are the
+  same half of the card, not a third thing.
+  - **The colours are folded, not dropped.** `byZone` hands a hidden band's
+    colours to the band standing in its place, so they read under the red
+    rule instead of disappearing. This is not optional: of the **301 styles
+    marked SY ONLY, not one has a colour below the red rule** — the bands
+    were filled in before the channel was, so hiding without folding would
+    have emptied 301 cards.
+  - The fold is a reading, not a migration. `style_colorways.zone` is left
+    alone, so a style put back on both channels reads as it always did.
+  - `mainRowCount` returns 0 for a card that does not draw its main band, so
+    an SY-only style no longer makes every other card in its block pad out
+    blank rows for a band nobody sees.
+
+### Fixed
+
+**The gap under the sample colour.** `.sheet-colours` has `flex-grow: 1` so
+the colour list absorbs the card's free space and the blocks below it sit at
+the bottom, lining up across a row. That rule was written when the list was
+one `<ul>`. It is three now, and three growing flex children *share* the free
+space — so a short card opened a gap under the sample colour and another
+under the band between the rules, in the middle of the list where they read
+as mistakes rather than as slack. Only the last band drawn grows now, which
+puts the space under the whole list where there is nothing to look at. This
+was on the Matrix screen as well as the printed sheet; taking Details off
+just made it impossible to miss.
+
+### Deleted
+
+Nothing.
+
+### Tests
+
+13 new assertions in `frontend/test/sheet.test.mjs` under *a colourway has a
+channel of its own*: the three vocabularies agree, empty is not BOTH,
+`channelParts` is the exact inverse of `channelOf` for all four combinations,
+and `styleAllows` shuts the right box. Two were mutation-tested — dropping a
+word from the server's list, and making an unset style shut both boxes — and
+both pins failed as they should.
+
+12 more under *the sheet can leave blocks off the card*: the toolbar offers
+both boxes, both default to on, off goes to the URL, the card is handed an
+empty step list and a `details` prop, and switching a block off makes
+`cardHeightMm` smaller and `rowsThatFit` no smaller. Mutation-tested by
+un-telling `cardHeightMm` about the blocks, by defaulting Checklist to off,
+and by ungating the attribute rows — four pins failed between them.
+
+16 more under *an SY-only card has no 000 half*: `allowsZone` and `showsZone`
+part company exactly on the sample band of an SY-only style; the fold moves
+every colour under the red rule in alphabetical order and leaves
+`colorway_zones` untouched; the same style on BOTH reads as three bands
+again; the 000-only mirror folds the other way and keeps its sample colour;
+and `mainRowCount` is 0 for a band that is not drawn. Mutation-tested by
+switching the fold off and by folding into the wrong band — three pins failed
+each time.
+
+3 more under *only one colourway band takes the slack*: a band does not grow
+on its own account, the last one drawn does, and the colourway list is the
+only `<ul>` on the card — which is the assumption `:last-of-type` rests on,
+and a second kind of list would quietly steal the slack back. Mutation-tested
+by restoring `flex-grow: 1` on every band.
+
+7 more under *the legend says what the hand pens mean*: Misc carries exactly
+the three non-grid pens in that order, each swatch equals the matching
+`--pen-*` in `styles.css`, magenta is in the grid rather than in Misc,
+`SheetCard.jsx` records the same meanings, and bands 1 and 2 are one heading
+with the four pens written once. Mutation-tested by nudging a hex by one
+digit and by splitting the heading back in two — four pins failed.
+
+Total for this version: **51 new assertions**, 449 passing in all,
+`node frontend/test/sheet.test.mjs` green, `npx vite build` clean.
+
+The backend was exercised against the live database through the real
+`save_style` / `load_style` path on a scratch style, since no unit harness
+reaches it: a new style saves and reads back each colour's channel, an edited
+one is written, an emptied one is cleared, an omitted key does not blank it,
+and a word outside the vocabulary is refused. The scratch style was deleted
+and all 3,582 colourways are back to a null channel.
+
+### Still open
+
+1. **The pens still are not drawn from the channel.** The data is now
+   capturable, but `penOf()` in `SheetCard.jsx` still offers four hand pens
+   with no recorded meaning (magenta, purple, red, blue) instead of deriving
+   green / black / pink / light pink from *new-or-repeat* × *000-only*. There
+   is no light pink pen at all. That is the remaining half of the legend.
+2. **Nothing has been imported into the new column** — all 3,582 colourways
+   still have a null channel, so the facts have to be typed in or imported
+   before the pens could show anything.
+3. **The backend container is running a hand-copied `repo.py`.** It was pushed
+   in with `docker compose cp` to test, and survives a restart but not a
+   recreate. Run `docker compose up -d --build backend` to bake it in.
+4. **Browse and Report are still hidden on the front door.** Unhiding them
+   was asked for and is not in this commit — it is uncommenting two blocks in
+   `Home.jsx`, but the same `a44b14e` also hid things in `Matrix.jsx`,
+   `StyleEditor.jsx`, `repo.py` and `yarn_names.py`, and pinned the hiding in
+   the tests, so what else sits behind those two words has to be read first.
+5. **Five legend keys still have no meaning recorded** — the three
+   highlighter-bar colours (green, amber, blue) and the purple band with its
+   star. The four colourway pens are no longer among them. The rows are
+   commented out at the foot of `LEGEND`, ready to fill in.
+6. Carried over from v1.1: `APP_PASSWORD` on the VM, the username question,
+   the surplus `.xlsx`, the other pages' band links, and what "Done" means on
+   the checklist.
+
+---
+
 ## v1.1 — the team walkthrough
 
-**2026-11-27** · base `07ce3cc` · **in the working tree, not yet committed**
-
-Everything below sits in the working tree, uncommitted, so this version has no
-commit hash yet.
+**2026-11-27** · commit `9b39985` · base `07ce3cc`
 
 The phase this cuts: the app stopped being built for the people building it
 and started being shown to the people who will use it. v1.0 was the whole
@@ -139,22 +350,36 @@ asserted the bug. Full suite passes.
 
 ### Still open
 
-1. **Nine legend keys have no meaning recorded** — the three highlighter-bar
-   colours, the purple band and its star, and the four hand pens on colourway
-   names. They are applied by hand and the app stores no meaning for them, so
-   only the person marking them can say. They sit commented out at the foot of
-   `LEGEND` with their colours already filled in.
-2. **`APP_PASSWORD` on the VM** — the team was given `admin123`. Unless the
+1. **Five legend keys have no meaning recorded** — the three highlighter-bar
+   colours, and the purple band with its star. They are applied by hand and
+   the app stores no meaning for them, so only the person marking them can
+   say. They sit commented out at the foot of `LEGEND`.
+2. **The colourway name pens are specified but not implemented.** The meanings
+   were given on 2026-11-28 and written into `LEGEND`: green = new colour,
+   black = repeat (SY + 000), pink = new but 000 only, light pink = repeat but
+   000 only; below the red rule, green and black only, since that band is
+   SY-ONLY by position. Two facts crossed, not four unrelated pens.
+
+   Green and black already work — `penOf()` derives them from `new_colorways`.
+   **Pink and light pink are not drawn at all.** The app instead offers four
+   hand pens with no recorded meaning (magenta, purple, red, blue, two per
+   band), and the "000 only" half of the rule has nowhere to live:
+   `style_colorways.whs_channel` and `.sell_restriction` exist for it and are
+   **empty on all 3,582 rows**. Making the screen match the legend means
+   deriving the pen from the two facts and importing or capturing 000-only.
+   Only 7 hand marks exist in the whole database, so changing the palette
+   costs almost nothing.
+3. **`APP_PASSWORD` on the VM** — the team was given `admin123`. Unless the
    VM's `.env` says so, that password does not work.
-3. **No username field exists.** The login takes one shared password. Whether
+4. **No username field exists.** The login takes one shared password. Whether
    to add a real `admin` box, or go straight to company-domain sign-in, is
    undecided.
-4. **`PDM FEATURE CHECKLIST.xlsx` is still in the project root**, superseded by
+5. **`PDM FEATURE CHECKLIST.xlsx` is still in the project root**, superseded by
    the Google Sheet and kept only as a backup.
-5. **Band links on the other pages still point everywhere** — Browse,
+6. **Band links on the other pages still point everywhere** — Browse,
    Checklist, Report, Color Table and Design were not narrowed the way Matrix
    and the style editor were.
-6. **What "Done" means on the checklist** — built, or usable with real data.
+7. **What "Done" means on the checklist** — built, or usable with real data.
    Several IM Master rows are marked Done while the measurements, trims,
    photos, the eleven Matrix attribute columns and the S25–F26 season rates
    are all still empty.

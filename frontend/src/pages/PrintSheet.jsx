@@ -5,6 +5,7 @@ import { api } from '../api.js';
 // The card itself is shared with the Matrix screen, so what the team
 // arranges there is what comes out of the printer.
 import SheetCard, { qty, sum, attributesOf, numberCards } from '../sections/SheetCard.jsx';
+import { CheckBox } from '../components/ui.jsx';
 
 // What fits on one A4 sheet, landscape, and still reads across a table.
 // Adjustable from the toolbar: how much fits depends on how tall the cards
@@ -54,10 +55,15 @@ const MM_PER_PX = 25.4 / 96;
  * The blocks are the ones stacked on every card, so the figure moves when the
  * card does rather than being a number someone has to remember to update.
  */
-const cardHeightMm = (columns, oneRow, type) => {
+const cardHeightMm = (columns, oneRow, type, blocks = {}) => {
+  const { checklist = true, details = true } = blocks;
   const width = cardWidthMm(columns);
   const photo = width * (oneRow ? 3.6 / 3 : 3.4 / 3);
-  const stepRows = oneRow ? 10 : 2;      // one-row stacks the chips 1 per line
+  // Nothing at all when the block is switched off — otherwise the warning
+  // about a page holding too few rows goes on counting rows that are not
+  // being printed, and tells the operator to drop to 10 per page for a
+  // sheet that fits 20.
+  const stepRows = checklist ? (oneRow ? 10 : 2) : 0;  // one-row stacks 1 per line
   return photo
     + type.chip * MM_PER_PT * 1.2 + MM_PER_PX          // number
     + 32 * MM_PER_PX                                    // band, highlighter, circles
@@ -66,12 +72,13 @@ const cardHeightMm = (columns, oneRow, type) => {
     + type.chip * MM_PER_PT * 1.2 + 3 * MM_PER_PX       // NEW / EXACT REPEAT
     + 2 * (type.body * MM_PER_PT * 1.35 + 2 * MM_PER_PX)  // two colourways
     + stepRows * (type.chip * MM_PER_PT * 1.35 + 2 * MM_PER_PX)
-    + 10 * (type.body * MM_PER_PT * 1.35);              // the ten attributes
+    + (details ? 10 : 0) * (type.body * MM_PER_PT * 1.35);   // the attributes
 };
 
 /** How many rows of cards a page can actually hold. */
-const rowsThatFit = (columns, oneRow, type) => Math.max(
-  1, Math.floor((PAGE_HEIGHT_MM + 6) / (cardHeightMm(columns, oneRow, type) + 6)));
+const rowsThatFit = (columns, oneRow, type, blocks) => Math.max(
+  1, Math.floor(
+    (PAGE_HEIGHT_MM + 6) / (cardHeightMm(columns, oneRow, type, blocks) + 6)));
 
 const typeScale = (columns) => {
   const width = cardWidthMm(columns);
@@ -350,12 +357,26 @@ export default function PrintSheet() {
   // pagination, so both are settled before the pages are cut.
   const perPage = Number(params.get('per_page')) || PER_PAGE;
   const layout = params.get('layout') === 'row' ? 'row' : 'grid';
+  // Two blocks the sheet can go without: the checklist chips and the ten
+  // attribute rows beneath them. Both on unless the URL says otherwise, so
+  // an old link prints the sheet it always printed, and a sheet set up
+  // without them is that link — the toolbar does not survive the printer,
+  // and neither would a choice kept in React state.
+  const blocks = {
+    checklist: params.get('checklist') !== '0',
+    details: params.get('details') !== '0',
+  };
+  const showBlock = (key) => (on) => {
+    const next = new URLSearchParams(params);
+    if (on) next.delete(key); else next.set(key, '0');
+    setParams(next, { replace: true });
+  };
   const scale = typeScale(layout === 'row' ? perPage : 5);
   // In one-row layout the page is one row by definition; in the grid it is
   // five across, so asking for more than five means asking for more rows.
   const columns = layout === 'row' ? perPage : 5;
   const rowsAsked = layout === 'row' ? 1 : Math.ceil(perPage / 5);
-  const rowsFit = rowsThatFit(columns, layout === 'row', scale);
+  const rowsFit = rowsThatFit(columns, layout === 'row', scale, blocks);
   const overflows = rowsAsked > rowsFit;
   const [steps, setSteps] = useState([]);
   const [wide, setWide] = useState({});
@@ -476,7 +497,7 @@ export default function PrintSheet() {
           <span className="sheet-warn-inline"
             title="Estimated from the blocks every card carries; a style with many colourways runs taller still">
             {perPage} per page needs {rowsAsked} rows — about
-            {' '}{Math.round(cardHeightMm(columns, layout === 'row', scale))}mm each,
+            {' '}{Math.round(cardHeightMm(columns, layout === 'row', scale, blocks))}mm each,
             and the page holds {rowsFit}. Try {rowsFit * 5} per page.
           </span>
         )}
@@ -499,6 +520,19 @@ export default function PrintSheet() {
         <span className="sheet-bar-title">
           {title && <strong>{title} · </strong>}
           {rows && <>{rows.length} styles · {pages.length} page{pages.length === 1 ? '' : 's'}</>}
+        </span>
+
+        {/* What each card carries. Taking a block off makes every card
+            shorter, so the page fits more of them — which is the point of
+            the switch, and why the row estimate above is told about it. */}
+        <span className="sheet-shows">
+          <CheckBox label="Checklist" checked={blocks.checklist}
+            onChange={showBlock('checklist')}
+            title="The prepared-steps chips: IM, IM-P, Y%, P, S …" />
+          <CheckBox label="Details" checked={blocks.details}
+            onChange={showBlock('details')}
+            title={'The attribute rows at the foot of the card: weight, gauge,'
+              + ' construction, base body, sleeve, ply, yarn'} />
         </span>
         <button type="button" className="btn btn-save" onClick={() => window.print()}>
           <Printer size={16} /> Print
@@ -629,7 +663,8 @@ export default function PrintSheet() {
                 style={s}
                 index={p.numbers[s.id]}
                 view={view}
-                steps={steps}
+                steps={blocks.checklist ? steps : []}
+                details={blocks.details}
                 wide={Boolean(wide[s.id])}
                 frameMark={view === 'sales' ? syVerdict(s) : null}
                 nameMark={view === 'sales' ? whsVerdict(s) : null}

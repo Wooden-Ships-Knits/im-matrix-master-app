@@ -149,10 +149,15 @@ export function PriceInput({ value, onChange, ...rest }) {
  * Checked is still a fill against an outline, so it does not rest on telling
  * red from pink.
  */
-export function CheckBox({ label, checked, onChange, tone = null }) {
+export function CheckBox({ label, checked, onChange, tone = null,
+  disabled = false, title = undefined }) {
   return (
-    <label className={`check${tone ? ` check-${tone}` : ''}`}>
-      <input type="checkbox" checked={!!checked} onChange={(e) => onChange(e.target.checked)} />
+    <label
+      className={`check${tone ? ` check-${tone}` : ''}${disabled ? ' is-off' : ''}`}
+      title={title}
+    >
+      <input type="checkbox" checked={!!checked} disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)} />
       <span className="box">{!tone && <Check size={17} strokeWidth={3.2} />}</span>
       {label}
     </label>

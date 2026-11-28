@@ -827,6 +827,14 @@ select.input {
   box-shadow: 0 2px 10px rgba(35, 33, 28, 0.04);
 }
 .sheet-bar-title { font-weight: 700; margin-right: auto; }
+
+/* Which blocks each card carries. Smaller than a form checkbox — these sit
+   in a toolbar beside the pickers, not in a dialog. */
+.sheet-shows { display: inline-flex; align-items: center; gap: 16px; }
+.sheet-shows .check { font-size: 0.86rem; gap: 7px; }
+.sheet-shows .check .box { width: 18px; height: 18px; border-radius: 5px; }
+.sheet-shows .check .box svg { width: 13px; height: 13px; }
+
 .sheet-empty { padding: 24px; }
 
 .sheet {
@@ -918,11 +926,19 @@ select.input {
    line to the bottom. Cards in a grid row are already the same height, so
    bottom-aligning them is what makes the blocks line up across a page —
    colourway counts run from one to a dozen, and anything that simply follows
-   the list starts at a different height on every card. */
+   the list starts at a different height on every card.
+
+   The slack belongs to ONE band. This was a single <ul> when the rule was
+   written; it is three now, and three growing flex children SHARE the free
+   space — which opened a gap under the sample colour and another under the
+   band between the rules, both of them in the middle of the list where they
+   read as a mistake. Only the last band grows, so the bands sit snug and
+   the space falls under all of them, where there is nothing to look at. */
 .sheet-colours {
   list-style: none; margin: 2px 0 0; padding: 0;
-  flex-grow: 1;
+  flex-grow: 0;
 }
+.sheet-colours:last-of-type { flex-grow: 1; }
 .sheet-colours li {
   font-size: 7pt; line-height: 1.35;
   /* Backstop for a single long word with no separator to break at: better a
@@ -1945,6 +1961,31 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 /* The circles sit above the row's own target, so each keeps its own click. */
 .sheet-next-dot { position: relative; z-index: 1; }
 
+/* ---- The X inside a filled dot ----
+   The mark the Matrix Master workbook puts there, so a printed sheet and
+   the spreadsheet it replaces read the same.
+
+   Only on a FILLED circle. An empty one means the garment did not sell on
+   that channel, and there is nothing to mark.
+
+   Two bars rather than a glyph, sized in percentages, so the X scales with
+   the dot on its own: 9px on the printed sheet, 12px on the Matrix screen,
+   7px in a one-row block. A character would need a font-size for each.
+
+   Safe as a pseudo-element because the dot is already positioned — it sits
+   above the row's NEED NEW PHOTO target by design, and this changes
+   nothing about what a click does. */
+.sheet-next-dot.on::before,
+.sheet-next-dot.on::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 66%; height: 14%;
+  background: #1b1b1b;
+}
+.sheet-next-dot.on::before { transform: translate(-50%, -50%) rotate(45deg); }
+.sheet-next-dot.on::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+
 .sheet-next.needs-photo {
   background: var(--chan-sy);
   border-radius: 2px;
@@ -2356,14 +2397,22 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 @media (max-width: 900px) {
   .float-stack { top: auto; bottom: 14px; right: 14px; }
   .tbd-tray { width: 200px; }
-  .legend-key { width: 200px; }
+  /* The legend keeps its width here: it is text, and narrowing it is what
+     made it hard to read in the first place. min() above keeps it on
+     screen. */
 }
 
 /* ---- The Legend ----
    Says what the colours and marks on a card mean. Same shape as the tray
    above it, deliberately: they are the same kind of thing. */
 .legend-key {
-  width: 236px;
+  /* Much wider than the tray above it, and deliberately so. The tray holds
+     style names, which are short; the legend holds a sentence per key, and
+     at the tray's 236px nearly every one wrapped onto two or three lines.
+     At this width they sit on one line AND the keys fall into two columns
+     (below), which is what stops a thirty-row legend being a scroll.
+     min() so it still fits a phone, where the stack is bottom-anchored. */
+  width: min(520px, calc(100vw - 28px));
   background: #fff;
   border: 1.5px solid var(--border);
   border-radius: 12px;
@@ -2383,11 +2432,13 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .legend-head:hover { background: rgba(63, 67, 69, 0.1); }
 .legend-title { flex: 1; letter-spacing: 0.04em; }
 
-/* Capped and scrolled: a long key must not push itself off the screen,
-   and the stack above it cannot scroll for it. */
+/* Capped and scrolled: a long key must not push itself off the screen, and
+   the stack above it cannot scroll for it. The floor matters as much as the
+   cap — on a laptop in a meeting room 52vh is about seven keys, and a panel
+   that shows two is worse than one that scrolls. */
 .legend-body {
   padding: 10px 11px 12px;
-  max-height: 46vh;
+  max-height: max(260px, 52vh);
   overflow-y: auto;
 }
 .legend-empty { margin: 0; font-size: 0.74rem; color: var(--muted); line-height: 1.45; }
@@ -2398,6 +2449,26 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   margin-bottom: 7px;
 }
 .legend-list li:last-child { margin-bottom: 0; }
+
+/* Two columns once there is room for them. A grid rather than CSS columns,
+   because a heading has to run the full width and start a fresh row —
+   column-span is what CSS multi-column does worst, and a heading stranded
+   at the foot of the left column would label the wrong keys.
+
+   The keys read left to right, then down. Reading order and visual order
+   are the same, so a screen reader walks the list in the order it looks. */
+@media (min-width: 720px) {
+  .legend-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 16px;
+    align-items: start;
+  }
+  .legend-list li.legend-group { grid-column: 1 / -1; }
+  /* A key must not be the last thing in its row AND carry the bottom
+     margin that separates rows, or the two columns drift out of step. */
+  .legend-list li:last-child { margin-bottom: 7px; }
+}
 
 /* The chip is a fixed size whether it holds a colour or a letter, so the
    labels line up down the left edge. */
@@ -2418,14 +2489,48 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
    sheet. */
 .legend-swatch.round { border-radius: 50%; }
 
+/* The same X the card draws, at the same proportions, so the key and the
+   thing it describes are the same picture. */
+.legend-swatch.crossed { position: relative; }
+.legend-swatch.crossed::before,
+.legend-swatch.crossed::after {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 66%; height: 14%;
+  background: #1b1b1b;
+}
+.legend-swatch.crossed::before { transform: translate(-50%, -50%) rotate(45deg); }
+.legend-swatch.crossed::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+/* A ring is drawn outside the chip as a box-shadow, set inline per row. It
+   needs room, or the chip beside it sits on top of the ring: the shadow
+   takes no space of its own in the layout. */
+.legend-list li { padding-left: 2px; }
+
 /* A divider, not a row: it has no chip, so it does not line up with the
-   keys under it and should not pretend to. */
+   keys under it and should not pretend to.
+
+   A heading is a SECTION by default — dark, ruled off — because that is
+   what nearly all of them are, and a new one added later should look like
+   its neighbours without anyone remembering a flag. Only the three bands
+   under "Colourway font colour" are subordinate, and they say so with
+   `.sub` below. */
 .legend-group {
   display: block;
-  margin: 11px 0 5px;
+  margin: 13px 0 6px;
   font-size: 0.66rem; font-weight: 700;
   letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text);
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+/* Under a section, not beside it: lighter, and no rule of its own, or the
+   three bands would each look like the start of a new section. */
+.legend-group.sub {
   color: var(--muted);
+  padding-bottom: 0;
+  border-bottom: 0;
+  margin: 10px 0 5px;
 }
 .legend-list li.legend-group:first-child { margin-top: 0; }
 
@@ -2587,11 +2692,12 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
   pointer-events: none;
 }
 
-/* ---- A colourway in the wrong band for its channel ----
-   Between the rules is WHS 000, below the red rule is SY. A style that sells
-   through one channel only cannot take a colour in the other band — but one
-   may already be there, from before the channel was set or from the workbook.
-   Faded, not hidden: it is really there, and someone has to see it to move it. */
+/* ---- A colourway in a band its style does not sell through ----
+   This used to be the normal sight on a one-channel card: the band was drawn
+   and its colours struck out. It is not any more — a hidden band hands its
+   colours to the one standing in its place (byZone), so nothing is drawn in
+   a band the style cannot sell through. Kept as the backstop for a card that
+   somehow draws one anyway: faded and struck, never silently ordinary. */
 .sheet-colours li.off-channel { opacity: 0.38; }
 .sheet-colours li.off-channel .sheet-colour-name { text-decoration: line-through; }
 
@@ -3447,3 +3553,49 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
 .check.check-whs input:checked + .box {
   background: var(--chan-000); border-color: #a63cb0;
 }
+
+/* A band heading carries two things — which band it is, and what that band
+   holds. Uppercasing both would make the second unreadable at this size, so
+   the sub-line is set plainly underneath. */
+.legend-group-note {
+  display: block; margin-top: 2px;
+  font-size: 0.7rem; font-weight: 400;
+  letter-spacing: 0; text-transform: none;
+  color: var(--muted); line-height: 1.4;
+}
+
+/* A section followed straight by its first sub-heading needs less air
+   between them than between a section and the one before it. */
+.legend-group + .legend-group.sub { margin-top: 7px; }
+
+/* Two band names sharing one set of keys. The "&" sits on its own line
+   between them so the pair reads as one heading rather than as a heading
+   with a stray character in it. Not --border: at #E6E2DA on a white panel
+   it reads as a smudge rather than a word. */
+.legend-group-amp {
+  display: block;
+  margin: 1px 0;
+  font-weight: 400; letter-spacing: 0;
+  color: var(--muted);
+}
+
+/* ---- A colourway's own channel ----
+   Beside Remove on the colourway head. Smaller than the style-level Sold
+   through boxes on purpose: this is the exception to what the style says,
+   not a second place to say the same thing. */
+.cw-chan { display: flex; align-items: center; gap: 12px; margin-left: 6px; }
+.cw-chan-label {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--muted);
+}
+.cw-chan .check { font-size: 0.86rem; gap: 7px; }
+.cw-chan .check .box { width: 19px; height: 19px; }
+
+/* Shut, not merely dimmed: a colour cannot sell somewhere the garment does
+   not, so the box refuses the click as well as looking like it would. The
+   tick it already holds still shows — a style narrowed to one channel after
+   its colours were set should read as the contradiction it is, not quietly
+   lose what it said. */
+.check.is-off { cursor: default; opacity: 0.4; }
+.check.is-off .box { border-color: #CCC7BE; }
+.check.is-off:hover .box { border-color: #CCC7BE; }

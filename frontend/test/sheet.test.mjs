@@ -12,6 +12,7 @@ import fs from 'fs';
 
 const src = fs.readFileSync('frontend/src/pages/PrintSheet.jsx', 'utf8');
 const card = fs.readFileSync('frontend/src/sections/SheetCard.jsx', 'utf8');
+const sheetSrc = fs.readFileSync('frontend/src/pages/PrintSheet.jsx', 'utf8');
 
 const cut = (text, from, to) => {
   const a = text.indexOf(from);
@@ -31,7 +32,9 @@ const { verdict, byManualOrder, cutPages, breakable, numberCards,
         nextHighlight, HIGHLIGHTS,
         nextColorwayMark, COLORWAY_MARKS,
         RING_MARKS,
-        nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf } = await import(
+        nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf,
+        COLORWAY_ZONES, allowsZone, showsZone, standsInFor, mainRowCount,
+        byZone } = await import(
   'data:text/javascript,' + encodeURIComponent(
     slice('const verdict =', 'const legendFor')
     + slice('const byManualOrder =', 'const cutPages')
@@ -50,7 +53,9 @@ const { verdict, byManualOrder, cutPages, breakable, numberCards,
     + '          nextHighlight, HIGHLIGHTS,'
     + '          nextColorwayMark, COLORWAY_MARKS,'
     + '          RING_MARKS,'
-    + '          nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf };'));
+    + '          nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf,'
+    + '          COLORWAY_ZONES, allowsZone, showsZone, standsInFor,'
+    + '          mainRowCount, byZone };'));
 
 let fails = 0;
 const is = (got, want, what) => {
@@ -1507,6 +1512,47 @@ const rebuilt = [...pyFiles('backend/app'), ...pyFiles('backend/scripts')]
   .filter((f) => /concat_ws\([^)]*prefix|yarn_label\s*\(/.test(fs.readFileSync(f, 'utf8')));
 is(rebuilt, [], 'no query anywhere assembles a yarn label out of prefix and code');
 
+console.log('\n-- a colourway has a channel of its own --');
+const chanSrc = fs.readFileSync('frontend/src/channel.js', 'utf8');
+const { channelOf, channelParts, styleAllows } = await import(
+  'data:text/javascript,' + encodeURIComponent(chanSrc));
+
+// The vocabulary is written out in three places — channel.js makes the
+// strings, SheetCard.jsx clicks through them, repo.py refuses anything
+// else. A word added to one and not the others is a save the server
+// rejects, so the three lists are compared rather than trusted.
+// cut() looks for the end marker from the start of the file, so it has
+// to be a string that appears nowhere earlier — ';' would match line one.
+const cardChannels = cut(card, 'export const WHS_CHANNELS', 'export const nextChannel');
+const pyChannels = fs.readFileSync('backend/app/repo.py', 'utf8')
+  .match(/^WHS_CHANNELS = \[(.*)\]$/m)[1];
+const madeHere = [[1, 1], [1, 0], [0, 1]].map(([a, b]) => channelOf(a, b));
+is(madeHere, ['BOTH', 'SY ONLY', '000 ONLY'], 'channel.js writes the three words');
+is(madeHere.every((w) => cardChannels.includes(`'${w}'`)), true,
+   'and the card knows all three');
+is(madeHere.every((w) => pyChannels.includes(`"${w}"`)), true,
+   'and the server accepts all three');
+
+// Empty is not BOTH. Most imported rows are empty, and reading that as
+// "sells everywhere" would invent an answer nobody gave.
+is(channelOf(0, 0), '', 'nothing ticked is no answer, not BOTH');
+is(channelParts(''), { sy: false, whs: false }, 'and reads back as neither');
+
+// channelParts is the inverse of channelOf, or a saved colourway would
+// come back with different boxes ticked than were clicked.
+for (const [sy, whs] of [[1, 1], [1, 0], [0, 1], [0, 0]]) {
+  const back = channelParts(channelOf(sy, whs));
+  is([back.sy, back.whs], [!!sy, !!whs], `${sy}/${whs} survives the round trip`);
+}
+
+// A colour cannot sell where the garment does not.
+is(styleAllows('whs', true, false), false, 'an SY-only style shuts the 000 box');
+is(styleAllows('sy', false, true), false, 'a 000-only style shuts the SY box');
+is([styleAllows('sy', true, true), styleAllows('whs', true, true)], [true, true],
+   'a style on both channels shuts neither');
+is([styleAllows('sy', false, false), styleAllows('whs', false, false)], [true, true],
+   'a style with no channel recorded bars nothing — most rows are in that state');
+
 console.log('\n-- the Attributes grid sorts the way a spreadsheet does --');
 const mx = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
 const { compare, cellText } = await import(
@@ -1562,6 +1608,186 @@ is(/sessionStorage\.removeItem\(RELOADED\)/.test(auApp)
 is(/class ChunkBoundary extends Component/.test(auApp)
    && (auApp.match(/<ChunkBoundary>/g) || []).length === 2, true,
    'and a chunk that still fails lands on words and a button, not a white page');
+
+console.log('\n-- an SY-only card has no 000 half --');
+// allowsZone says where a colour MAY go; showsZone says what is DRAWN. The
+// two part company on an SY-only style: its sample band is allowed (the
+// sample band is not a channel) but it is not drawn, because it sits above
+// the black rule with the 000 list, and that whole half of the card goes.
+is(COLORWAY_ZONES.map((z) => allowsZone({ whs_channel: 'SY ONLY' }, z)),
+   [true, false, true], 'SY ONLY bars only the 000 list from taking a colour');
+is(COLORWAY_ZONES.map((z) => showsZone({ whs_channel: 'SY ONLY' }, z)),
+   [false, false, true], 'but draws neither band above the red rule');
+// The other way round is narrower: a 000-only card keeps its sample colour.
+is(COLORWAY_ZONES.map((z) => showsZone({ whs_channel: '000 ONLY' }, z)),
+   [true, true, false], '000 ONLY loses the SY-ONLY band and nothing else');
+is(COLORWAY_ZONES.map((z) => showsZone({ whs_channel: 'BOTH' }, z)),
+   [true, true, true], 'BOTH draws all three');
+is(COLORWAY_ZONES.map((z) => showsZone({}, z)),
+   [true, true, true], 'and so does a style with no channel recorded');
+
+// Hidden is not dropped, and this is the whole reason the fold exists: of
+// the 301 styles marked SY ONLY in the database, not one has a colour below
+// the red rule. Hiding the bands without folding would empty 301 cards.
+const syCard = {
+  whs_channel: 'SY ONLY',
+  colorways: ['RED PAPRIKA', 'ALASKA NIGHT', 'PURE SAND'],
+  colorway_zones: { 'ALASKA NIGHT': 'main', 'RED PAPRIKA': 'main',
+                    'PURE SAND': 'sample' },
+};
+is(standsInFor(syCard), 'extra', 'the SY-ONLY list is what is left standing');
+is(byZone(syCard),
+   { sample: [], main: [], extra: ['ALASKA NIGHT', 'PURE SAND', 'RED PAPRIKA'] },
+   'so all three colours read under the red rule, in alphabetical order');
+// The stored record is untouched — the fold is a reading, not a migration.
+is(syCard.colorway_zones,
+   { 'ALASKA NIGHT': 'main', 'RED PAPRIKA': 'main', 'PURE SAND': 'sample' },
+   'and nothing was rewritten to get there');
+// Change the channel and the card reads the stored bands again.
+is(byZone({ ...syCard, whs_channel: 'BOTH' }),
+   { sample: ['PURE SAND'], main: ['ALASKA NIGHT', 'RED PAPRIKA'], extra: [] },
+   'the same style sold both ways is back to three bands');
+// The mirror is narrower: 000 ONLY folds the SY-ONLY band into the 000 list
+// and leaves the sample colour where it is.
+const whsCard = {
+  whs_channel: '000 ONLY',
+  colorways: ['PURE SAND', 'RED PAPRIKA'],
+  colorway_zones: { 'PURE SAND': 'sample', 'RED PAPRIKA': 'extra' },
+};
+is(standsInFor(whsCard), 'main', 'the 000 list is what is left standing');
+is(byZone(whsCard),
+   { sample: ['PURE SAND'], main: ['RED PAPRIKA'], extra: [] },
+   'and the sample colour above the black rule stays put');
+
+// The red rule lines up across a block by padding the tallest main band. An
+// SY-only card has no main band to pad, and must not make every other card
+// in its block leave blank rows for one it does not draw.
+is(mainRowCount(syCard), 0, 'a folded-away main band asks for no blank rows');
+is(mainRowCount({ ...syCard, whs_channel: 'BOTH' }), 2,
+   'the same style on both channels asks for its two');
+
+// And the card skips the band rather than fading it.
+is(/if \(!showsZone\(s, zone\) && !showOff\) return null;/.test(card), false,
+   'no half-way reveal state is left behind');
+is(/if \(!showsZone\(s, zone\)\) return null;/.test(card), true,
+   'the band is not rendered at all when the style does not sell through it');
+
+console.log('\n-- the legend says what the hand pens mean --');
+// Nothing derives the hand pens — someone picks them by clicking a name —
+// so the legend is the only place their meaning is written down, and it
+// writes the colours out as hex rather than reading them from the
+// stylesheet. A pen recoloured in styles.css and not here would leave the
+// key quietly describing a colour the card no longer draws.
+const legendSrc = fs.readFileSync(
+  'frontend/src/sections/LegendKey.jsx', 'utf8');
+const { LEGEND } = await import(
+  'data:text/javascript,' + encodeURIComponent(
+    cut(legendSrc, 'const C_000', 'export default function LegendKey')
+      .replace('export const LEGEND', 'const LEGEND')
+    + 'export { LEGEND };'));
+
+// Everything from the Misc sub-heading to the end of the font-colour
+// section, which is the next heading or the end of the list.
+const miscAt = LEGEND.findIndex((r) => r.heading === 'Misc');
+const after = LEGEND.slice(miscAt + 1);
+const stop = after.findIndex((r) => r.heading);
+const misc = stop < 0 ? after : after.slice(0, stop);
+is(misc.map((r) => r.label),
+   ['Discontinued colour for SY', 'Year round colour', 'Hold colour for SY'],
+   'Misc carries the three pens that are not part of the band grid');
+
+// The hexes, against --pen-* in styles.css.
+const pen = (name) => (
+  css.match(new RegExp(`--pen-${name}:\\s*(#[0-9A-Fa-f]{3,8});`)) || [])[1];
+is(misc.map((r) => r.swatch.toUpperCase()),
+   [pen('blue'), pen('purple'), pen('red')].map((h) => String(h).toUpperCase()),
+   'and draws each in the colour the card writes that name in');
+// Bands 1 and 2 take the same four pens, so they share one heading. Two
+// headings with an identical list under each invite the reader to hunt for
+// a difference, and leave two lists to keep in step when a pen changes.
+const headings = LEGEND.filter((r) => r.heading).map((r) => r.heading);
+is(headings.filter((h) => /^[12] · /.test(h)).length, 1,
+   'bands 1 and 2 are one heading, not two');
+is(LEGEND.find((r) => r.also)?.also, '2 · Between the two rules',
+   'and the second band is named on it rather than dropped');
+is(LEGEND.filter((r) => r.label === 'New colour — 000 + SY').length, 1,
+   'so the four pens are written once, not twice');
+
+// Magenta stays in the band grid: it answers the same two questions as the
+// green/black base rather than saying something extra.
+is(LEGEND.some((r) => r.label === 'New colour, 000 only'
+                && r.swatch.toUpperCase() === String(pen('magenta')).toUpperCase()),
+   true, 'magenta is the 000-only pink in the grid, not a Misc row');
+// SheetCard is where the pens are applied, so it has to carry the same
+// four words — the legend is a key to them, not a separate list.
+is(/hold colour for SY/.test(card) && /year-round colour/.test(card)
+   && /discontinued colour for SY/.test(card), true,
+   'and the file that applies them records the same meanings');
+
+console.log('\n-- only one colourway band takes the slack --');
+// The card is a flex column and the colour list absorbs its free space, so
+// the steps and the attributes sit at the bottom and line up across the
+// row. The list is three <ul>s now, and three growing flex children SHARE
+// that space: the gap turned up under the sample colour and under the band
+// between the rules instead of below the lot.
+const bandCss = cut(css, '.sheet-colours {', '.sheet-colours li {');
+is(/flex-grow: 0;/.test(bandCss), true,
+   'a band does not grow on its own account');
+is(/\.sheet-colours:last-of-type \{ flex-grow: 1; \}/.test(css), true,
+   'the last band drawn takes the slack, so it falls under the whole list');
+// The <ul>s have to be the only ones in the card for :last-of-type to mean
+// the last band — a second kind of list would quietly steal it.
+is((card.match(/^\s*<ul\b/gm) || []).length, 1,
+   'and the colourway band is the only list on the card');
+
+console.log('\n-- the sheet can leave blocks off the card --');
+// The page geometry, read straight out of PrintSheet.jsx. cardHeightMm is
+// what decides whether the "needs more rows than fit" warning appears, so a
+// block switched off has to shrink it — otherwise the toolbar goes on
+// budgeting for ten attribute rows it is not printing and tells the operator
+// to halve a page that would have fitted.
+const { cardHeightMm, rowsThatFit, typeScale } = await import(
+  'data:text/javascript,' + encodeURIComponent(
+    cut(sheetSrc, 'const PAGE_WIDTH_MM', 'const WIDE_RATIO')
+    + 'export { cardHeightMm, rowsThatFit, typeScale };'));
+
+const t12 = typeScale(12);
+const whole = cardHeightMm(12, true, t12);
+is(cardHeightMm(12, true, t12, { checklist: true, details: true }) === whole,
+   true, 'both blocks on is the height the sheet has always worked out');
+is(cardHeightMm(12, true, t12, { checklist: false }) < whole, true,
+   'dropping the checklist makes the card shorter');
+is(cardHeightMm(12, true, t12, { details: false }) < whole, true,
+   'and so does dropping the attribute rows');
+is(rowsThatFit(5, false, typeScale(5),
+               { checklist: false, details: false })
+   >= rowsThatFit(5, false, typeScale(5)), true,
+   'a shorter card never fits fewer rows on the page');
+
+// The toolbar. Two boxes, both on unless the URL says otherwise — an old
+// link has to print the sheet it always printed.
+is(/label="Checklist"/.test(sheetSrc) && /label="Details"/.test(sheetSrc), true,
+   'the toolbar offers Checklist and Details');
+is(/checklist: params\.get\('checklist'\) !== '0'/.test(sheetSrc)
+   && /details: params\.get\('details'\) !== '0'/.test(sheetSrc), true,
+   'both default to on, and off is carried in the URL');
+// The toolbar is display:none when printing, so a choice held in React
+// state would be unreachable from the printed sheet AND from a shared link.
+is(/next\.set\(key, '0'\)/.test(sheetSrc), true,
+   'turning one off writes the URL rather than component state');
+
+// And the card obeys. The checklist goes by being handed no steps; the
+// attribute rows have a prop of their own.
+is(/steps=\{blocks\.checklist \? steps : \[\]\}/.test(sheetSrc), true,
+   'an unticked Checklist hands the card an empty step list');
+is(/details=\{blocks\.details\}/.test(sheetSrc), true,
+   'and Details is passed straight through');
+is(/\{steps\.length > 0 && \(/.test(card), true,
+   'the card draws no checklist block at all for an empty list');
+is(/\{details && \(\n\s*<dl className="sheet-attrs">/.test(card), true,
+   'and the attribute rows are gated on the prop');
+is(/^\s*details = true,$/m.test(card), true,
+   'which defaults to on, so the Matrix screen is untouched');
 
 console.log(fails ? `\n${fails} FAILED` : '\nall passed');
 process.exit(fails ? 1 : 0);

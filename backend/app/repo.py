@@ -236,6 +236,10 @@ def load_style(style_id: int) -> dict | None:
             cur.execute(
                 """
                 SELECT cw.id, cw.ws_tag_color AS name, cw.subbed_on, cw.sub_reason,
+                       -- This colour's own channel, which need not be the
+                       -- style's: a garment sold on both can still have one
+                       -- colour that only goes to wholesale.
+                       cw.whs_channel,
                        t.ws_tag_color AS sub_to
                 FROM style_colorways cw
                 LEFT JOIN style_colorways t ON t.id = cw.subbed_to_colorway_id
@@ -1018,6 +1022,19 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                 cw_id = cur.fetchone()["id"]
                 # Put back what the editor never had.
                 prior = kept.get(name)
+                # The channel IS the editor's now, but only when it sent one.
+                # A client that does not know the field must not blank it,
+                # so the key being absent means "leave it alone" while an
+                # empty string means "nobody has said", which is a real
+                # answer and different from BOTH.
+                if "whs_channel" in cw:
+                    channel = _clean(cw.get("whs_channel")) or None
+                    if channel and channel not in WHS_CHANNELS:
+                        raise ValueError(
+                            f"{channel!r} is not a sales channel"
+                            f" — expected one of {', '.join(WHS_CHANNELS)}")
+                else:
+                    channel = prior["whs_channel"] if prior else None
                 if prior:
                     cur.execute("""
                         UPDATE style_colorways
@@ -1027,9 +1044,16 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                                subbed_on = %s, sub_reason = %s
                          WHERE id = %s
                     """, (prior["mark"], prior["product_colorway_id"],
-                          prior["whs_channel"], prior["reps_color"],
+                          channel, prior["reps_color"],
                           prior["color_sequence"], prior["sell_restriction"],
                           prior["subbed_on"], prior["sub_reason"], cw_id))
+                elif channel:
+                    # A colour added in this same save has no prior row to
+                    # carry anything over from, and would otherwise lose the
+                    # channel it was given on the way in.
+                    cur.execute(
+                        "UPDATE style_colorways SET whs_channel = %s WHERE id = %s",
+                        (channel, cw_id))
                 for slot, line in enumerate(cw.get("bom") or [], start=1):
                     yarn = _clean(line.get("yarn"))
                     if not yarn:

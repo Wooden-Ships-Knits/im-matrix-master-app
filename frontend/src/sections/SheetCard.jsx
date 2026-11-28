@@ -153,6 +153,41 @@ export const allowsZone = (style, zone) => {
   return true;                       // the sample band is not a channel
 };
 
+/**
+ * Whether a band is DRAWN on the card at all.
+ *
+ * allowsZone says whether a colour may live in a band; this says whether the
+ * band is there to see. The difference is a style that sells through SY only:
+ * the whole 000 half of the card — the sample colour above the black rule and
+ * the list between the rules — is not a faded half, it is absent. What is
+ * left is the SY-ONLY band under the red rule, which is the whole card.
+ *
+ * The other way round is narrower. A 000-only style loses the band below the
+ * red rule and keeps the rest, because the sample colour and the list between
+ * the rules are the 000 half, not a third thing.
+ *
+ * Hiding a band does not delete what is in it — `byZone` folds its colours
+ * into the band that stands in its place. See `standsInFor`.
+ */
+export const showsZone = (style, zone) => (
+  style?.whs_channel === 'SY ONLY' ? zone === 'extra' : allowsZone(style, zone));
+
+/**
+ * The band a hidden one hands its colours to.
+ *
+ * A band is only ever hidden because the style sells through one channel,
+ * and that leaves exactly one band standing: the SY-ONLY list under the red
+ * rule, or the 000 list between them. Colours filed in a band the card no
+ * longer draws are shown there instead of vanishing — 301 styles are marked
+ * SY ONLY and not one of them has a colour under the red rule, because the
+ * bands were filled in before the channel was.
+ *
+ * Nothing is written. This is how the card READS the data; the stored band
+ * is left alone, for the day the style sells both ways again.
+ */
+export const standsInFor = (style) => (
+  style?.whs_channel === 'SY ONLY' ? 'extra' : 'main');
+
 // The sample band holds one colour: the one the garment is shown in. A
 // second would not be a sample of anything.
 export const ZONE_LIMIT = { sample: 1 };
@@ -185,14 +220,42 @@ const alphabetical = (a, b) => String(a).localeCompare(String(b));
  *
  * Anything with no band recorded falls into 'main', so a row the server has
  * not told us about appears somewhere rather than vanishing between the rules.
+ *
+ * These are the bands AS THE CARD DRAWS THEM, not as they are stored: a band
+ * the style's channel hides passes its colours to the one standing in its
+ * place — see standsInFor. So this is what to ask for the card, and
+ * `style.colorway_zones` is what to ask for the record.
  */
 export const byZone = (style) => {
   const out = { sample: [], main: [], extra: [] };
   for (const c of style?.colorways || []) out[zoneOf(style, c)].push(c);
+  const kept = standsInFor(style);
+  for (const z of COLORWAY_ZONES) {
+    if (z === kept || showsZone(style, z) || out[z].length === 0) continue;
+    out[kept] = out[kept].concat(out[z]);
+    out[z] = [];
+  }
   for (const z of SORTED_ZONES) out[z].sort(alphabetical);
   return out;
 };
 
+/**
+ * The pens applied by hand, and what each one means.
+ *
+ *   red      hold colour for SY
+ *   purple   year-round colour
+ *   magenta  new colour, 000 only
+ *   blue     discontinued colour for SY
+ *
+ * Nothing derives these — someone picks them by clicking a name — so this
+ * comment and the Misc rows in LegendKey.jsx are the only places the
+ * meanings are written down. Keep the two in step.
+ *
+ * Magenta is the odd one out: it answers the same two questions as the
+ * green/black base (new or repeat, both channels or 000 only) rather than
+ * saying something extra, which is why the legend lists it in the band grid
+ * and the other three under Misc.
+ */
 export const COLORWAY_MARKS = ['red', 'purple', 'magenta', 'blue'];
 
 /**
@@ -332,6 +395,11 @@ function SheetCard({
   style: s,
   view = 'matrix',
   steps = [],
+  // The ten attribute rows at the foot of the card. The printed sheet can
+  // go without them — a sheet read for what is prepared does not need the
+  // gauge and the ply — so the print toolbar turns them off. The checklist
+  // above them switches off by being handed an empty `steps`.
+  details = true,
   wide = false,
   // { yarn_codes: [...] } — suggestions for the fields that have a known
   // vocabulary. Offered, never enforced: a new yarn is used before its
@@ -426,6 +494,8 @@ function SheetCard({
   const [dragColour, setDragColour] = useState(null);
   const [dropZone, setDropZone] = useState(null);
 
+  // Bands as the card draws them: on a one-channel style the hidden band's
+  // colours are already folded into the one that is left.
   const bands = byZone(s);
 
   /**
@@ -887,7 +957,13 @@ function SheetCard({
             Each band is its own <ul> so an EMPTY one can still be dropped
             into — a single list would have no target to aim at once the last
             colour had been dragged out of a band. */}
+        {/* A band this style does not sell through is not drawn, and nor is
+            the rule above it — the rule belongs to the band beneath it. An
+            SY-only card therefore opens straight onto the red rule with the
+            SY-ONLY list under it and no 000 half above, struck out or
+            otherwise. Its colours are in that list: byZone folded them in. */}
         {COLORWAY_ZONES.map((zone, zi) => {
+          if (!showsZone(s, zone)) return null;
           const colours = bands[zone];
           // The rule above this band. The first band has nothing above it.
           const rule = zi === 0 ? null : (zi === 1 ? 'black' : 'red');
@@ -935,8 +1011,10 @@ function SheetCard({
                   const pen = penOf(s, c, zone);
                   const className = [pen && `pen-${pen}`, `lit-${lit}`,
                     dragColour === c && 'dragging',
-                    // Faded rather than removed: the colour is really there,
-                    // and someone has to be able to drag it where it belongs.
+                    // A backstop. A band the style cannot sell through is
+                    // not drawn at all, so this should never fire — if it
+                    // does, the colour is marked rather than passed off as
+                    // belonging where it sits.
                     !allowsZone(s, zone) && 'off-channel']
                     .filter(Boolean).join(' ');
                   return (
@@ -1123,6 +1201,7 @@ function SheetCard({
           </div>
         )}
 
+        {details && (
         <dl className="sheet-attrs">
           {attributesOf(s).map((a) => {
             if (!onEdit || !a.field) {
@@ -1193,6 +1272,7 @@ function SheetCard({
             );
           })}
         </dl>
+        )}
       </>)}
 
       {/* The datalists these inputs name live once at page level

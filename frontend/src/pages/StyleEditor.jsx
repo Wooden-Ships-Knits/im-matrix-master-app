@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer, ClipboardList, ListChecks, LayoutGrid, Palette, SwatchBook } from 'lucide-react';
 import { api } from '../api.js';
+import { channelOf } from '../channel.js';
 import { roundFixed } from '../format.js';
 import {
   Field, TextInput, PriceInput, CheckBox, Combo, ConfirmDialog, useToast,
@@ -107,6 +108,10 @@ function toForm(s) {
   }));
   f.colorways = (s.colorways || []).map((cw) => ({
     name: cw.name,
+    // Kept as the stored string rather than two booleans: one field cannot
+    // fall out of step with itself, and the two tick boxes are read off it
+    // with channelParts() wherever they are drawn.
+    whs_channel: cw.whs_channel ?? '',
     sub_to: cw.sub_to ?? '',
     sub_reason: cw.sub_reason ?? '',
     subbed_on: cw.subbed_on ?? '',
@@ -326,9 +331,6 @@ export default function StyleEditor() {
   // both. Otherwise a style could claim SY ONLY with 000 ticked.
   // What the IM calls a pair of tick boxes. The boxes are the fact; this is
   // how it gets written down.
-  const channelOf = (sy, thousand) => (
-    sy && thousand ? 'BOTH' : sy ? 'SY ONLY' : thousand ? '000 ONLY' : '');
-
   const setChannel = (sy, thousand) =>
     update({ sell_sy: sy, sell_000: thousand, whs_channel: channelOf(sy, thousand) });
 
@@ -585,13 +587,13 @@ export default function StyleEditor() {
 
                           Derived at render rather than read from the stored
                           column, so it always matches the boxes on screen. */}
-                      <Field label="Channel" hint="From Sold through, above">
+                      <Field label="Channel">
                         <output className="chan-readout"
                           aria-live="polite">
                           {channelOf(form.sell_sy, form.sell_000) || 'Not set'}
                         </output>
                       </Field>
-                      <Field label="Finishing" hint="At factory or taken home">
+                      <Field label="Finishing">
                         <select className="input" value={form.finishing_location || ''}
                           onChange={(e) => update({ finishing_location: e.target.value })}>
                           <option value="">Not set</option>

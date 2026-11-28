@@ -1,10 +1,16 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { Field, NumberInput, Combo } from '../components/ui.jsx';
+import { Field, NumberInput, Combo, CheckBox } from '../components/ui.jsx';
+import { channelOf, channelParts, styleAllows } from '../channel.js';
 import Blueprint, { PARTS, PART_LABEL } from './Blueprint.jsx';
 
 const emptyLine = () => ({ yarn: '', percent: '', ends: '', note: '' });
-const emptyColorway = () => ({ name: '', sub_to: '', sub_reason: '', bom: [emptyLine()] });
+// A new colour starts with no channel recorded rather than with both
+// ticked: "nobody has said" is the truth about a colour just typed in,
+// and BOTH is an answer that nobody gave.
+const emptyColorway = () => ({
+  name: '', sub_to: '', sub_reason: '', whs_channel: '', bom: [emptyLine()],
+});
 
 /**
  * Colorways and their yarn lines. The BOM is the same for every size,
@@ -176,7 +182,9 @@ export default function BomSection({ form, update, meta }) {
         </p>
       )}
 
-      {colorways.map((cw, i) => (
+      {colorways.map((cw, i) => {
+        const sell = channelParts(cw.whs_channel);
+        return (
         <div key={i} className="cw-block">
           <div className="cw-head">
             <Field label={i === 0 ? 'Colorways' : `Colorway ${i + 1}`}>
@@ -188,6 +196,39 @@ export default function BomSection({ form, update, meta }) {
               onClick={() => removeColorway(i)}>
               Remove
             </button>
+
+            {/* This colour's own channel. A garment sold on both can still
+                have one colour that only ever goes to wholesale, which is
+                what the pink pens on the Matrix card mean — and until now
+                that fact had nowhere to live.
+
+                A box the STYLE does not sell through is shut, not just
+                faded: a colour cannot go somewhere the garment does not.
+                Its stored value still shows, so a style whose channel was
+                narrowed afterwards reads as the contradiction it is rather
+                than quietly losing what it said. */}
+            <div className="cw-chan">
+              <span className="cw-chan-label">Sold through</span>
+              {[['sy', 'SY', sell.sy, form.sell_sy],
+                ['whs', '000', sell.whs, form.sell_000]].map(([key, text, on, styleOn]) => {
+                  const allowed = styleAllows(key, form.sell_sy, form.sell_000);
+                  return (
+                    <CheckBox
+                      key={key}
+                      label={text}
+                      tone={key}
+                      checked={on}
+                      disabled={!allowed}
+                      title={allowed ? undefined
+                        : `This style does not sell through ${text}`}
+                      onChange={(v) => setColorway(i, {
+                        whs_channel: key === 'sy'
+                          ? channelOf(v, sell.whs) : channelOf(sell.sy, v),
+                      })}
+                    />
+                  );
+                })}
+            </div>
           </div>
 
           <div className="bom-label">Yarns / BOM (same for every size)</div>
@@ -259,7 +300,8 @@ export default function BomSection({ form, update, meta }) {
             </p>
           )}
         </div>
-      ))}
+        );
+      })}
 
       <button type="button" className="btn-chip" onClick={addColorway}>
         + Add color
