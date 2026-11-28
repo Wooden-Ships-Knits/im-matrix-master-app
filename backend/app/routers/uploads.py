@@ -78,10 +78,13 @@ def shrink(data: bytes) -> tuple[bytes, str]:
     return out.getvalue(), ".jpg"
 
 
-@router.post("/{style_id}/image")
-async def upload_image(style_id: int, image: UploadFile = File(...)):
-    if not repo.load_style(style_id):
-        raise HTTPException(status_code=404, detail="Style not found")
+async def _store(style_id: int, image: UploadFile) -> str:
+    """Check, shrink and write one upload. Returns the path to serve it at.
+
+    Shared by the style photo and the per-colourway photo so the two cannot
+    drift: same allowed types, same size limit, same resize, same uploads
+    volume, same immutable random name.
+    """
     if (image.content_type or "") not in ALLOWED:
         raise HTTPException(status_code=400, detail="Only JPEG, PNG or WebP images")
 
@@ -102,7 +105,46 @@ async def upload_image(style_id: int, image: UploadFile = File(...)):
     directory.mkdir(parents=True, exist_ok=True)
     name = f"{style_id}-{secrets.token_hex(6)}{ext}"
     (directory / name).write_bytes(stored)
+    return f"/uploads/{name}"
 
-    path = f"/uploads/{name}"
+
+@router.post("/{style_id}/image")
+async def upload_image(style_id: int, image: UploadFile = File(...)):
+    if not repo.load_style(style_id):
+        raise HTTPException(status_code=404, detail="Style not found")
+    path = await _store(style_id, image)
     repo.set_photo(style_id, path)
+    return {"image_path": path}
+
+
+@router.post("/{style_id}/colorway-image")
+async def upload_colorway_image(style_id: int, color: str,
+                                image: UploadFile = File(...)):
+    """A photo of one COLOUR of a garment, for the SY-AV sheet.
+
+    The colour is named rather than numbered because save_style deletes and
+    re-inserts the colourway rows on every save: an id the client held would
+    be gone by the time it uploaded, while the name is the same name it was
+    shown.
+
+    It arrives as a QUERY parameter, not a path segment. Colourway names
+    contain slashes — "KHAKI/BREAKER WHITE" is an ordinary one — and a %2F
+    inside a path is normalised or rejected by proxies and servers before
+    any route sees it.
+
+    Checked before the file is written, the same way round as the style
+    photo above — a 404 after writing would leave a file in the uploads
+    volume that nothing ever points at.
+    """
+    style = repo.load_style(style_id)
+    if not style:
+        raise HTTPException(status_code=404, detail="Style not found")
+    wanted = (color or "").strip()
+    if not any(cw.get("name") == wanted for cw in style.get("colorways") or []):
+        raise HTTPException(
+            status_code=404,
+            detail=f"{color!r} is not a colourway of this style")
+
+    path = await _store(style_id, image)
+    repo.set_colorway_photo(style_id, wanted, path)
     return {"image_path": path}

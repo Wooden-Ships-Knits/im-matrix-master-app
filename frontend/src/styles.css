@@ -3597,5 +3597,107 @@ button.sheet-next-dot:focus-visible { outline: 2px solid #1b1b1b; outline-offset
    its colours were set should read as the contradiction it is, not quietly
    lose what it said. */
 .check.is-off { cursor: default; opacity: 0.4; }
+/* A box that is disabled because it is SETTLED, not because it is barred.
+   A colour of a one-channel style sells on that channel and there is no
+   exception to record, so its box is ticked and fixed. Fading a TICKED box
+   to 0.4 reads as "off and unavailable", which is the opposite of what it
+   means, so a disabled box that is on keeps its weight and only loses the
+   pointer. (:has is the test for "this one is ticked"; where it is not
+   supported the box merely looks faded, which is cosmetic.) */
+.check.is-off:has(input:checked) { opacity: 1; }
 .check.is-off .box { border-color: #CCC7BE; }
 .check.is-off:hover .box { border-color: #CCC7BE; }
+
+/* ---- SY-AV: one picture per COLOUR ----
+   Columns are styles, in the Matrix sheet's own order and numbering, so a
+   column here is the same column there. Down each column are that style's
+   SY colours, one framed photo each.
+
+   Laid out as columns of fixed-height cells rather than as a table: the
+   columns have different numbers of colours, and every cell is the same
+   height, so the rows line up across the sheet without a single row having
+   to know about its neighbours. It scrolls sideways — a season runs to
+   sixty styles and no screen is sixty columns wide. */
+.sy-head { margin-bottom: 14px; }
+.sy-grid {
+  display: flex; align-items: flex-start; gap: 10px;
+  overflow-x: auto; padding-bottom: 6px;
+}
+.sy-col {
+  flex: 0 0 132px; display: flex; flex-direction: column; gap: 8px;
+  min-width: 0;
+}
+/* The sheet's own number for the style, so a column can be matched to the
+   Matrix card without reading the name twice. */
+.sy-num {
+  text-align: center; font-weight: 800; font-size: 0.9rem;
+  padding-bottom: 4px; border-bottom: 1px solid var(--border);
+}
+.sy-cell { margin: 0; display: flex; flex-direction: column; gap: 3px; }
+/* A button, not a figure with a button in it: the whole frame is the hit
+   target, because an empty one is mostly empty space and a 20px camera in
+   the middle of it would be a worse thing to aim at than the frame. */
+/* The same frame as a Matrix card's photo, cell-sized. The frame opens the
+   style on a double-click; the button inside it takes the picture. Not one
+   control doing both — a single click on a photo throwing up a file dialog
+   is a dialog nobody asked for. */
+.sy-shot {
+  position: relative;
+  display: block; width: 100%; aspect-ratio: 3 / 3.4;
+  border: 1px solid #ccc; border-radius: 2px;
+  background: #fafafa; overflow: hidden;
+}
+.sy-shot.can-open { cursor: pointer; }
+.sy-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.sy-empty {
+  width: 100%; height: 100%;
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  color: #bbb;
+}
+.sy-cell figcaption {
+  display: flex; flex-direction: column; gap: 1px;
+  font-size: 0.64rem; line-height: 1.25; text-align: center;
+}
+.sy-style { font-weight: 800; text-transform: uppercase; }
+.sy-color { color: var(--muted); text-transform: uppercase; }
+/* Shown only when the colour's channel is blank, and never styled to look
+   like the channel badges — this is the absence of an answer, not one. */
+.sy-unsaid {
+  font-size: 0.58rem; font-style: italic; color: #a08a4a;
+}
+
+/* ---- "Add photo", on hover ----
+   Three sheets draw the same control over a photo frame: the Matrix card
+   (.sheet-photo-add), the Pricing Matrix (.pmx-photo-add) and SY-AV
+   (.sy-add). Written once here for the two new ones so they cannot drift
+   from each other; the Matrix card keeps its own rule because its frame is
+   twice the size and the button is sized for it.
+
+   Hidden until the frame is hovered, and shown on keyboard focus as well —
+   a control that only exists under a pointer cannot be reached by tab. */
+.pmx-photo, .sy-shot { position: relative; }
+.pmx-photo-file { display: none; }
+.pmx-photo-add, .sy-add {
+  position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+  /* The Pricing Matrix runs twelve cards across a page, so the narrowest
+     frame is about 118px. The pill clips inside the frame rather than
+     pushing out of it. */
+  max-width: calc(100% - 8px); overflow: hidden;
+  padding: 3px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid #1b1b1b; background: rgba(27, 27, 27, 0.88); color: #fff;
+  font: inherit; font-size: 0.62rem; font-weight: 700;
+  opacity: 0; transition: opacity 120ms ease;
+}
+.pmx-photo:hover .pmx-photo-add, .pmx-photo-add:focus-visible,
+.sy-shot:hover .sy-add, .sy-add:focus-visible { opacity: 1; }
+.pmx-photo-add:hover, .sy-add:hover { background: #1b1b1b; }
+/* Full strength while uploading: it is reporting, not unavailable. */
+.pmx-photo-add:disabled, .sy-add:disabled {
+  opacity: 1; cursor: default; background: #6b6b6b;
+}
+
+/* Nothing here belongs on paper. */
+@media print {
+  .pmx-photo-add, .sy-add { display: none !important; }
+}

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Search, Camera, Shirt, Box, BadgeDollarSign, PackageOpen, Truck, Ruler, Timer, ClipboardList, ListChecks, LayoutGrid, Palette, SwatchBook } from 'lucide-react';
 import { api } from '../api.js';
-import { channelOf } from '../channel.js';
+import { cascadeChannel, channelOf } from '../channel.js';
+import { colorwayPhoto } from '../photo.js';
 import { roundFixed } from '../format.js';
 import {
   Field, TextInput, PriceInput, CheckBox, Combo, ConfirmDialog, useToast,
@@ -112,6 +113,10 @@ function toForm(s) {
     // fall out of step with itself, and the two tick boxes are read off it
     // with channelParts() wherever they are drawn.
     whs_channel: cw.whs_channel ?? '',
+    // This colour's own photo, for the SY-AV sheet. Read-only here: the
+    // upload route sets it and save_style carries it, so nothing the form
+    // sends can change it. It is in the form only so the pane can draw it.
+    photo_url: cw.photo_url ?? '',
     sub_to: cw.sub_to ?? '',
     sub_reason: cw.sub_reason ?? '',
     subbed_on: cw.subbed_on ?? '',
@@ -151,6 +156,19 @@ export default function StyleEditor() {
 
   const [serverImage, setServerImage] = useState(null);
   const [pendingImage, setPendingImage] = useState(null);
+  // Photos picked for individual COLOURS, keyed by colour name, waiting for
+  // the save. Not uploaded on pick: a colour typed in this sitting does not
+  // exist on the server until the save creates it, and the upload route
+  // keys on the name. Keyed by name rather than id for the same reason the
+  // route is — save_style deletes and re-inserts the colourway rows, so an
+  // id held here would be stale by the time it was used.
+  const [pendingShots, setPendingShots] = useState({});
+  // What the colourway channels were before the style was narrowed to one
+  // channel, and what the narrowing set them to — see setChannel, which is
+  // where this is explained. Declared here because hydrate() clears it.
+  // A ref, not state: nothing is drawn from it, and it must not count
+  // towards the unsaved-changes prompt.
+  const cascaded = useRef(null);   // { before: {name: channel}, set: channel }
   const previewUrl = useMemo(
     () => (pendingImage ? URL.createObjectURL(pendingImage) : null), [pendingImage]);
   const fileRef = useRef(null);
@@ -165,13 +183,18 @@ export default function StyleEditor() {
   };
 
   const snapshot = useRef('');
-  const dirty = JSON.stringify(form) !== snapshot.current || !!pendingImage;
+  const dirty = JSON.stringify(form) !== snapshot.current
+    || !!pendingImage || Object.keys(pendingShots).length > 0;
 
   function hydrate(f, image = null) {
     setForm(f);
     snapshot.current = JSON.stringify(f);
     setServerImage(image);
     setPendingImage(null);
+    setPendingShots({});
+    // Whatever the channel boxes were going to put back belongs to the
+    // style that has just been replaced. See setChannel.
+    cascaded.current = null;
   }
 
   useEffect(() => {
@@ -231,7 +254,16 @@ export default function StyleEditor() {
   // is the top of the BOM, and falls back to it if that colourway is renamed
   // or removed while it is selected.
   const colorNames = form.colorways.map((cw) => cw.name).filter(Boolean);
-  const activeColor = colorNames.includes(preview) ? preview : (colorNames[0] || '');
+  // '' is the garment's own photo — styles.photo_url, what the Matrix card
+  // and the printed sheet draw. A colourway name is that COLOUR's photo,
+  // which only the SY-AV sheet draws. Two pictures of two different things,
+  // so neither is ever shown in place of the other: a colour with no photo
+  // says so rather than borrowing the garment's and implying it was shot.
+  //
+  // Defaulting to the garment matters. Every colourway photo is empty until
+  // the team starts taking them, so defaulting to the first colour would
+  // make every style in the database look as though its photo had gone.
+  const activeColor = colorNames.includes(preview) ? preview : '';
   const activeCw = form.colorways.find((cw) => cw.name === activeColor);
 
   const primaryColor = form.colorways[0]?.name ?? '';
@@ -267,7 +299,23 @@ export default function StyleEditor() {
         const r = await api.uploadImage(saved.id, pendingImage);
         image = r.image_path;
       }
-      hydrate(toForm(saved), image);
+
+      // After the style is saved, so a colour added in this sitting has a
+      // row to attach to. The save's own answer cannot carry these back —
+      // they are written after it — so the paths are folded into the form
+      // by hand rather than re-reading the style.
+      const shots = Object.entries(pendingShots);
+      const next = toForm(saved);
+      if (shots.length) {
+        const done = await Promise.all(shots.map(async ([colour, file]) => {
+          const r = await api.uploadColorwayImage(saved.id, colour, file);
+          return [colour, r.image_path];
+        }));
+        const paths = Object.fromEntries(done);
+        next.colorways = next.colorways.map((cw) => (
+          paths[cw.name] ? { ...cw, photo_url: paths[cw.name] } : cw));
+      }
+      hydrate(next, image);
       // The save answers with the stored row, so a flag raised on the Matrix
       // while this was open shows up rather than staying as it was on load.
       setNeedsPhoto(!!saved.needs_photo);
@@ -327,12 +375,28 @@ export default function StyleEditor() {
     ? skuParts.join('')
     : '';
 
-  // The checkboxes and the channel say the same thing, so one edit writes
-  // both. Otherwise a style could claim SY ONLY with 000 ticked.
-  // What the IM calls a pair of tick boxes. The boxes are the fact; this is
-  // how it gets written down.
-  const setChannel = (sy, thousand) =>
-    update({ sell_sy: sy, sell_000: thousand, whs_channel: channelOf(sy, thousand) });
+  /**
+   * The style's channel, and the colourways that follow it down.
+   *
+   * The checkboxes and the channel say the same thing, so one edit writes
+   * both — otherwise a style could claim SY ONLY with 000 ticked.
+   *
+   * The colourways follow by cascadeChannel, which holds the rule and
+   * explains it. Called with this render's `form` rather than from inside
+   * the updater on purpose: it hands back a memo to keep, and a state
+   * updater that writes a ref runs twice under StrictMode — the second
+   * pass would see the memo already spent and hand back the UNrestored
+   * list, so widening would silently do nothing in development.
+   */
+  const setChannel = (sy, thousand) => {
+    const channel = channelOf(sy, thousand);
+    const { colorways, memo } = cascadeChannel(
+      form.colorways, channel, cascaded.current);
+    cascaded.current = memo;
+    update({
+      sell_sy: sy, sell_000: thousand, whs_channel: channel, colorways,
+    });
+  };
 
   const sectionProps = { form, update, meta, costing };
   const Body = {
@@ -341,7 +405,19 @@ export default function StyleEditor() {
     shipping: ShippingSection, measurements: MeasurementsSection,
   }[section];
 
-  const imgSrc = previewUrl || serverImage;
+  // The file waiting for the save, for whichever colour is selected.
+  const pendingShot = activeColor ? pendingShots[activeColor] : null;
+  const shotUrl = useMemo(
+    () => (pendingShot ? URL.createObjectURL(pendingShot) : null), [pendingShot]);
+
+  const imgSrc = activeColor
+    // The first colourway's picture IS the main photo — see colorwayPhoto.
+    // So picking it shows the garment rather than an empty frame, and the
+    // button below still offers to give that colour one of its own.
+    ? (shotUrl || colorwayPhoto(activeCw?.photo_url,
+                                activeColor === colorNames[0], serverImage)
+       || null)
+    : (previewUrl || serverImage);
 
   return (
     <>
@@ -408,13 +484,15 @@ export default function StyleEditor() {
               <section className="card card-pad style-panel">
                 <div>
                   <div className="cw-pick">
-                    <select className="input" aria-label="Colourway preview"
+                    {/* Picks what the pane below is showing: the garment's
+                        own photo, or one colour's. Picking a colour also
+                        brings up its yarns, which is what this did before
+                        the photos arrived. */}
+                    <select className="input" aria-label="Which photo"
                       value={activeColor}
-                      disabled={colorNames.length === 0}
                       onChange={(e) => setPreview(e.target.value)}>
-                      {colorNames.length === 0
-                        ? <option value="">No colourways yet</option>
-                        : colorNames.map((n) => <option key={n} value={n}>{n}</option>)}
+                      <option value="">Main photo — the garment</option>
+                      {colorNames.map((n) => <option key={n} value={n}>{n}</option>)}
                     </select>
                     {activeCw && (
                       <ul className="cw-yarns">
@@ -448,21 +526,40 @@ export default function StyleEditor() {
                   )}
                   <div className="style-photo">
                     {imgSrc ? (
-                      <img src={imgSrc} alt={form.name || 'Style photo'} />
+                      <img src={imgSrc}
+                        alt={activeColor
+                          ? `${form.name || 'Style'} in ${activeColor}`
+                          : (form.name || 'Style photo')} />
                     ) : (
                       <div className="placeholder">
                         <Shirt size={56} strokeWidth={1.4} />
-                        No photo yet
+                        {activeColor
+                          ? `No photo of ${activeColor} yet`
+                          : 'No photo yet'}
                       </div>
                     )}
+                    {/* The button says which photo it is about to replace.
+                        "Change photo" on a pane that might be showing the
+                        garment or one of fourteen colours is an invitation
+                        to overwrite the wrong one. */}
                     <button type="button" className="photo-btn"
                       onClick={() => fileRef.current?.click()}>
-                      <Camera size={16} /> {imgSrc ? 'Change photo' : 'Add photo'}
+                      <Camera size={16} />
+                      {/* What it does to the thing SELECTED, not to what
+                          is on screen: the first colour shows the main
+                          photo and still has none of its own. */}
+                      {' '}{(activeColor ? !!activeCw?.photo_url : !!serverImage)
+                        || shotUrl || previewUrl ? 'Change' : 'Add'}
+                      {' '}{activeColor ? `photo of ${activeColor}` : 'main photo'}
                     </button>
                     <input ref={fileRef} type="file" accept="image/*" hidden
                       onChange={(e) => {
                         const f = e.target.files?.[0];
-                        if (f) setPendingImage(f);
+                        if (f && activeColor) {
+                          setPendingShots((was) => ({ ...was, [activeColor]: f }));
+                        } else if (f) {
+                          setPendingImage(f);
+                        }
                         e.target.value = '';
                       }} />
                   </div>
@@ -597,8 +694,12 @@ export default function StyleEditor() {
                         <select className="input" value={form.finishing_location || ''}
                           onChange={(e) => update({ finishing_location: e.target.value })}>
                           <option value="">Not set</option>
-                          <option value="FAF">FAF — at factory</option>
-                          <option value="FAH">FAH — take home</option>
+                          {/* What the letters stand for, not a gloss on
+                              them: FAH is finishing AT HOME — homeworkers
+                              finishing the garment — which "take home"
+                              read as a perk rather than a place of work. */}
+                          <option value="FAF">FAF — finishing at factory</option>
+                          <option value="FAH">FAH — finishing at home</option>
                           <option value="BOTH">BOTH</option>
                         </select>
                       </Field>

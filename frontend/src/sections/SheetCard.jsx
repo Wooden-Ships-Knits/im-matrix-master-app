@@ -197,6 +197,35 @@ export const ZONE_LIMIT = { sample: 1 };
 // lands at the same height across the block — see the prop.
 export const mainRowCount = (style) => byZone(style).main.length;
 
+/**
+ * How many rows each card's main band should occupy — one figure per card,
+ * worked out from the cards it is actually beside.
+ *
+ * The red rule under the main band has to line up with its NEIGHBOURS, and a
+ * card's neighbours are the cards in the same row of the grid. Taking the
+ * tallest in the whole collection instead, one style with fourteen
+ * colourways stretches every card in it — including the rows above, which
+ * that style is nowhere near and never seen next to.
+ *
+ * `columns` is how many cards the grid is fitting across, which only the
+ * rendered grid knows: the track is `auto-fill`, so it changes with the
+ * window. The rule therefore re-aligns when the grid rewraps. That is the
+ * trade, and it is the right way round — a rule straight across a row you
+ * can see beats a rule straight across a collection you have to scroll.
+ *
+ * Nothing measured yet (0, or the grid not laid out) means every card asks
+ * for its own height and none is padded, which is the safe thing to draw
+ * for the one frame before the measurement lands.
+ */
+export const rowMainRows = (items, columns) => {
+  const own = (items || []).map(mainRowCount);
+  if (!(columns > 0)) return own;
+  return own.map((_, i) => {
+    const start = Math.floor(i / columns) * columns;
+    return Math.max(...own.slice(start, start + columns));
+  });
+};
+
 export const zoneIsFull = (bands, zone) => (
   ZONE_LIMIT[zone] != null && (bands[zone] || []).length >= ZONE_LIMIT[zone]);
 
@@ -758,9 +787,13 @@ function SheetCard({
 
         {onPhoto && (
           <>
+            {/* `hidden` as well as the class — see PriceCard. Without the
+                attribute this renders as a native "No file chosen" across
+                the photo whenever the stylesheet has not arrived. */}
             <input
               id={fileId}
               ref={fileRef}
+              hidden
               className="sheet-photo-file"
               type="file"
               accept="image/jpeg,image/png,image/webp"

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
 import { Field, NumberInput, Combo, CheckBox } from '../components/ui.jsx';
-import { channelOf, channelParts, styleAllows } from '../channel.js';
+import { channelOf, channelParts, effectiveChannel,
+         styleAllows } from '../channel.js';
 import Blueprint, { PARTS, PART_LABEL } from './Blueprint.jsx';
 
 const emptyLine = () => ({ yarn: '', percent: '', ends: '', note: '' });
@@ -183,7 +184,11 @@ export default function BomSection({ form, update, meta }) {
       )}
 
       {colorways.map((cw, i) => {
-        const sell = channelParts(cw.whs_channel);
+        // What this colour sells on, which may be the style's answer rather
+        // than its own: a colour of a one-channel garment has nowhere else
+        // to go. See effectiveChannel.
+        const sell = channelParts(
+          effectiveChannel(cw.whs_channel, channelOf(form.sell_sy, form.sell_000)));
         return (
         <div key={i} className="cw-block">
           <div className="cw-head">
@@ -209,17 +214,28 @@ export default function BomSection({ form, update, meta }) {
                 than quietly losing what it said. */}
             <div className="cw-chan">
               <span className="cw-chan-label">Sold through</span>
-              {[['sy', 'SY', sell.sy, form.sell_sy],
-                ['whs', '000', sell.whs, form.sell_000]].map(([key, text, on, styleOn]) => {
+              {[['sy', 'SY', sell.sy], ['whs', '000', sell.whs]]
+                .map(([key, text, on]) => {
                   const allowed = styleAllows(key, form.sell_sy, form.sell_000);
+                  // Both boxes are fixed on a one-channel style, not just
+                  // the barred one: the garment sells on exactly one
+                  // channel, so there is no exception a colour could be.
+                  // Leaving the ticked one clickable would offer a choice
+                  // that springs straight back.
+                  const settled = allowed && !!sell.sy !== !!sell.whs
+                    && !!form.sell_sy !== !!form.sell_000;
                   return (
                     <CheckBox
                       key={key}
                       label={text}
                       tone={key}
                       checked={on}
-                      disabled={!allowed}
-                      title={allowed ? undefined
+                      disabled={!allowed || settled}
+                      title={allowed
+                        ? (settled
+                          ? `This style sells through ${text} only, so every`
+                            + ' colour of it does'
+                          : undefined)
                         : `This style does not sell through ${text}`}
                       onChange={(v) => setColorway(i, {
                         whs_channel: key === 'sy'

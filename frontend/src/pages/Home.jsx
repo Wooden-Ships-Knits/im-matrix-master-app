@@ -2,6 +2,11 @@ import { Link } from 'react-router-dom';
 import Wordmark from '../components/Wordmark.jsx';
 import { CirclePlus, ClipboardList, TextSearch, ListChecks, FileSpreadsheet, BarChart3, Table2, FileDown, Palette, SwatchBook} from 'lucide-react';
 
+// The colour work is its own app, on its own subdomain. Written here rather
+// than inline so there is one place to change when it moves, and so it is
+// obvious at the top of the file that one of these cards leaves PDM.
+const COLOR_BOARD = 'https://color-board.pt-infashion.com';
+
 export default function Home() {
   return (
     <>
@@ -28,6 +33,9 @@ export default function Home() {
             if you type the address, and the top band of every other page
             still links to them.
 
+            Color Table came back on 28 Nov as Color Board, above — pointing
+            at the separate colour app rather than at /colors.
+
             Uncomment a card to put it back.
             --------------------------------------------------------------- */}
 
@@ -44,12 +52,21 @@ export default function Home() {
           <span className="label">Design</span>
         </Link> */}
 
-        {/* Beside Design: the same colours read the other way round — by
-            yarn rather than by style.
-        <Link to="/colors" className="home-card">
+        {/* Called Color Board, and it leaves PDM.
+
+            The colour work lives in its own app at color-board.pt-infashion.com
+            for now. PDM's own /colors screen is still here and still works if
+            you type the address — this card simply is not the way to it, so
+            an <a>, not a <Link>: a router link to an address the router does
+            not own goes nowhere.
+
+            Same tab, not a new one. It is a destination, not a reference
+            looked up beside what you were doing, and the front door has no
+            unsaved work to come back to. */}
+        <a href={COLOR_BOARD} className="home-card">
           <span className="icon-frame"><SwatchBook size={54} strokeWidth={1.6} /></span>
-          <span className="label">Color Table</span>
-        </Link> */}
+          <span className="label">Color Board</span>
+        </a>
 
         {/* <Link to="/checklist" className="home-card">
           <span className="icon-frame"><ListChecks size={54} strokeWidth={1.6} /></span>

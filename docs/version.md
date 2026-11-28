@@ -13,6 +13,326 @@ Newest first. A version is cut when the project changes phase, not on a schedule
 
 ---
 
+## v1.1c — the SY-AV sheet, and a photo per colour
+
+**2026-11-28** · base `3bb336f` · commit hash to be filled in
+
+Another letter rather than v1.2. It is still the walkthrough: two things
+that were hidden come back, and the sheet the team asked for next gets
+built. The next whole number is for the next phase — rename this if the new
+sheet feels like one.
+
+### Added
+
+**The SY-AV Matrix**, a third sheet beside Matrix Master and Pricing Matrix.
+The Master sheet shows a garment; this shows what is available to sell on
+SY, which is a *colour*. Columns are styles, in the Master sheet's own order
+and numbering, so a column here is the same column there; down each column
+are that style's SY colours, one framed photo each.
+
+- **The colour's own channel decides, not the style's.** A garment sold both
+  ways can have one colour that only goes to wholesale, and that colour is
+  not on SY. `SY ONLY` and `BOTH` are on the sheet; `000 ONLY` is not.
+- **A colour with no channel recorded is left off by default**, because
+  nobody has said it sells on SY. That is every one of the 3,582 imported
+  colourways, so a tick box shows them — and the sheet labels each one
+  *channel not set* rather than passing silence off as an answer. Without
+  the box the sheet opens empty and reads as broken rather than unfilled.
+- Read-only except for the photos. Everything else about a colour is edited
+  where it is edited — the Matrix card and the style editor — and a third
+  place to change it would be a third place to disagree.
+- The columns scroll sideways. A season runs to sixty styles and no screen
+  is sixty columns wide. Every cell is the same height, so the rows line up
+  across the sheet without any cell knowing about its neighbours.
+
+**A photo per colourway.** `style_colorways.photo_url` (migration
+`0033_colorway_photo`), beside `styles.photo_url` and not instead of it.
+
+- **The main photo is the first colourway's photo.** That is the colour the
+  team shoots, so for that one colour the style's picture is not a stand-in,
+  it is the answer — it shows on the SY-AV sheet and in the editor when the
+  first colour is picked. Every other colour shows its own or shows none: a
+  picture of the garment in BREAKER WHITE says nothing about KHAKI.
+  (`colorwayPhoto`, in the new `photo.js`.)
+- **First means first in the STYLE's list**, not first on the sheet drawing
+  it. The SY-AV sheet filters to the colours sold on SY, and if the first
+  colourway is 000-only then the colour at the top of that sheet is the
+  second one — which the main photo is not of.
+- The Add / Replace button says what it will do to the **colour**, not what
+  is on screen. The first colour shows the garment's photo and still has
+  none of its own, so it reads *Add photo*.
+- Uploaded from two places, as asked: click a frame on the SY-AV sheet, or
+  pick the colour from the dropdown above the photo in the style editor.
+- Same uploads volume, same resize, same immutable random name as a style
+  photo — the two routes now share one `_store` helper so they cannot drift.
+- **The colour travels as a query parameter, not a path segment.**
+  "KHAKI/BREAKER WHITE" is an ordinary colourway name, and a `%2F` inside a
+  path is normalised or refused by proxies and servers before any route
+  sees it. Tested against a real slash-bearing colourway.
+- Named, not numbered: `save_style` deletes and re-inserts the colourway
+  rows on every save, so an id the browser held would be stale by the time
+  it uploaded. For the same reason `photo_url` is **carried** across that
+  rewrite and never read from the payload — the editor has no field for it,
+  and a save that took it from the form would blank every colourway photo
+  the moment an older client saved.
+- `matrix_rows` gains `colorway_photos` and `colorway_channels`, both
+  colour → value maps with the unset colours simply absent.
+
+### Changed
+
+- **Narrowing a style to one channel takes its colours with it.** Tick the
+  style down to SY ONLY or 000 ONLY and every colourway is set to the same
+  thing — every colour of an SY-only garment sells on SY, and ticking that
+  out fourteen times by hand is how a column stays empty.
+  - **Widening back to BOTH does not blanket them with BOTH.** BOTH is not
+    a fact about a colour just because it is one about the garment. It puts
+    back what each colour was before the narrowing, so a misclick costs
+    nothing. Clearing both boxes restores too: "nobody has said" is as
+    un-single-channel as BOTH is.
+  - A colour edited **by hand after** the narrowing keeps that edit. Only
+    colours still holding exactly what the cascade gave them are put back —
+    a typed answer outranks a remembered one.
+  - Narrowing twice keeps the **first** memory. SY ONLY, then 000 ONLY,
+    then BOTH lands on what was there before any of it.
+  - The memory lives in the open editor, not the database, and a save or
+    loading another style drops it. Nothing records what a colour's channel
+    used to be, and keeping it across styles would widen one style's
+    colours against another's.
+  - The rule is `cascadeChannel` in `channel.js`, pure and keyed by
+    colourway name. The editor calls it **outside** the state updater: it
+    returns a memo to keep, and an updater that writes a ref runs twice
+    under StrictMode — the second pass would see the memory spent and hand
+    back the unrestored list, so widening would silently do nothing in
+    development.
+  - **This is what will finally fill `whs_channel`** for colours somebody
+    touches. For the rest, see below.
+- **A colour of a one-channel style now READS as that channel**, without
+  anything being written. The cascade only fires when somebody clicks the
+  style's boxes, which does nothing for the 3,582 colourways already in the
+  database under styles that were already SY ONLY — and nobody is going to
+  open 301 styles to click a box confirming what the style already says.
+  - `effectiveChannel` in `channel.js`: a blank colour inherits a SY ONLY
+    or 000 ONLY style's channel, because there is nowhere else for it to
+    go. A style on BOTH, or with no channel, settles nothing — those leave
+    the question genuinely open. A colour that states its own channel keeps
+    it, contradiction and all.
+  - The editor's boxes and the SY-AV sheet both read it, so the **702
+    colours of the 301 SY-only styles are on that sheet already**, without
+    the toggle and without a backfill.
+  - **It is a reading, not a write.** The column stays blank until somebody
+    clicks. Pinned both ways: the editor never sends an inherited value as
+    though the colour had stated it, and the server has no fallback either.
+  - On a one-channel style **both** colourway boxes are now fixed, not just
+    the barred one — there is no exception a colour could be, and a tick
+    that springs straight back is worse than one that cannot be clicked.
+    A disabled box that is ON keeps its full weight; fading a ticked box
+    would read as "off and unavailable", the opposite of what it means.
+- **Every photo frame now behaves the same way.** Double-click opens the
+  style; hovering brings up an **Add photo** button. The Matrix card
+  already worked like this — the Pricing Matrix card had the double-click
+  but no way to add a picture, and the SY-AV cell had neither: the whole
+  frame was the file picker, so a single click anywhere on a photo threw up
+  a dialog nobody asked for.
+  - The Pricing Matrix uploads the **style's** photo — the same
+    `styles.photo_url` the Matrix card and the printed sheet draw, through
+    the same route. Not a third way in.
+  - The SY-AV cell uploads that **colour's** photo, as before.
+  - Both buttons appear on hover **and on keyboard focus**: a control that
+    exists only under a pointer cannot be reached by tab. Neither prints.
+  - `.pmx-photo-add` and `.sy-add` are their own classes rather than reuses
+    of the Matrix card's `.sheet-photo-add` — the card's frame is twice the
+    size and its button is sized for it. The shared look is written once so
+    the two small ones cannot drift.
+  - The pill clips inside its frame rather than pushing out of it: the
+    Pricing Matrix runs twelve cards across a page, so the narrowest frame
+    is about 118px.
+  - **Every file input is hidden with the `hidden` attribute**, not with a
+    class. One hidden only by the project stylesheet renders as the native
+    "Choose File | No file chosen" across the middle of the photo the
+    moment that stylesheet is late, missing or overridden — which is what
+    the Pricing Matrix did on its first outing, because the dev server's
+    watcher had missed the CSS. `hidden` is the browser's own
+    `display: none` and needs nothing loaded. Pinned across all four files
+    that have one.
+- **Color Board is back on the front door**, as the third card — renamed
+  from Color Table, and pointing at **color-board.pt-infashion.com** rather
+  than at PDM's own `/colors` screen. The colour work lives in its own app
+  for now.
+  - An `<a href>`, not a router `<Link>`. A `<Link>` aimed at an address
+    the router does not own goes nowhere at all, silently.
+  - Same tab: it is a destination, not something looked up beside what you
+    were doing, and the front door has no unsaved work to come back to.
+  - `/colors` is untouched and still opens if you type it. The card is
+    simply not the way there any more.
+- **Pricing Matrix is no longer hidden.** The tab and the line under it are
+  back; the route always worked. Nothing else was hidden on that screen.
+- **On the Pricing Matrix, LINE is now WHS, and a SALE row sits under
+  RETAIL.** The row was called Line while the column behind it is
+  `whls_line_price_usd` and the style editor's Pricing section calls the
+  same figure Wholesale — two names for one number on two screens is how
+  somebody types it into both.
+  - SALE needed no new column and no migration: `final_sale_price_usd`
+    already exists, `matrix_rows` already selects it, the editor already
+    edits it as *Sale Price*, and `_MATRIX_MONEY` already lets the sheet
+    write it. It had simply never been on the sheet, next to the retail
+    price it is marked down from. Empty on all 1,467 styles so far.
+- **The finishing picker says what FAF and FAH stand for.** Finishing at
+  factory and finishing at home. It read "FAH — take home", which sounds
+  like a perk rather than like where the work is done. The 0006 migration
+  had it right all along; only the screen was wrong, and a test now holds
+  the two in step.
+- **In the style editor, the dropdown above the photo now picks the photo.**
+  It already chose which colourway's yarns to show; it now also chooses
+  which picture the pane draws, and the button says which one it is about
+  to replace — "Change photo of AZURE SLATE", not "Change photo".
+  - The first option is **Main photo — the garment**, and it is the
+    default. Defaulting to the first colour would make every style in the
+    database look as though its photo had gone, because no colourway photo
+    exists yet.
+  - **A consequence worth knowing:** the yarn list under the dropdown is
+    tied to the selected colour, so it is no longer showing when a style
+    opens. One click brings it back. Say if it should default the other way.
+  - Colourway photos upload **after** the save, not on pick: a colour typed
+    in this sitting has no row to attach to until the save creates it.
+- **One long colourway list no longer stretches a whole collection.** The
+  main band is padded so the red rule under it is straight; the figure used
+  to be the tallest band in the *block*, so a style with fourteen colourways
+  left every card in its collection with a column of blank rows — rows above
+  it included, which that style is nowhere near and never seen beside.
+  - It is now the tallest band in the **grid row**, which is the only place
+    the rule has to be straight: the cards you can see side by side.
+  - That needs the column count, and the track is `repeat(auto-fill,
+    minmax(160px, 1fr))` — the browser's decision, not the stylesheet's. A
+    new `SheetGrid` reads it off the laid-out element (`getComputedStyle`'s
+    `grid-template-columns` resolves to one entry per column) and watches it
+    with a `ResizeObserver`.
+  - **So the rule re-aligns when the grid rewraps.** That is the trade, and
+    it is the right way round: a rule straight across a row you can see
+    beats one straight across a collection you have to scroll. The old code
+    chose the other way on purpose, and the comment saying so is replaced.
+  - The observer watches the grid's box, so taller cards fire it too.
+    Setting state only on a *changed* count is what keeps that from looping.
+  - Before the first measurement every card asks for its own height and none
+    is padded — the safe thing to draw for one frame.
+- `sheet` in the URL now carries whichever sheet is not the default, rather
+  than naming `pricing`, so all three can be linked to.
+
+### Deleted
+
+Nothing.
+
+### Not done
+
+**No ply or CHUNKY chip on the SY-AV cells.** The workbook puts one on every
+picture, and it looks derived from the style name — CHUNKY if the name says
+chunky, otherwise "1 PLY". The app has `styles.ply`, and it is **null on
+1,463 of 1,467 styles**, so a chip drawn from the data would be blank almost
+everywhere, and a chip drawn from the name would be a guess baked into the
+sheet. Say which it should be and it is a few lines.
+
+### Tests
+
+9 under *the red rule lines up with the row, not the collection*:
+`rowMainRows` groups a block of five into rows of three and of two and takes
+the tallest in each, treats a width wider than the block as the old
+whole-block figure, pads nothing before the grid has been measured, and does
+not trip on an empty block. Plus four on the wiring — Matrix works out no
+per-collection figure any more, each card gets its own row's, the count is
+measured rather than assumed, and an unchanged count sets no state.
+Mutation-tested by taking the tallest in the block again and by dropping the
+unmeasured guard — three pins failed.
+
+14 under *SY-AV shows a colour, not a garment*: the filter keeps SY ONLY and
+BOTH and drops 000 ONLY, the toggle adds only what is UNSAID and never what
+was ruled out, an all-unset sheet is empty by default, the page offers three
+sheets with master left out of the URL, the Pricing tab is back, the upload
+route keeps the colour out of the path and the client encodes it into the
+query, and a save carries `photo_url` over without ever reading it from the
+payload. Mutation-tested by making the filter accept any stated channel and
+by dropping `photo_url` from the save's carry-over — five pins failed.
+
+7 under *the main photo is the first colour's photo*: the first colour
+falls back to the garment's picture and no other colour does, a colour's
+own always wins, a style with no photo gives nothing away, the sheet asks
+the style's own list rather than its filtered column, and Add vs Replace is
+decided by the colour's own photo. Mutation-tested by letting every colour
+borrow the garment's, and by taking "first" from the sheet instead of the
+style.
+
+4 under *a hidden file input is hidden by the browser*: every file input
+in the app carries the attribute, not just a class.
+
+12 under *every photo frame behaves the same way*: all three frames open
+the style on a double-click and carry their own add button, the SY-AV frame
+is no longer the file picker itself, both new buttons show on hover and on
+focus, neither prints, and the pricing card uploads the style photo rather
+than inventing a route. Mutation-tested by giving the pricing button the
+Matrix card's class.
+
+5 under *the front door*: the colour app's address is written once, the
+card is an anchor rather than a router Link, it says Color Board, nothing
+on the page still points at the built-in screen, and `/colors` is still
+routed. Mutation-tested by making it a `<Link>`.
+
+12 under *a colour of a one-channel style inherits it*: the inheritance
+fires for SY ONLY and 000 ONLY and for neither BOTH nor unset, a colour's
+own word always wins, the SY-AV sheet reads it the same way, nothing is
+written on either side of the wire, and the settled box is fixed rather
+than offering a choice that is not there. Mutation-tested by letting BOTH
+leak through the inheritance and by making the settled box clickable again.
+
+16 under *narrowing a style takes its colours with it*: the cascade sets
+every colour and remembers each one exactly, widening to BOTH or to nothing
+restores rather than blankets, a hand edit after the narrowing survives
+(including when it happens to match what the restore would write), a second
+narrowing keeps the first memory, widening with nothing outstanding does not
+even rebuild the list, a style with no colourways is not an error, a colour
+added during the narrowing goes back to nothing said, and the editor
+cascades outside the state updater. Mutation-tested three ways — blanketing
+on widen, letting the second narrowing overwrite the memory, and restoring
+over hand edits — nine pins failed between them.
+
+10 under the pricing sheet's existing block: the stack reads FAF/FAH, WHS,
+Retail, Sale, FAF/FAH, NO X/L in that order, nothing still says Line, Sale
+is the column the editor calls Sale Price, and **every money row's key is
+one `_MATRIX_MONEY` accepts** — a row on this card is editable, so a key
+the server would not take is a blur that silently fails. Mutation-tested by
+giving the Sale row a plausible-but-wrong key, which the cross-check caught.
+Three of the ten are the finishing picker: it spells both letters out, it
+says the same as the migration that made the column, and no "take home"
+survives anywhere it is drawn.
+
+One existing pin was updated rather than added: the URL assertion named
+`pricing`, and there are three sheets now.
+
+**538 passing in all**, `npx vite build` clean.
+
+The backend was exercised against the live database on a scratch style:
+a photo attaches to a named colour, a colour the style has not got is
+refused, `load_style` returns it and leaves the other colour alone, it
+survives a save that never mentions it, and `matrix_rows` hands the sheet
+both maps with unset colours left out. The real HTTP route was then run
+against a real colourway whose name contains a slash — upload 200, file
+served 200, a bad colour 404. Scratch style deleted, test photo deleted,
+all 3,582 colourways back to no photo.
+
+### Still open
+
+1. **The backend container is running hand-copied files** — `repo.py`,
+   `uploads.py` and the new migration went in with `docker compose cp`.
+   The migration is **already applied to the database** and stays applied;
+   the Python does not survive a recreate. Run
+   `docker compose up -d --build backend`.
+2. **Browse, Report, Checklist and Design are still hidden** on the home
+   page and in the top band, and so is the band's own Color Table link —
+   only the home-page card came back, and it goes to the separate app, not
+   to `/colors`. Pricing Matrix was unhidden in full.
+3. Everything v1.1b left open: the pens not yet drawn from the channel,
+   nothing imported into `whs_channel` (which is also what the SY-AV filter
+   needs), the five unexplained legend keys, and the v1.1 carry-overs.
+
+---
+
 ## v1.1b — channels on the colourway, and a sheet you can strip down
 
 **2026-11-28** · base `9b39985` · commit hash to be filled in

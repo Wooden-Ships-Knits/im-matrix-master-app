@@ -34,7 +34,7 @@ const { verdict, byManualOrder, cutPages, breakable, numberCards,
         RING_MARKS,
         nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf,
         COLORWAY_ZONES, allowsZone, showsZone, standsInFor, mainRowCount,
-        byZone } = await import(
+        rowMainRows, byZone } = await import(
   'data:text/javascript,' + encodeURIComponent(
     slice('const verdict =', 'const legendFor')
     + slice('const byManualOrder =', 'const cutPages')
@@ -55,7 +55,7 @@ const { verdict, byManualOrder, cutPages, breakable, numberCards,
     + '          RING_MARKS,'
     + '          nextColorwayHighlight, COLORWAY_HIGHLIGHTS, litOf,'
     + '          COLORWAY_ZONES, allowsZone, showsZone, standsInFor,'
-    + '          mainRowCount, byZone };'));
+    + '          mainRowCount, rowMainRows, byZone };'));
 
 let fails = 0;
 const is = (got, want, what) => {
@@ -630,7 +630,9 @@ is(/\{season && sheet === 'master' && \(\s*\n\s*<div className="rep-tabs"/.test(
 // should land on the tab it was left on.
 is(/setSheet\('pricing'\)[\s\S]{0,80}?setTab\(/.test(pxPage), false,
    'switching sheets does not reset which tab the master is on');
-is(/\['sheet', sheet === 'pricing'/.test(pxPage), true,
+// There are three sheets now, so the URL carries whichever is not the
+// default rather than naming one of them.
+is(/\['sheet', sheet === 'master' \? '' : sheet\]/.test(pxPage), true,
    'and the sheet is in the URL, so a link opens the right one');
 
 // Same blocks and same numbers as the layout sheet, because a price is
@@ -645,6 +647,47 @@ is(/index=\{g\.numbers\[r\.id\]\}/.test(pxPage), true,
 is(/export const PRICING_ROWS = \[/.test(pxCard), true,
    'the row stack is a list, so settling it is editing data not the card');
 is(/rows = PRICING_ROWS/.test(pxCard), true, 'and the card renders from it');
+
+// What the rows are, in order. The sheet says WHS, not "Line": the column
+// is whls_line_price_usd and the style editor's Pricing section already
+// calls it Wholesale, and two names for one figure on two screens is how
+// somebody types it into both.
+const pxRowList = cut(pxCard, 'export const PRICING_ROWS = [', 'export const money');
+is((pxRowList.match(/label: '([^']+)'/g) || []).map((m) => m.slice(8, -1)),
+   ['FAF / FAH', 'WHS', 'Retail', 'Sale', 'FAF / FAH', 'NO X/L'],
+   'the stack reads FAF/FAH, WHS, Retail, Sale, FAF/FAH, NO X/L');
+is(/label: 'Line'/.test(pxCard), false, 'and nothing still says Line');
+is(/\{ key: 'final_sale_price_usd', label: 'Sale'/.test(pxCard), true,
+   'Sale is the column the editor calls Sale Price');
+
+// FAF is finishing AT FACTORY and FAH is finishing AT HOME — the words the
+// 0006 migration wrote down when the column was made, and what the editor
+// now says. It used to gloss FAH as "take home", which reads as a perk
+// rather than as where the work is done.
+const pxEd = fs.readFileSync('frontend/src/pages/StyleEditor.jsx', 'utf8');
+is(/<option value="FAF">FAF — finishing at factory<\/option>/.test(pxEd)
+   && /<option value="FAH">FAH — finishing at home<\/option>/.test(pxEd), true,
+   'the finishing picker spells the letters out');
+// The migration is where the meaning was first recorded; the two must say
+// the same thing, or the screen and the schema disagree about the data.
+const pxMig = fs.readFileSync(
+  'backend/migrations/versions/0006_channel_and_finishing.py', 'utf8');
+is(/FAF = finishing at factory, FAH = finishing at home/.test(pxMig), true,
+   'and agrees with the migration that made the column');
+is(/take home/.test(pxEd.replace(/\/\*[\s\S]*?\*\//g, '')), false,
+   'with no "take home" left anywhere it is drawn');
+
+// A row on this card is editable, so the key has to be one the server will
+// take — _MATRIX_KEYS is what update_matrix_fields allows, and a key
+// outside it is a blur that silently fails.
+const pxMoney = cut(fs.readFileSync('backend/app/repo.py', 'utf8'),
+                    '_MATRIX_MONEY = {', '_MATRIX_KEYS');
+for (const key of (pxRowList.match(/key: '([a-z0-9_]+)'/g) || [])
+  .map((m) => m.slice(6, -1))
+  .filter((k) => /price|_usd|price_000/.test(k))) {
+  is(pxMoney.includes(`"${key}"`), true,
+     `${key} is a money field the server accepts`);
+}
 
 
 // ---- The Design sheets ----
@@ -1514,7 +1557,8 @@ is(rebuilt, [], 'no query anywhere assembles a yarn label out of prefix and code
 
 console.log('\n-- a colourway has a channel of its own --');
 const chanSrc = fs.readFileSync('frontend/src/channel.js', 'utf8');
-const { channelOf, channelParts, styleAllows } = await import(
+const { channelOf, channelParts, styleAllows, syColorways,
+        cascadeChannel, effectiveChannel } = await import(
   'data:text/javascript,' + encodeURIComponent(chanSrc));
 
 // The vocabulary is written out in three places — channel.js makes the
@@ -1671,6 +1715,325 @@ is(/if \(!showsZone\(s, zone\) && !showOff\) return null;/.test(card), false,
    'no half-way reveal state is left behind');
 is(/if \(!showsZone\(s, zone\)\) return null;/.test(card), true,
    'the band is not rendered at all when the style does not sell through it');
+
+console.log('\n-- the main photo is the first colour\u2019s photo --');
+const { colorwayPhoto } = await import(
+  'data:text/javascript,' + encodeURIComponent(
+    fs.readFileSync('frontend/src/photo.js', 'utf8')));
+
+// A garment has one photo and each colour may have one. They are not
+// interchangeable — a picture in BREAKER WHITE says nothing about KHAKI —
+// except for the first colourway, which is what the main picture is OF.
+is(colorwayPhoto('', true, '/uploads/style.jpg'), '/uploads/style.jpg',
+   'the first colour shows the garment\u2019s photo');
+is(colorwayPhoto('', false, '/uploads/style.jpg'), '',
+   'and no other colour does');
+is(colorwayPhoto('/uploads/own.jpg', false, '/uploads/style.jpg'),
+   '/uploads/own.jpg', 'a colour with its own photo shows that');
+is(colorwayPhoto('/uploads/own.jpg', true, '/uploads/style.jpg'),
+   '/uploads/own.jpg', 'including the first, which can be given its own');
+is(colorwayPhoto('', true, ''), '',
+   'and a style with no photo gives the first colour nothing');
+
+// FIRST means first in the STYLE's list, not first on the sheet drawing
+// it. The SY-AV sheet filters to the SY colours, and if the first
+// colourway is 000-only the colour at the top of that sheet is the second
+// one — which the main photo is not of.
+const phMx = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
+is(/c === \(r\.colorways \|\| \[\]\)\[0\]/.test(phMx), true,
+   'the sheet asks the style\u2019s own list, not its filtered column');
+// And the button says what it does to the COLOUR, not what is on screen:
+// the first colour shows the garment and still has none of its own.
+is(/const ownShot = !!r\.colorway_photos\?\.\[c\];/.test(phMx), true,
+   'Add vs Replace is decided by the colour\u2019s own photo');
+
+console.log('\n-- a hidden file input is hidden by the browser --');
+// A file input hidden only by the project stylesheet renders as the native
+// "Choose File | No file chosen" across the middle of the photo the moment
+// that stylesheet is late, missing or overridden — which is exactly what
+// happened on the Pricing Matrix. `hidden` is the browser's own
+// display:none and needs nothing loaded, so every one of them carries it.
+for (const f of ['frontend/src/sections/PriceCard.jsx',
+                 'frontend/src/sections/SheetCard.jsx',
+                 'frontend/src/pages/Matrix.jsx',
+                 'frontend/src/pages/StyleEditor.jsx']) {
+  const src = fs.readFileSync(f, 'utf8');
+  // Every <input ... type="file" ...> in the file, attributes in any order.
+  const inputs = src.match(/<input\b[^>]*type="file"[^>]*>/g)
+    || src.match(/<input\b[\s\S]{0,400}?type="file"[\s\S]{0,400}?\/>/g) || [];
+  is(inputs.length > 0 && inputs.every((t) => /\bhidden\b/.test(t)), true,
+     `${f.split('/').pop()} hides its file input with the attribute`);
+}
+
+console.log('\n-- every photo frame behaves the same way --');
+// Three sheets draw a photo frame. All three now do the same two things:
+// double-click opens the style, and hovering brings up the add button. The
+// frame is NOT the button — a single click on a photo throwing up a file
+// dialog is a dialog nobody asked for, and it was how the SY-AV cell
+// worked when it was first built.
+const pfCard = fs.readFileSync('frontend/src/sections/SheetCard.jsx', 'utf8');
+const pfPrice = fs.readFileSync('frontend/src/sections/PriceCard.jsx', 'utf8');
+const pfMx = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
+for (const [what, src, frame] of [
+  ['the Matrix card', pfCard, 'sheet-photo'],
+  ['the Pricing Matrix', pfPrice, 'pmx-photo'],
+]) {
+  is(new RegExp(`className=\\{\`${frame}`).test(src)
+     || new RegExp(`className="${frame}`).test(src), true,
+     `${what} has a photo frame`);
+  is(/onDoubleClick=\{open\}/.test(src), true,
+     `${what} opens the style on a double-click`);
+  is(new RegExp(`className="${frame}-add"`).test(src), true,
+     `${what} has its own add button`);
+}
+is(/<div className="sy-shot can-open"[\s\S]{0,200}onDoubleClick=\{\(\) => proxies\.onOpen\(r\)\}/
+  .test(pfMx), true, 'and an SY-AV cell opens the style on a double-click');
+is(/className="sy-shot"[\s\S]{0,80}onClick=/.test(pfMx), false,
+   'with the frame no longer being the file picker itself');
+is(/className="sy-add"/.test(pfMx), true, 'the button is its own control');
+
+// Hidden until hover, and on keyboard focus too — a control that exists
+// only under a pointer cannot be reached by tab.
+is(/\.pmx-photo:hover \.pmx-photo-add, \.pmx-photo-add:focus-visible,\n\.sy-shot:hover \.sy-add, \.sy-add:focus-visible \{ opacity: 1; \}/
+  .test(css), true, 'both appear on hover and on focus');
+is(/@media print \{\n  \.pmx-photo-add, \.sy-add \{ display: none !important; \}/.test(css),
+   true, 'and neither goes on paper');
+// The Pricing Matrix photo is the STYLE's, so it is the same upload the
+// Matrix card does — not a third route.
+is(/onPhoto=\{proxies\.onPhoto\}/.test(pfMx)
+   && (pfMx.match(/onPhoto=\{proxies\.onPhoto\}/g) || []).length === 2, true,
+   'the pricing card uploads the style photo, the same one the card shows');
+
+console.log('\n-- the front door --');
+// Two cards were on the home page; Color Board is the third, and it is the
+// only one that leaves PDM. A <Link> is a router link, and the router does
+// not own color-board.pt-infashion.com — pointed at an off-site address it
+// goes nowhere at all, silently.
+const hmSrc = fs.readFileSync('frontend/src/pages/Home.jsx', 'utf8');
+is(/const COLOR_BOARD = 'https:\/\/color-board\.pt-infashion\.com'/.test(hmSrc),
+   true, 'the colour app has one address, written once');
+is(/<a href=\{COLOR_BOARD\} className="home-card">/.test(hmSrc), true,
+   'and the card is an anchor, not a router Link');
+is(/<span className="label">Color Board<\/span>/.test(hmSrc), true,
+   'labelled Color Board, not Color Table');
+is(/<Link to="\/colors"/.test(hmSrc.replace(/\{\/\*[\s\S]*?\*\/\}/g, '')), false,
+   'and nothing on the front door still points at the built-in screen');
+// Which is still there, and still routed: the card is not the way to it,
+// but typing the address has to keep working.
+is(/path="\/colors"/.test(fs.readFileSync('frontend/src/App.jsx', 'utf8')), true,
+   'though /colors itself is untouched and still opens');
+
+console.log('\n-- a colour of a one-channel style inherits it --');
+// The cascade writes the column when somebody CLICKS the style's boxes.
+// It cannot help the 3,582 colourways already in the database under styles
+// that were already SY ONLY — nobody is going to open 301 styles and click
+// a box to confirm something the style already says. So a blank colour on
+// a one-channel style READS as that channel, everywhere it is read.
+is(effectiveChannel('', 'SY ONLY'), 'SY ONLY',
+   'a blank colour of an SY-only style sells on SY');
+is(effectiveChannel('', '000 ONLY'), '000 ONLY', 'and the mirror holds');
+is(effectiveChannel('', 'BOTH'), '',
+   'a style on BOTH settles nothing — the question is genuinely open');
+is(effectiveChannel('', ''), '', 'and nor does a style with no channel');
+// Its own answer always wins, including one that contradicts the style.
+is(effectiveChannel('000 ONLY', 'SY ONLY'), '000 ONLY',
+   'a colour that states its own channel keeps it, contradiction and all');
+
+// The sheet reads the same way, so those 702 colours are on it already.
+is(syColorways({ colorways: ['A', 'B'], whs_channel: 'SY ONLY' }),
+   ['A', 'B'], 'an SY-only style puts every colour on the SY-AV sheet');
+is(syColorways({ colorways: ['A', 'B'], whs_channel: '000 ONLY' }), [],
+   'and a 000-only style puts none of them there');
+is(syColorways({ colorways: ['A', 'B'], whs_channel: 'SY ONLY',
+                 colorway_channels: { B: '000 ONLY' } }), ['A'],
+   'a colour that says otherwise is still left off');
+
+// Nothing is written. The column stays blank until somebody clicks the
+// style's boxes (cascadeChannel) or the colour's own. The editor is the
+// only thing that sends colourways to the server, and it must not send an
+// inherited value as though the colour had stated it — the SY-AV sheet and
+// the boxes both read the inheritance for themselves.
+const edChan = fs.readFileSync('frontend/src/pages/StyleEditor.jsx', 'utf8');
+is(/effectiveChannel/.test(edChan), false,
+   'what is saved is what the colour itself says, never what it inherits');
+// And the server has no fallback of its own either.
+is(/effective|inherit/i.test(cut(fs.readFileSync('backend/app/repo.py', 'utf8'),
+                                 'if "whs_channel" in cw:', 'for slot, line in')),
+   false, 'the server stores the word it was given and nothing else');
+
+const bomSrc = fs.readFileSync('frontend/src/sections/BomSection.jsx', 'utf8');
+is(/effectiveChannel\(cw\.whs_channel, channelOf\(form\.sell_sy, form\.sell_000\)\)/
+  .test(bomSrc), true, 'the editor boxes read it the same way');
+// Both boxes, not just the barred one: there is no exception a colour of a
+// one-channel style could be, and a tick that springs back is worse than
+// one that cannot be clicked.
+is(/disabled=\{!allowed \|\| settled\}/.test(bomSrc), true,
+   'and the settled box is fixed rather than offering a choice that is not there');
+
+console.log('\n-- narrowing a style takes its colours with it --');
+// Every colour of an SY-only garment sells on SY, and ticking that out
+// fourteen times by hand is how a column stays empty. Widening back does
+// NOT blanket them with BOTH — BOTH is not a fact about a colour just
+// because it is one about the garment — it puts back what was there.
+const chans = (list) => list.map((cw) => `${cw.name}:${cw.whs_channel}`);
+const start = [{ name: 'BLACK', whs_channel: '' },
+               { name: 'KHAKI', whs_channel: '000 ONLY' },
+               { name: 'PLUM', whs_channel: 'BOTH' }];
+
+const narrow = cascadeChannel(start, 'SY ONLY', null);
+is(chans(narrow.colorways), ['BLACK:SY ONLY', 'KHAKI:SY ONLY', 'PLUM:SY ONLY'],
+   'SY ONLY takes every colour with it');
+is(narrow.memo.before, { BLACK: '', KHAKI: '000 ONLY', PLUM: 'BOTH' },
+   'and remembers exactly what each one was');
+
+const widen = cascadeChannel(narrow.colorways, 'BOTH', narrow.memo);
+is(chans(widen.colorways), ['BLACK:', 'KHAKI:000 ONLY', 'PLUM:BOTH'],
+   'BOTH puts them back rather than blanketing them');
+is(widen.memo, null, 'and the memory is spent');
+// Clearing both boxes is as un-single-channel as BOTH is.
+is(chans(cascadeChannel(narrow.colorways, '', narrow.memo).colorways),
+   ['BLACK:', 'KHAKI:000 ONLY', 'PLUM:BOTH'],
+   'and so does clearing both boxes');
+
+// A typed answer outranks a remembered one.
+const edited = narrow.colorways.map((cw) => (
+  cw.name === 'KHAKI' ? { ...cw, whs_channel: '000 ONLY' } : cw));
+is(chans(cascadeChannel(edited, 'BOTH', narrow.memo).colorways),
+   ['BLACK:', 'KHAKI:000 ONLY', 'PLUM:BOTH'],
+   'a colour changed by hand after the narrowing keeps that change');
+const edited2 = narrow.colorways.map((cw) => (
+  cw.name === 'BLACK' ? { ...cw, whs_channel: 'BOTH' } : cw));
+is(chans(cascadeChannel(edited2, 'BOTH', narrow.memo).colorways),
+   ['BLACK:BOTH', 'KHAKI:000 ONLY', 'PLUM:BOTH'],
+   'even when the hand-set value is what the restore would have written');
+
+// Narrowing twice keeps the FIRST memory: the second narrowing must not
+// remember what the first one wrote.
+const again = cascadeChannel(narrow.colorways, '000 ONLY', narrow.memo);
+is(again.memo.before, { BLACK: '', KHAKI: '000 ONLY', PLUM: 'BOTH' },
+   'narrowing again remembers what was there before EITHER narrowing');
+is(again.memo.set, '000 ONLY', 'while tracking what it most recently wrote');
+is(chans(cascadeChannel(again.colorways, 'BOTH', again.memo).colorways),
+   ['BLACK:', 'KHAKI:000 ONLY', 'PLUM:BOTH'],
+   'so widening after both still lands on the original');
+
+// Widening with nothing outstanding touches nothing — opening a style that
+// is already BOTH must not rewrite its colours.
+const quiet = cascadeChannel(start, 'BOTH', null);
+is(chans(quiet.colorways), ['BLACK:', 'KHAKI:000 ONLY', 'PLUM:BOTH'],
+   'widening with no memory leaves every colour alone');
+is(quiet.colorways === start, true, 'and does not even rebuild the list');
+is(cascadeChannel(null, 'SY ONLY').colorways, [],
+   'a style with no colourways is not an error');
+
+// A colour ADDED after the narrowing is not in `before`. It restores to
+// "nobody has said", which is what it was: it never had another value.
+const added = [...narrow.colorways, { name: 'NEW', whs_channel: 'SY ONLY' }];
+is(chans(cascadeChannel(added, 'BOTH', narrow.memo).colorways).at(-1), 'NEW:',
+   'a colour added during the narrowing goes back to nothing said');
+
+const edSrc = fs.readFileSync('frontend/src/pages/StyleEditor.jsx', 'utf8');
+// The memo is a ref the handler writes. Doing that inside a setState
+// updater would run twice under StrictMode, and the second pass would see
+// the memory already spent and hand back the UNrestored list.
+is(/cascadeChannel\(\n?\s*form\.colorways, channel, cascaded\.current\)/.test(edSrc),
+   true, 'the editor cascades outside the state updater, not inside it');
+is(/cascaded\.current = null;/.test(edSrc), true,
+   'and drops the memory when a different style is loaded');
+
+console.log('\n-- SY-AV shows a colour, not a garment --');
+// SY-AV is what is available to sell on SY, so the COLOUR's own channel
+// decides, not the style's: a garment sold both ways can have one colour
+// that only goes to wholesale, and that colour is not on SY.
+const syRow = {
+  colorways: ['AZURE SLATE', 'BLACK', 'KHAKI', 'PLUM'],
+  colorway_channels: { 'AZURE SLATE': 'SY ONLY', BLACK: 'BOTH',
+                       KHAKI: '000 ONLY' },   // PLUM: nobody has said
+};
+is(syColorways(syRow), ['AZURE SLATE', 'BLACK'],
+   'SY ONLY and BOTH are on the sheet, 000 ONLY is not');
+is(syColorways(syRow, true), ['AZURE SLATE', 'BLACK', 'PLUM'],
+   'and the unset colour joins them only when asked for');
+is(syColorways(syRow, true).includes('KHAKI'), false,
+   'the toggle shows what is UNSAID, never what was ruled out');
+is(syColorways({}), [], 'a row with no colours is empty, not an error');
+// Every one of the 3,582 imported colourways has a null channel, which is
+// why the toggle exists at all — without it the sheet opens empty.
+is(syColorways({ colorways: ['A', 'B'] }), [],
+   'a sheet of unset colours is empty by default, and says so');
+
+const syMx = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
+is(/const SHEETS = \['master', 'pricing', 'syav'\]/.test(syMx), true,
+   'the page offers three sheets');
+is(/sheet === 'master' \? '' : sheet/.test(syMx), true,
+   'master stays out of the URL, so the other two can be linked to');
+// The tab that was commented out on 26 Nov is back.
+is(/onClick=\{\(\) => setSheet\('pricing'\)\}>Pricing Matrix<\/button>/.test(syMx),
+   true, 'and the Pricing Matrix tab is no longer hidden');
+
+// Colourway names contain slashes — "KHAKI/BREAKER WHITE" is ordinary — so
+// the name travels as a query parameter. A %2F inside a path segment is
+// normalised or refused by proxies and servers before any route sees it.
+const upSrc = fs.readFileSync('backend/app/routers/uploads.py', 'utf8');
+is(/@router\.post\("\/\{style_id\}\/colorway-image"\)/.test(upSrc), true,
+   'the colourway photo route keeps the colour out of the path');
+is(/colorways\/\{colour\}/.test(upSrc), false,
+   'and no path-segment version is left behind');
+const cwApi = fs.readFileSync('frontend/src/api.js', 'utf8');
+is(/colorway-image\?color=\$\{encodeURIComponent\(color\)\}/.test(cwApi), true,
+   'the client sends it the same way, encoded');
+
+// save_style deletes and re-inserts the colourway rows. photo_url is set by
+// the upload route and the editor has no field for it, so it has to be
+// carried across that rewrite or every colourway photo dies at the next save.
+const cwRepo = fs.readFileSync('backend/app/repo.py', 'utf8');
+// Not cut(): its end marker is searched from the top of the file, and
+// "FROM style_colorways" appears in a dozen earlier queries. Sliced from
+// the one SELECT that matters instead.
+const keptAt = cwRepo.indexOf('SELECT ws_tag_color, mark, highlight, zone,');
+const keptSel = keptAt < 0 ? '' : cwRepo.slice(keptAt, keptAt + 400);
+is(/photo_url/.test(keptSel), true, 'a save carries the colourway photo over');
+is(/whs_channel = %s, photo_url = %s/.test(cwRepo), true,
+   'and writes it back with the rest');
+is(/photo_url.*=.*cw\.get\("photo_url"\)|cw\.get\("photo_url"\)/.test(cwRepo), false,
+   'and never takes it from the payload, which has no such field');
+
+console.log('\n-- the red rule lines up with the row, not the collection --');
+// A card's main band is padded so the red rule under it is straight. It only
+// has to be straight across the cards you can SEE beside it: taking the
+// tallest in the whole collection meant one style with fourteen colourways
+// stretched every card in it, rows above included.
+const band = (n) => ({
+  colorways: Array.from({ length: n }, (_, i) => `C${i}`),
+  colorway_zones: {},            // no zone recorded falls into 'main'
+});
+const block = [band(2), band(9), band(1), band(3), band(4)];
+is(rowMainRows(block, 3), [9, 9, 9, 4, 4],
+   'three across: the nine pads its own row and leaves the next alone');
+is(rowMainRows(block, 2), [9, 9, 3, 3, 4],
+   'two across regroups them, and the last card is a row of one');
+is(rowMainRows(block, 99), [9, 9, 9, 9, 9],
+   'one row wide enough for the block behaves as the block figure did');
+// Before the grid has been measured there is no row to speak of. Every card
+// asks for its own height and none is padded — the safe thing to draw for
+// the one frame before the measurement lands.
+is(rowMainRows(block, 0), [2, 9, 1, 3, 4], 'unmeasured pads nothing');
+is(rowMainRows([], 3), [], 'and an empty block is not an error');
+
+const mxSrc = fs.readFileSync('frontend/src/pages/Matrix.jsx', 'utf8');
+is(/mainRows:/.test(mxSrc), false,
+   'Matrix no longer works out one figure for the whole collection');
+is(/minMainRows=\{bandRows\[i\]\}/.test(mxSrc), true,
+   'each card is given its own row\u2019s figure');
+// The track is auto-fill, so the count is the browser's and the only way to
+// know it is to ask the laid-out element.
+is(/getComputedStyle\(el\)\.gridTemplateColumns/.test(mxSrc)
+   && /new ResizeObserver\(read\)/.test(mxSrc), true,
+   'and the column count is measured off the rendered grid, not assumed');
+// The observer watches the grid's box, so taller cards fire it too. Setting
+// state only on a CHANGED count is what stops that becoming a loop.
+is(/setColumns\(\(was\) => \(was === n \? was : n\)\)/.test(mxSrc), true,
+   'an unchanged count sets no state, so a height change cannot loop');
 
 console.log('\n-- the legend says what the hand pens mean --');
 // Nothing derives the hand pens — someone picks them by clicking a name —

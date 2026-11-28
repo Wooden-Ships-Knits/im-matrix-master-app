@@ -233,4 +233,19 @@ export const api = {
     form.append('image', file);
     return request(`/api/styles/${id}/image`, { method: 'POST', body: form });
   },
+
+  // One COLOUR of a garment, for the SY-AV sheet. The colour is named, not
+  // numbered: saving a style deletes and re-inserts its colourway rows, so
+  // an id held by the browser would be stale by the time it uploaded.
+  //
+  // The name goes in the QUERY, not the path. "KHAKI/BREAKER WHITE" is an
+  // ordinary colourway name, and a %2F inside a path segment is normalised
+  // or refused by proxies and servers long before the route sees it.
+  uploadColorwayImage: (id, color, file) => {
+    const form = new FormData();
+    form.append('image', file);
+    return request(
+      `/api/styles/${id}/colorway-image?color=${encodeURIComponent(color)}`,
+      { method: 'POST', body: form });
+  },
 };

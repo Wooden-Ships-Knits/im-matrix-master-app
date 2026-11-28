@@ -1,5 +1,5 @@
-import { memo } from 'react';
-import { Shirt } from 'lucide-react';
+import { memo, useRef, useState } from 'react';
+import { ImagePlus, Shirt } from 'lucide-react';
 
 /**
  * One style's column on the Pricing Matrix, laid out as F27 MATRIX PRICING.
@@ -32,8 +32,15 @@ import { Shirt } from 'lucide-react';
  */
 export const PRICING_ROWS = [
   { key: 'finishing_location', label: 'FAF / FAH', big: true },
-  { key: 'whls_line_price_usd', label: 'Line', money: true },
+  // WHS, not "Line". It is whls_line_price_usd — the wholesale price — and
+  // the style editor already calls it Wholesale. Two names for one figure
+  // on two screens is how somebody ends up typing it into both.
+  { key: 'whls_line_price_usd', label: 'WHS', money: true },
   { key: 'whls_retail_price_usd', label: 'Retail', money: true },
+  // The column is already there and already editable in the style editor's
+  // Pricing section as "Sale Price" — this puts it on the sheet beside the
+  // retail price it is marked down from. Empty on all 1,467 styles so far.
+  { key: 'final_sale_price_usd', label: 'Sale', money: true },
   { key: 'price_000', label: 'FAF / FAH', big: true, money: true },
   { key: null, label: 'NO X/L', note: true },
 ];
@@ -54,18 +61,69 @@ export const valueOf = (style, row) => {
 };
 
 function PriceCard({
-  style: s, index = null, onEdit = null, onOpen = null, rows = PRICING_ROWS,
+  style: s, index = null, onEdit = null, onOpen = null, onPhoto = null,
+  rows = PRICING_ROWS,
 }) {
   const open = onOpen ? () => onOpen(s) : undefined;
+
+  // The same photo frame as the Matrix card: double-click opens the style,
+  // hovering brings up the button, and a file dropped anywhere on the frame
+  // is taken. It is the SAME photo — styles.photo_url — so a picture added
+  // from here appears on the Matrix card and the printed sheet too.
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const takeFile = async (file) => {
+    if (!file || !onPhoto || busy) return;
+    setBusy(true);
+    try { await onPhoto(s, file); } finally { setBusy(false); }
+  };
+
   return (
     <div className={`pmx-card${onEdit ? ' is-editable' : ''}`}>
       {index != null && <div className="pmx-index">{index}</div>}
 
-      <div className="pmx-photo" onDoubleClick={open}
-        title={onOpen ? `Open ${s.name}` : undefined}>
+      <div className={`pmx-photo${open ? ' can-open' : ''}`} onDoubleClick={open}
+        title={open ? `Double-click to open ${s.name}` : undefined}
+        onDragOver={onPhoto ? (e) => {
+          if (!e.dataTransfer.types.includes('Files')) return;
+          e.preventDefault();
+          e.stopPropagation();
+        } : undefined}
+        onDrop={onPhoto ? (e) => {
+          if (!e.dataTransfer.files?.length) return;
+          e.preventDefault();
+          e.stopPropagation();
+          takeFile(e.dataTransfer.files[0]);
+        } : undefined}>
         {s.image_path
           ? <img src={s.image_path} alt={s.name} loading="lazy" decoding="async" />
           : <Shirt size={26} strokeWidth={1.2} aria-hidden="true" />}
+
+        {onPhoto && (
+          <>
+            {/* `hidden`, not a class. A file input that is only hidden by
+                the project stylesheet renders as "Choose File | No file
+                chosen" in the middle of the photo the moment that
+                stylesheet is late, missing or overridden. The attribute is
+                the browser's own display:none and needs nothing loaded. */}
+            <input ref={fileRef} hidden className="pmx-photo-file" type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => {
+                takeFile(e.target.files?.[0]);
+                e.target.value = '';   // so the same file can be picked again
+              }} />
+            <button type="button" className="pmx-photo-add" disabled={busy}
+              title={s.image_path ? `Replace the photo for ${s.name}`
+                                  : `Add a photo for ${s.name}`}
+              onClick={(e) => { e.stopPropagation(); fileRef.current?.click(); }}
+              // The frame opens the style on double-click; two quick clicks
+              // on this button must not do that as well.
+              onDoubleClick={(e) => e.stopPropagation()}>
+              <ImagePlus size={13} />
+              {busy ? 'Uploading…' : s.image_path ? 'Replace' : 'Add photo'}
+            </button>
+          </>
+        )}
       </div>
 
       <div className="pmx-name">{s.name}</div>

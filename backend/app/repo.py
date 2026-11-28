@@ -240,6 +240,7 @@ def load_style(style_id: int) -> dict | None:
                        -- style's: a garment sold on both can still have one
                        -- colour that only goes to wholesale.
                        cw.whs_channel,
+                       cw.photo_url,
                        t.ws_tag_color AS sub_to
                 FROM style_colorways cw
                 LEFT JOIN style_colorways t ON t.id = cw.subbed_to_colorway_id
@@ -988,7 +989,7 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
             # dangle or fail the constraint.
             cur.execute("""
                 SELECT ws_tag_color, mark, highlight, zone,
-                       product_colorway_id, whs_channel,
+                       product_colorway_id, whs_channel, photo_url,
                        reps_color, color_sequence, sell_restriction,
                        subbed_on, sub_reason
                   FROM style_colorways WHERE style_id = %s
@@ -1036,15 +1037,20 @@ def save_style(payload: dict, style_id: int | None = None) -> int:
                 else:
                     channel = prior["whs_channel"] if prior else None
                 if prior:
+                    # photo_url is carried, never taken from the payload: it
+                    # is set by the upload route, the editor has no field for
+                    # it, and a save that read it from the form would blank
+                    # every colourway photo the moment an older client saved.
                     cur.execute("""
                         UPDATE style_colorways
                            SET mark = %s, product_colorway_id = %s,
-                               whs_channel = %s, reps_color = %s,
+                               whs_channel = %s, photo_url = %s,
+                               reps_color = %s,
                                color_sequence = %s, sell_restriction = %s,
                                subbed_on = %s, sub_reason = %s
                          WHERE id = %s
                     """, (prior["mark"], prior["product_colorway_id"],
-                          channel, prior["reps_color"],
+                          channel, prior["photo_url"], prior["reps_color"],
                           prior["color_sequence"], prior["sell_restriction"],
                           prior["subbed_on"], prior["sub_reason"], cw_id))
                 elif channel:
@@ -1184,6 +1190,24 @@ def set_photo(style_id: int, path: str) -> None:
             cur.execute("UPDATE styles SET photo_url = %s WHERE id = %s", (path, style_id))
 
 
+def set_colorway_photo(style_id: int, colour: str, path: str) -> bool:
+    """Attach a photo to one colour of one style. False if there is no such
+    colour, so the route can answer 404 rather than reporting a silent no-op.
+
+    The colour is named, not numbered: `ws_tag_color` is unique per style and
+    is what every other per-colourway call takes. A row id would be the
+    wrong key — save_style deletes and re-inserts these rows on every save,
+    so the id a client held would be gone by the time it uploaded.
+    """
+    with transaction() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE style_colorways SET photo_url = %s"
+                " WHERE style_id = %s AND ws_tag_color = %s",
+                (path, style_id, (colour or "").strip()))
+            return cur.rowcount > 0
+
+
 # --------------------------------------------------------------------- meta
 def lookup_products(q=None, limit: int = 40) -> list[dict]:
     """Find a garment and show every season it ran in, under any name.
@@ -1315,6 +1339,8 @@ def matrix_rows(season=None, collection=None, q=None,
                cwagg.marks AS colorway_marks,
                cwagg.zones AS colorway_zones,
                cwagg.lits  AS colorway_highlights,
+               cwagg.photos AS colorway_photos,
+               cwagg.chans AS colorway_channels,
                -- The attribute block the workbook prints under each photo.
                -- Most of these columns exist but were never imported, so they
                -- come back null today and the sheet prints the row blank.
@@ -1452,7 +1478,17 @@ def matrix_rows(season=None, collection=None, q=None,
                    coalesce(jsonb_object_agg(cw.ws_tag_color, cw.zone),
                             '{}'::jsonb) AS zones,
                    coalesce(jsonb_object_agg(cw.ws_tag_color, cw.highlight)
-                        FILTER (WHERE cw.highlight IS NOT NULL), '{}'::jsonb) AS lits
+                        FILTER (WHERE cw.highlight IS NOT NULL), '{}'::jsonb) AS lits,
+                   -- Only the colours that HAVE one. A missing key and a
+                   -- null both read as "no photo" on the sheet, and the
+                   -- filter keeps the payload to the handful that do.
+                   coalesce(jsonb_object_agg(cw.ws_tag_color, cw.photo_url)
+                        FILTER (WHERE cw.photo_url IS NOT NULL), '{}'::jsonb) AS photos,
+                   -- The channel each colour sells on, for the SY-AV sheet.
+                   -- Unset rows are left out: absent means "nobody has
+                   -- said", which is not the same as any of the three words.
+                   coalesce(jsonb_object_agg(cw.ws_tag_color, cw.whs_channel)
+                        FILTER (WHERE cw.whs_channel IS NOT NULL), '{}'::jsonb) AS chans
               FROM style_colorways cw WHERE cw.style_id = s.id) cwagg ON true
         WHERE s.status <> 'draft'
     """.replace("{IM_P}", _IM_P_RULE).replace("{C_IM}", _C_IM_RULE)

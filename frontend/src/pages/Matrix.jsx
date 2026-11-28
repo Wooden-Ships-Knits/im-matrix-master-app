@@ -1,12 +1,14 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette, SwatchBook, Filter } from 'lucide-react';
-import { Field, useToast } from '../components/ui.jsx';
+import { CirclePlus, ClipboardList, TextSearch, ListChecks, Printer, RotateCcw, Plus, Trash2, Check, X, Palette, SwatchBook, Filter, ImagePlus, Shirt } from 'lucide-react';
+import { CheckBox, Field, useToast } from '../components/ui.jsx';
 import { api } from '../api.js';
 import { commaDecimal, pointDecimal, roundFixed } from '../format.js';
+import { effectiveChannel, syColorways } from '../channel.js';
+import { colorwayPhoto } from '../photo.js';
 // The same card the printed sheet draws, so what is arranged here is
 // what comes out of the printer.
-import SheetCard, { numberCards, mainRowCount } from '../sections/SheetCard.jsx';
+import SheetCard, { numberCards, rowMainRows } from '../sections/SheetCard.jsx';
 import AddStyle from '../sections/AddStyle.jsx';
 import ImportStyle from '../sections/ImportStyle.jsx';
 import PriceCard from '../sections/PriceCard.jsx';
@@ -143,6 +145,49 @@ const AttrRow = memo(function AttrRow({ r, fields, confirming, onSave,
   );
 });
 
+// The sheets this page can show. 'master' is the default and is left out of
+// the URL; the other two name themselves in it, so a sheet can be linked to.
+const SHEETS = ['master', 'pricing', 'syav'];
+
+/**
+ * One collection's grid of cards, which knows how many it is fitting across.
+ *
+ * The column track is `repeat(auto-fill, minmax(160px, 1fr))`, so the count
+ * is the browser's decision and the only way to know it is to ask the laid-
+ * out element. The children are given it because the main band's height is a
+ * fact about a card's ROW — see rowMainRows in SheetCard.jsx.
+ *
+ * The observer watches the grid's box, so it also fires when the cards get
+ * taller. That cannot loop: a height change leaves the column count where it
+ * was, and an unchanged count sets no state.
+ */
+function SheetGrid({ children }) {
+  const ref = useRef(null);
+  const [columns, setColumns] = useState(0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const read = () => {
+      // The COMPUTED value of grid-template-columns is the resolved track
+      // list — "186.4px 186.4px …" — one entry per column, whatever the
+      // author wrote. Counting the entries counts the columns.
+      const tracks = window.getComputedStyle(el).gridTemplateColumns;
+      const n = tracks && tracks !== 'none' ? tracks.split(' ').length : 0;
+      setColumns((was) => (was === n ? was : n));
+    };
+    read();
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+
+  return <div className="sheet-grid" ref={ref}>{children(columns)}</div>;
+}
+// Defined AFTER AttrRow on purpose: frontend/test/sheet.test.mjs reads the
+// pure sort helpers above by slicing this file from `export const compare =`
+// to `const AttrRow = memo(`, and that slice has to stay free of JSX.
+
 export default function Matrix() {
   const toast = useToast();
   const navigate = useNavigate();
@@ -183,7 +228,16 @@ export default function Matrix() {
   // Attributes and Layout are two views of the Matrix Master, and the
   // Pricing Matrix is not a third view of it.
   const [sheet, setSheet] = useState(
-    params.get('sheet') === 'pricing' ? 'pricing' : 'master');
+    () => (SHEETS.includes(params.get('sheet')) ? params.get('sheet') : 'master'));
+  // Shown on the SY-AV sheet only. A colour with no channel recorded has
+  // not been said to sell on SY, so it is off by default — but every one of
+  // the imported colourways is in that state until somebody fills them in,
+  // and an empty sheet looks broken rather than unfilled.
+  const [syUnset, setSyUnset] = useState(false);
+  // One file input for the whole sheet, and the cell that opened it.
+  // One per frame would be a thousand hidden inputs on a full season.
+  const syFileRef = useRef(null);
+  const syTarget = useRef(null);
   const [dragging, setDragging] = useState(null);
   const [over, setOver] = useState(null);
 
@@ -213,7 +267,7 @@ export default function Matrix() {
     const next = new URLSearchParams(params);
     for (const [key, value] of [['season', season], ['collection', collection],
                                 ['tab', tab === 'layout' ? 'layout' : ''],
-                                ['sheet', sheet === 'pricing' ? 'pricing' : '']]) {
+                                ['sheet', sheet === 'master' ? '' : sheet]]) {
       if (value) next.set(key, value); else next.delete(key);
     }
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
@@ -371,17 +425,12 @@ export default function Matrix() {
     // Numbered here so it happens once per collection rather than once per
     // card, and so the S sequence is counted over the whole block.
     //
-    // mainRows is the tallest main colourway band in the block. Every card is
-    // given it, so the red rule under that band sits at one height all the way
-    // across — a card cannot work this out alone, because it is a fact about
-    // its neighbours. Measured over the whole block rather than a visual row:
-    // the grid rewraps with the window, and a rule that realigned itself on
-    // resize would be worse than one that is simply straight.
-    return out.map((g) => ({
-      ...g,
-      numbers: numberCards(g.items),
-      mainRows: g.items.reduce((most, r) => Math.max(most, mainRowCount(r)), 0),
-    }));
+    // The main band's height is NOT worked out here. It is a fact about a
+    // card's neighbours, and its neighbours are the cards in the same row of
+    // the grid — which depends on how many the grid is fitting across, which
+    // only the rendered grid knows. SheetGrid measures that and rowMainRows
+    // turns it into a figure per card.
+    return out.map((g) => ({ ...g, numbers: numberCards(g.items) }));
   }, [shown]);
 
   // Saved on blur rather than per keystroke: a cell is a thought, not a
@@ -567,6 +616,23 @@ export default function Matrix() {
       setRows((prev) => prev.map(
         (r) => (r.id === style.id ? { ...r, image_path: path } : r)));
       toast?.(`Photo added to ${style.name}`);
+    } catch (err) {
+      toast?.(err.message || 'Could not add that photo', 'error');
+    }
+  };
+
+  // A photo of one COLOUR, for the SY-AV sheet. Separate from the style's
+  // own photo above: they are pictures of different things, and the sheet
+  // that shows one never shows the other in its place.
+  const addColorwayPhoto = async (style, colour, file) => {
+    try {
+      const { image_path: path } = await api.uploadColorwayImage(
+        style.id, colour, file);
+      patchRow(style.id, (r) => ({
+        ...r,
+        colorway_photos: { ...(r.colorway_photos || {}), [colour]: path },
+      }));
+      toast?.(`Photo added to ${style.name} · ${colour}`);
     } catch (err) {
       toast?.(err.message || 'Could not add that photo', 'error');
     }
@@ -898,20 +964,24 @@ export default function Matrix() {
             <button type="button" role="tab" aria-selected={sheet === 'master'}
               className={`card-title tab${sheet === 'master' ? ' on' : ''}`}
               onClick={() => setSheet('master')}>Matrix Master</button>
-            {/* Hidden with the rest (Home.jsx, 26 Nov 2026). Only the tab is
-                gone: `sheet` still reads the URL, so /matrix?sheet=pricing
-                opens the pricing sheet exactly as before.
             <button type="button" role="tab" aria-selected={sheet === 'pricing'}
               className={`card-title tab${sheet === 'pricing' ? ' on' : ''}`}
-              onClick={() => setSheet('pricing')}>Pricing Matrix</button> */}
+              onClick={() => setSheet('pricing')}>Pricing Matrix</button>
+            <button type="button" role="tab" aria-selected={sheet === 'syav'}
+              className={`card-title tab${sheet === 'syav' ? ' on' : ''}`}
+              onClick={() => setSheet('syav')}>SY-AV Matrix</button>
           </div>
-          {/* <p className="card-sub">
+          <p className="card-sub">
             {sheet === 'pricing'
               ? `What each garment costs, in the order the sheet shows them in.
                  Saves as you go, and is what gets printed.`
-              : `What each garment is, and the order the sheet shows them in. Both
-                 save as you go, and both are what gets printed.`}
-          </p> */}
+              : sheet === 'syav'
+                ? `What is available to sell on SY, one picture per colour
+                   rather than one per garment. Click an empty frame to add
+                   a photo.`
+                : `What each garment is, and the order the sheet shows them in. Both
+                   save as you go, and both are what gets printed.`}
+          </p>
 
           <div className="chk-filters">
             <Field label="Season" hint="Required">
@@ -1147,8 +1217,11 @@ export default function Matrix() {
                 <RotateCcw size={15} /> Reset order
               </button>
             </div>
-            <div className="sheet-grid">
-              {g.items.map((r) => (
+            <SheetGrid>
+              {(columns) => {
+                const bandRows = rowMainRows(g.items, columns);
+                return (<>
+              {g.items.map((r, i) => (
                 <SheetCard
                   key={r.id}
                   style={r}
@@ -1161,7 +1234,7 @@ export default function Matrix() {
                   onMarkColour={proxies.onMarkColour}
                   onHighlightColour={proxies.onHighlightColour}
                   onArrange={proxies.onArrange}
-                  minMainRows={g.mainRows}
+                  minMainRows={bandRows[i]}
                   onRenameColour={proxies.onRenameColour}
                   onAddColour={proxies.onAddColour}
                   onDeleteColour={proxies.onDeleteColour}
@@ -1220,7 +1293,9 @@ export default function Matrix() {
                   </button>
                 )}
               </div>
-            </div>
+                </>);
+              }}
+            </SheetGrid>
           </section>
         ))}
 
@@ -1246,11 +1321,159 @@ export default function Matrix() {
                   index={g.numbers[r.id]}
                   onEdit={proxies.onEdit}
                   onOpen={proxies.onOpen}
+                  // The style's own photo, the same one the Matrix card
+                  // shows — so a picture added here turns up there and on
+                  // the printed sheet.
+                  onPhoto={proxies.onPhoto}
                 />
               ))}
             </div>
           </section>
         ))}
+
+        {/* ---------- SY-AV: one picture per COLOUR ----------
+            The Matrix Master sheet shows a garment; this shows what is
+            actually available to sell on SY, which is a colour. Columns are
+            styles in the sheet's own order and numbering, so a column here
+            is the same column there; rows are that style's SY colours.
+
+            Read-only except for the photos. Everything else about a colour
+            is edited where it is edited — the Matrix card and the style
+            editor — and a third place to change it would be a third place
+            to disagree. */}
+        {sheet === 'syav' && groups.length > 0 && (
+          <section className="card card-pad sy-head">
+            <CheckBox label="Show colours with no channel recorded"
+              checked={syUnset} onChange={setSyUnset}
+              title={'A colour with no channel has not been said to sell on'
+                + ' SY. Every imported colourway is in that state until the'
+                + ' channels are filled in.'} />
+          </section>
+        )}
+
+        {sheet === 'syav' && groups.map((g) => {
+          const cols = g.items
+            .map((r) => ({ row: r, colours: syColorways(r, syUnset) }))
+            .filter((c) => c.colours.length > 0);
+          const total = cols.reduce((n, c) => n + c.colours.length, 0);
+          return (
+            <section className="card mx-sheet" key={g.name}>
+              <div className="mx-layout-head">
+                <h3 className="card-title">{g.name}</h3>
+                <span className="result-count">
+                  {total} colour{total === 1 ? '' : 's'} on SY
+                  {' · '}{cols.length} of {g.items.length} styles
+                </span>
+              </div>
+              {cols.length === 0 ? (
+                <p className="card-sub">
+                  No colour in {g.name} is recorded as selling on SY.
+                  {!syUnset && ' Tick the box above to show the colours whose'
+                    + ' channel nobody has filled in yet.'}
+                </p>
+              ) : (
+                <div className="sy-grid">
+                  {cols.map(({ row: r, colours }) => (
+                    <div className="sy-col" key={r.id}>
+                      <div className="sy-num" title={r.name}>
+                        {g.numbers[r.id]}
+                      </div>
+                      {colours.map((c) => {
+                        // The style's own photo is the FIRST colour's
+                        // photo — see colorwayPhoto. First in the style's
+                        // list, not first on this sheet: the SY filter can
+                        // drop the real first colour off the top.
+                        const src = colorwayPhoto(
+                          r.colorway_photos?.[c],
+                          c === (r.colorways || [])[0],
+                          r.image_path);
+                        const ownShot = !!r.colorway_photos?.[c];
+                        // Said by the colour, or said by the style on its
+                        // behalf — a colour of a one-channel garment has
+                        // nowhere else to go. Only a colour nobody has
+                        // placed at all is marked unrecorded.
+                        const said = effectiveChannel(
+                          r.colorway_channels?.[c], r.whs_channel);
+                        return (
+                          <figure className="sy-cell" key={c}>
+                            {/* The Matrix card's frame, cell-sized: the
+                                frame opens the style on a double-click and
+                                the button appears on hover. The frame
+                                itself is not the button — a single click
+                                anywhere on a photo opening a file dialog
+                                is a dialog nobody asked for. */}
+                            <div className="sy-shot can-open"
+                              title={`Double-click to open ${r.name}`}
+                              onDoubleClick={() => proxies.onOpen(r)}>
+                              {src
+                                ? <img src={src} alt={`${r.name} in ${c}`}
+                                    loading="lazy" decoding="async" />
+                                : (
+                                  <span className="sy-empty">
+                                    <Shirt size={28} strokeWidth={1.3} />
+                                  </span>
+                                )}
+                              <button type="button" className="sy-add"
+                                title={ownShot
+                                  ? `Replace the photo of ${r.name} in ${c}`
+                                  : `Add a photo of ${r.name} in ${c}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  syTarget.current = { style: r, colour: c };
+                                  syFileRef.current?.click();
+                                }}
+                                onDoubleClick={(e) => e.stopPropagation()}>
+                                <ImagePlus size={12} />
+                                {/* What it does to THIS COLOUR, not what
+                                    is on screen: the first colour shows
+                                    the style's photo and still has none of
+                                    its own. */}
+                                {ownShot ? 'Replace' : 'Add photo'}
+                              </button>
+                            </div>
+                            <figcaption>
+                              <span className="sy-style">{r.name}</span>
+                              <span className="sy-color">{c}</span>
+                              {/* Said so, or merely not ruled out. The
+                                  sheet never passes the second off as the
+                                  first. */}
+                              {!said && (
+                                <span className="sy-unsaid">channel not set</span>
+                              )}
+                            </figcaption>
+                          </figure>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        {/* One input for the whole sheet; the cell that opened it is in a
+            ref. One per frame is a thousand hidden inputs on a full
+            season, and they all do the same thing. */}
+        {sheet === 'syav' && (
+          <input ref={syFileRef} type="file" accept="image/*" hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              const at = syTarget.current;
+              e.target.value = '';
+              syTarget.current = null;
+              if (f && at) addColorwayPhoto(at.style, at.colour, f);
+            }} />
+        )}
+
+        {sheet === 'syav' && season && groups.length === 0 && (
+          <section className="card card-pad">
+            <p className="card-sub">
+              Nothing on SY here yet — no styles in {season}
+              {collection ? ` · ${collection}` : ''}.
+            </p>
+          </section>
+        )}
 
         {sheet === 'pricing' && season && groups.length === 0 && (
           <section className="card card-pad">
